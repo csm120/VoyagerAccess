@@ -30,4 +30,20 @@ $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFile
 if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe) not found" }
 & $iscc /Q "/DMyAppVersion=$version" "/DMyAppVersionNumeric=$numeric.0" installer\VoyagerAccess.iss
 if ($LASTEXITCODE) { throw "Inno Setup failed" }
-Get-Item dist\installer\VoyagerAccessSetup.exe | Select-Object Name, Length
+
+# The mod's scripts alone, for patching a running game, and a checksum file
+# beside each release file. The checksums used to be written by hand, and
+# 0.1.1's build left the 0.1.0 one in place (caught before upload).
+$out = Join-Path $repo 'dist\installer'
+$zip = Join-Path $out 'VoyagerAccessMod.zip'
+Remove-Item $zip -ErrorAction SilentlyContinue
+$stage = Join-Path $repo 'build\modzip'
+Remove-Item $stage -Recurse -ErrorAction SilentlyContinue
+New-Item -ItemType Directory "$stage\Scripts" | Out-Null
+Copy-Item build\payload\ue4ss\Mods\VoyagerAccess\Scripts\*.lua "$stage\Scripts"
+Compress-Archive -Path "$stage\Scripts" -DestinationPath $zip
+foreach ($name in 'VoyagerAccessSetup.exe', 'VoyagerAccessMod.zip') {
+    $hash = (Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash.ToLower()
+    [IO.File]::WriteAllText((Join-Path $out "$name.sha256"), "$hash  $name`n")
+}
+Get-ChildItem $out | Select-Object Name, Length

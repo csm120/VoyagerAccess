@@ -131,7 +131,7 @@ class KeyWatcherTests(unittest.TestCase):
 
     def test_all_keys_named(self):
         self.assertEqual(sorted(VK), sorted(
-            ["enter", "backspace", "up", "down", "left", "right", "r", "o", "f1", "pageup", "pagedown", "home", "end", "c", "v"]))
+            ["enter", "backspace", "up", "down", "left", "right", "r", "o", "f1", "pageup", "pagedown", "home", "end", "c", "v", "f12"]))
 
 
 if __name__ == "__main__":

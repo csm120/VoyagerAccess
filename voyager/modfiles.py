@@ -18,6 +18,53 @@ class GameRunning(Exception):
 
 
 def game_is_running():
+    return _game_pid() is not None
+
+
+def close_game(timeout=90):
+    """Asks the running game to close, as its window's Close does, and waits.
+    Returns the game's exe path once it has exited, or None (not running, or
+    still running after timeout). Never kills it. The request is repeated
+    every two seconds: one sent five seconds after launch, while the game
+    was still loading, was ignored (2026-10-11)."""
+    import ctypes
+    import ctypes.wintypes as wt
+    import time
+    pid = _game_pid()
+    if pid is None:
+        return None
+    k32, user32 = ctypes.windll.kernel32, ctypes.windll.user32
+    exe = None
+    k32.OpenProcess.restype = wt.HANDLE
+    handle = k32.OpenProcess(0x1000, False, pid)   # PROCESS_QUERY_LIMITED_INFORMATION
+    if handle:
+        buf = ctypes.create_unicode_buffer(1024)
+        size = wt.DWORD(len(buf))
+        if k32.QueryFullProcessImageNameW(handle, 0, buf, ctypes.byref(size)):
+            exe = buf.value
+        k32.CloseHandle(handle)
+
+    @ctypes.WINFUNCTYPE(wt.BOOL, wt.HWND, wt.LPARAM)
+    def each(hwnd, _):
+        owner = wt.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(owner))
+        if owner.value == pid and user32.IsWindowVisible(hwnd):
+            user32.PostMessageW(hwnd, 0x0010, 0, 0)   # WM_CLOSE
+        return True
+
+    deadline = time.monotonic() + timeout
+    next_ask = 0.0
+    while time.monotonic() < deadline:
+        if not game_is_running():
+            return exe
+        if time.monotonic() >= next_ask:
+            user32.EnumWindows(each, 0)
+            next_ask = time.monotonic() + 2
+        time.sleep(0.5)
+    return None
+
+
+def _game_pid():
     import ctypes
     import ctypes.wintypes as wt
     # Toolhelp process snapshot; avoids starting tasklist.
@@ -39,9 +86,9 @@ def game_is_running():
         ok = k32.Process32FirstW(snap, ctypes.byref(entry))
         while ok:
             if entry.szExeFile.lower() == GAME_EXE.lower():
-                return True
+                return entry.th32ProcessID
             ok = k32.Process32NextW(snap, ctypes.byref(entry))
-        return False
+        return None
     finally:
         k32.CloseHandle(snap)
 
@@ -93,6 +140,27 @@ def install(bin_dir, payload_dir, data_dir, appid, game_running=None, version=No
     path.write_text(json.dumps({"version": version, "bin_dir": str(bin_dir), "files": new_files,
                                 "backed_up": sorted(backed_up), "created": sorted(created)},
                                indent=1), encoding="utf-8")
+
+
+SCRIPTS_REL = "ue4ss/Mods/VoyagerAccess/Scripts"
+
+
+def patch_scripts(bin_dir, scripts_dir, data_dir, appid):
+    """Copies new Lua scripts into an installed mod, game running or not (the
+    game does not lock them; the mod reloads them on request). New files go
+    into the manifest so uninstall removes them; the version stays, so the
+    full install still runs once the game closes."""
+    manifest = load_manifest(data_dir, appid)
+    if manifest is None:
+        return False
+    target = Path(bin_dir) / SCRIPTS_REL
+    files = set(manifest["files"])
+    for src in sorted(Path(scripts_dir).glob("*.lua")):
+        shutil.copy2(src, target / src.name)
+        files.add(f"{SCRIPTS_REL}/{src.name}")
+    manifest["files"] = sorted(files)
+    _manifest_path(data_dir, appid).write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    return True
 
 
 def _remove(bin_dir, rel, backup_dir, restore):

@@ -14,6 +14,7 @@ import argparse
 import ctypes
 import logging
 import logging.handlers
+import os
 import sys
 import time
 from pathlib import Path
@@ -236,22 +237,48 @@ def resident():
     if not single_instance():
         return 0
     log.info("Voyager Access %s waiting for the game", __version__)
+    relaunch = updater.relaunch_target(UPDATE_MARKER)
     news = update_news()
     last_check = 0.0
+    if relaunch:
+        # Restarted for an update: put the new mod in, then start the game again.
+        keep_installed()
+        last_check = time.monotonic()
+        log.info("starting the game again (%s)", relaunch)
+        import os
+        os.startfile(f"steam://rungameid/{relaunch}")
     next_update_check = time.monotonic() + FIRST_UPDATE_CHECK_SECONDS
+    pending = None            # (version, installer, scripts) found while the game ran
     while True:
         if modfiles.game_is_running():
             log.info("game started")
+            session = PlaySession(found=pending)
             tolk = Tolk(DEFAULT_TOLK)
             try:
                 if news:
                     tolk.say(news, False)
                     news = None
-                serve(tolk, DEFAULT_FILE, modfiles.game_is_running)
+
+                def keep_going():
+                    if not modfiles.game_is_running():
+                        return False
+                    session.step(lambda text: tolk.say(text, True), patch_running_game)
+                    return not session.restart
+
+                serve(tolk, DEFAULT_FILE, keep_going, on_keys=session.key)
+                if session.restart and restart_for_update(tolk, session.found, session.early):
+                    return 0      # setup stops this copy and starts the new one
             finally:
                 tolk.unload()
             log.info("game exited")
+            RELOAD_FLAG.unlink(missing_ok=True)
+            session.wait()
+            pending = session.found
+            next_update_check = time.monotonic() + UPDATE_CHECK_SECONDS
             last_check = 0.0
+        elif pending:
+            install_update(pending[0], pending[1])
+            pending = None
         elif time.monotonic() - last_check >= CHECK_INSTALL_SECONDS:
             last_check = time.monotonic()
             keep_installed()
@@ -261,12 +288,130 @@ def resident():
         time.sleep(2)
 
 
-# Updates: checked only while the game is closed, a minute after sign-in and
-# then every six hours. VOYAGER_UPDATE_FEED points the check elsewhere for
-# testing (a file:// feed works).
+# Updates (Casey, 2026-10-11): checked when the game starts and every ten
+# minutes while it runs, and while it is closed a minute after sign-in and
+# then every six hours.
+# 1. Found within a minute of the game starting (intro or main menu): the
+#    game restarts to install it.
+# 2. Found later: the new Lua scripts go into the running game and the mod
+#    reloads them; the rest installs when the game closes, or at once if
+#    Casey presses F12. The game only saves at story points, so a game in
+#    progress is never closed without that key.
+# VOYAGER_UPDATE_FEED points the check elsewhere for testing (file:// works);
+# VOYAGER_PLAY_CHECK_SECONDS shortens the in-game interval for testing.
 FIRST_UPDATE_CHECK_SECONDS = 60
 UPDATE_CHECK_SECONDS = 6 * 3600
+PLAY_CHECK_SECONDS = int(os.environ.get("VOYAGER_PLAY_CHECK_SECONDS", 10 * 60))
+RESTART_WINDOW_SECONDS = 60
+RESTART_KEY = "f12"
+ANNOUNCE_DELAY_SECONDS = 3
 UPDATE_MARKER = DATA_DIR / "pending-update.json"
+RELOAD_FLAG = DATA_DIR / "reload"
+
+
+class PlaySession:
+    """Update checks for one run of the game. step() runs on the main thread
+    about once a second; the check itself runs in a background thread."""
+
+    def __init__(self, found=None, clock=time.monotonic, threads=True):
+        self.clock = clock
+        self.started = clock()
+        self.threads = threads
+        self.found = found          # already offered in an earlier run: just offer F12
+        self.offered = found is not None
+        self.early = False
+        self.restart = False
+        self.checking = False
+        self.last_check = None
+        self.thread = None
+        self.announce = None       # (when, text)
+
+    def _run(self):
+        try:
+            found = fetch_update()
+        except Exception as e:      # a failed check must never stop the speech
+            log.info("update check failed: %s", e)
+            found = None
+        if found:
+            self.early = self.clock() - self.started <= RESTART_WINDOW_SECONDS
+            self.found = found
+        self.checking = False
+
+    def step(self, say, apply_scripts):
+        if self.found is None and not self.checking and (
+                self.last_check is None or self.clock() - self.last_check >= PLAY_CHECK_SECONDS):
+            self.checking = True
+            self.last_check = self.clock()
+            if self.threads:
+                import threading
+                self.thread = threading.Thread(target=self._run, daemon=True)
+                self.thread.start()
+            else:
+                self._run()
+        if self.found and not self.offered:
+            self.offered = True
+            if self.early:
+                self.restart = True
+                return
+            version = self.found[0]
+            if apply_scripts(self.found):
+                # After the mod's own "Voyager Access loaded" from the reload.
+                self.announce = (self.clock() + ANNOUNCE_DELAY_SECONDS,
+                    f"Voyager Access fixes applied. Press F12 to restart the game and finish "
+                    f"the update to version {version}, or it finishes when you close the game.")
+            else:
+                say(f"Voyager Access update {version} is ready. Press F12 to restart the game "
+                    "and install it, or it installs when you close the game.")
+        if self.announce and self.clock() >= self.announce[0]:
+            say(self.announce[1])
+            self.announce = None
+
+    def key(self, names):
+        if RESTART_KEY in names and self.found and self.offered:
+            self.restart = True
+
+    def wait(self):
+        if self.thread:
+            self.thread.join(120)
+
+
+def patch_running_game(found):
+    """Puts the release's scripts into every installed copy and asks the mod
+    to reload them. False when the release has none or nothing was patched."""
+    scripts = found[2]
+    if not scripts:
+        return False
+    patched = False
+    for game in steam.find_games(steam.steam_path()):
+        try:
+            patched = modfiles.patch_scripts(game.bin_dir, scripts, DATA_DIR, game.appid) or patched
+        except OSError as e:
+            log.info("patching scripts in %s failed: %s", game.bin_dir, e)
+    if patched:
+        RELOAD_FLAG.write_text("")
+        log.info("scripts from %s patched into the running game", found[0])
+    return patched
+
+
+def restart_for_update(tolk, found, early):
+    """Closes the game, installs the update and has the new helper start the
+    game again. False when the game would not close (it then installs once
+    the game is closed)."""
+    version, path = found[0], found[1]
+    log.info("update %s: restarting the game (%s)", version, "at start" if early else "F12")
+    if early:
+        tolk.say(f"Voyager Access update {version} found. Restarting the game to install it.", True)
+    else:
+        tolk.say("Restarting the game to finish the Voyager Access update.", True)
+    time.sleep(5)
+    exe = modfiles.close_game()
+    if not exe:
+        log.info("the game did not close; installing after it closes")
+        return False
+    appid = next((g.appid for g in steam.find_games(steam.steam_path())
+                  if Path(g.bin_dir) == Path(exe).parent), None)
+    install_update(version, path, relaunch=appid)
+    return True
 
 
 def update_news():
@@ -281,24 +426,42 @@ def update_news():
     return None
 
 
-def try_update():
+def fetch_update():
+    """Checks for and downloads a newer version: (version, installer,
+    scripts folder or None) or None."""
     import os
     import tempfile
     feed = os.environ.get("VOYAGER_UPDATE_FEED", updater.FEED)
     release = updater.check(feed, __version__)
     if not release:
-        return
+        return None
     log.info("update %s available", release.version)
+    folder = Path(tempfile.gettempdir()) / "VoyagerAccessUpdater"
     try:
-        path = updater.download(release, Path(tempfile.gettempdir()) / "VoyagerAccessUpdater")
+        path = updater.download(release, folder)
     except updater.UpdateError as e:
         log.info("update not installed: %s", e)
-        return
+        return None
+    try:
+        scripts = updater.download_scripts(release, folder / "mod")
+    except updater.UpdateError as e:
+        log.info("scripts not patched: %s", e)
+        scripts = None
+    return release.version, path, scripts
+
+
+def install_update(version, path, relaunch=None):
     if modfiles.game_is_running():
         return
-    updater.write_marker(UPDATE_MARKER, release.version)
-    log.info("running the %s installer", release.version)
+    updater.write_marker(UPDATE_MARKER, version, relaunch=relaunch)
+    log.info("running the %s installer", version)
     updater.run_installer(path)
+
+
+def try_update():
+    found = fetch_update()
+    if found:
+        install_update(found[0], found[1])
 
 
 def speech_check(report):

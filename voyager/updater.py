@@ -22,6 +22,8 @@ from pathlib import Path
 
 FEED = "https://api.github.com/repos/csm120/VoyagerAccess/releases/latest"
 ASSET = "VoyagerAccessSetup.exe"
+# The mod's Lua scripts alone, for patching a running game (optional).
+SCRIPTS_ASSET = "VoyagerAccessMod.zip"
 TIMEOUT = 30
 
 
@@ -34,6 +36,8 @@ class Release:
     version: str
     installer_url: str
     checksum_url: str | None
+    scripts_url: str | None = None
+    scripts_checksum_url: str | None = None
 
 
 def _numbers(version):
@@ -72,7 +76,8 @@ def check(feed, current):
     urls = {a.get("name"): a.get("browser_download_url") for a in data.get("assets", [])}
     if not urls.get(ASSET):
         return None
-    return Release(tag.lstrip("v"), urls[ASSET], urls.get(ASSET + ".sha256"))
+    return Release(tag.lstrip("v"), urls[ASSET], urls.get(ASSET + ".sha256"),
+                   urls.get(SCRIPTS_ASSET), urls.get(SCRIPTS_ASSET + ".sha256"))
 
 
 def download(release, folder):
@@ -93,6 +98,39 @@ def download(release, folder):
     return path
 
 
+def download_scripts(release, folder):
+    """Downloads, verifies and unpacks the release's Lua scripts; returns the
+    Scripts folder, or None when the release has none."""
+    import io
+    import shutil
+    import zipfile
+    if not release.scripts_url:
+        return None
+    if not release.scripts_checksum_url:
+        raise UpdateError("the scripts have no checksum file")
+    try:
+        expected = _fetch(release.scripts_checksum_url).decode("ascii", "replace").split()[0].lower()
+        body = _fetch(release.scripts_url)
+    except (OSError, IndexError) as e:
+        raise UpdateError(f"scripts download failed: {e}") from e
+    if hashlib.sha256(body).hexdigest() != expected:
+        raise UpdateError("the scripts do not match their checksum")
+    folder = Path(folder)
+    if folder.exists():
+        shutil.rmtree(folder)
+    with zipfile.ZipFile(io.BytesIO(body)) as z:
+        for n in z.namelist():
+            # Windows PowerShell 5's Compress-Archive writes backslashes.
+            name = n.replace(chr(92), "/")
+            rest = name[len("Scripts/"):]
+            if name.startswith("Scripts/") and name.endswith(".lua") and "/" not in rest \
+                    and ".." not in rest:
+                target = folder / "Scripts" / rest
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(z.read(n))
+    return folder / "Scripts"
+
+
 def run_installer(path):
     """Starts the installer silently, outside this process: setup stops the
     running helper (this process) and starts the new one."""
@@ -101,9 +139,22 @@ def run_installer(path):
                      creationflags=flags, close_fds=True)
 
 
-def write_marker(marker, version):
+def write_marker(marker, version, relaunch=None):
+    """relaunch: the Steam app id to start again once the new helper is up."""
+    data = {"expected": version}
+    if relaunch:
+        data["relaunch"] = relaunch
     Path(marker).parent.mkdir(parents=True, exist_ok=True)
-    Path(marker).write_text(json.dumps({"expected": version}), encoding="utf-8")
+    Path(marker).write_text(json.dumps(data), encoding="utf-8")
+
+
+def relaunch_target(marker):
+    """The app id to start again after the update, or None. Read it before
+    read_marker, which removes the marker."""
+    try:
+        return json.loads(Path(marker).read_text(encoding="utf-8")).get("relaunch")
+    except (OSError, ValueError, AttributeError):
+        return None
 
 
 def read_marker(marker, running):

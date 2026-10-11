@@ -110,7 +110,8 @@ class Tailer:
 # luaH_setint, 2026-10-10 22:24). The mod now runs Lua on the game thread only.
 VK = {"enter": 0x0D, "backspace": 0x08, "up": 0x26, "down": 0x28,
       "left": 0x25, "right": 0x27, "r": 0x52, "o": 0x4F, "f1": 0x70,
-      "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56}
+      "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56,
+      "f12": 0x7B}   # F12 is the helper's own: restart to finish an update
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL = 0x10, 0x11, 0x12, 0x2D, 0x14
 # Insert and Caps Lock are NVDA and JAWS modifiers: NVDA+R never reaches the
 # game, but the R key still shows as down here.
@@ -206,10 +207,11 @@ def main(argv=None):
     return 0
 
 
-def serve(tolk, speech_file, keep_going):
+def serve(tolk, speech_file, keep_going, on_keys=None):
     """Speaks the mod's lines and hands it keys until keep_going() is false.
 
-    keep_going is checked about once a second.
+    keep_going is checked about once a second. on_keys, if given, also gets
+    each batch of key names.
     """
     speech_file = Path(speech_file)
     speech_file.parent.mkdir(parents=True, exist_ok=True)
@@ -225,6 +227,8 @@ def serve(tolk, speech_file, keep_going):
         if pressed:
             with open(keys_file, "a") as f:
                 f.write("".join(name + "\n" for name in pressed))
+            if on_keys:
+                on_keys(pressed)
         now = time.monotonic()
         if now - last_check >= 1.0:
             last_check = now
