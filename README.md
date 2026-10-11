@@ -44,7 +44,7 @@ Everywhere:
 3. C: your resources (cargo), crew, and how long your fuel lasts.
 4. V: switch between the ship and the System Map.
 5. R: repeat the last line, tutorial or window.
-6. F12: after "Voyager Access fixes applied," restart the game to finish the update.
+6. F12: check for a Voyager Access update now. If one is found, its fixes go in and you hear "Voyager Access fixes applied"; press F12 again to restart the game and finish the update.
 
 Menus and settings:
 

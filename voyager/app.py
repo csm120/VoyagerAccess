@@ -325,19 +325,25 @@ class PlaySession:
         self.last_check = None
         self.thread = None
         self.announce = None       # (when, text)
+        self.asked = False         # F12 asked for a check; say how it came out
+        self.failed = False
 
     def _run(self):
         try:
             found = fetch_update()
+            self.failed = False
         except Exception as e:      # a failed check must never stop the speech
             log.info("update check failed: %s", e)
             found = None
+            self.failed = True
         if found:
             self.early = self.clock() - self.started <= RESTART_WINDOW_SECONDS
             self.found = found
         self.checking = False
 
     def step(self, say, apply_scripts):
+        if self.asked and self.last_check is None:
+            say("Checking for Voyager Access updates.")
         if self.found is None and not self.checking and (
                 self.last_check is None or self.clock() - self.last_check >= PLAY_CHECK_SECONDS):
             self.checking = True
@@ -348,7 +354,12 @@ class PlaySession:
                 self.thread.start()
             else:
                 self._run()
+        if self.asked and not self.checking and not self.found:
+            self.asked = False
+            say("Could not check for Voyager Access updates." if self.failed
+                else f"Voyager Access is up to date, version {__version__}.")
         if self.found and not self.offered:
+            self.asked = False
             self.offered = True
             if self.early:
                 self.restart = True
@@ -367,8 +378,16 @@ class PlaySession:
             self.announce = None
 
     def key(self, names):
-        if RESTART_KEY in names and self.found and self.offered:
+        """F12 restarts for an update already offered; otherwise it checks
+        for one now (Casey, 2026-10-11). A check never closes the game: a
+        found update is offered first, and a second F12 restarts."""
+        if RESTART_KEY not in names:
+            return
+        if self.found and self.offered:
             self.restart = True
+        elif not self.checking and not self.found:
+            self.asked = True
+            self.last_check = None
 
     def wait(self):
         if self.thread:

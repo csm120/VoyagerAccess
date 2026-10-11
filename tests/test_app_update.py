@@ -101,6 +101,46 @@ class PlaySessionTests(unittest.TestCase):
         s.key(["f12"])
         self.assertFalse(s.restart)
 
+    def test_f12_without_an_update_checks_now(self):
+        # Casey, 2026-10-11: F12 also checks on demand.
+        s = self.session()
+        self.step(s)
+        self.assertEqual(self.fetches, 1)
+        s.key(["f12"])
+        self.step(s)                         # well before the ten minutes
+        self.assertEqual(self.fetches, 2)
+        self.assertFalse(s.restart)
+        self.assertEqual(self.said[0], "Checking for Voyager Access updates.")
+        self.assertTrue(self.said[-1].startswith("Voyager Access is up to date"))
+        self.step(s)
+        self.assertEqual(len(self.said), 2)
+
+    def test_f12_check_finding_an_update_patches_then_second_f12_restarts(self):
+        s = self.session()
+        self.now += app.RESTART_WINDOW_SECONDS + 1
+        self.step(s)
+        self.result = FOUND
+        s.key(["f12"])
+        self.step(s)
+        self.assertFalse(s.restart)
+        self.assertEqual(self.applied, [FOUND])
+        self.now += app.ANNOUNCE_DELAY_SECONDS
+        self.step(s)
+        self.assertTrue(self.said[-1].startswith("Voyager Access fixes applied."))
+        s.key(["f12"])
+        self.assertTrue(s.restart)
+
+    def test_f12_check_that_fails_says_so(self):
+        s = self.session()
+        self.step(s)
+
+        def broken():
+            raise OSError("no network")
+        app.fetch_update = broken
+        s.key(["f12"])
+        self.step(s)
+        self.assertEqual(self.said[-1], "Could not check for Voyager Access updates.")
+
     def test_a_failing_check_does_nothing(self):
         def broken():
             raise OSError("no network")

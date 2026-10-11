@@ -111,7 +111,7 @@ class Tailer:
 VK = {"enter": 0x0D, "backspace": 0x08, "up": 0x26, "down": 0x28,
       "left": 0x25, "right": 0x27, "r": 0x52, "o": 0x4F, "f1": 0x70,
       "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56,
-      "f12": 0x7B}   # F12 is the helper's own: restart to finish an update
+      "f12": 0x7B}   # F12 is the helper's own: check for an update, or restart to finish one
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL = 0x10, 0x11, 0x12, 0x2D, 0x14
 # Insert and Caps Lock are NVDA and JAWS modifiers: NVDA+R never reaches the
 # game, but the R key still shows as down here.
