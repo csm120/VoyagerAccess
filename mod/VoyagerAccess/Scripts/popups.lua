@@ -49,6 +49,8 @@ local WATCH = {
     "WBP_StoryDetailView_C", "WBP_ResourceEventDetailView_C",
     "WBP_GenericLocationDetailView_C", "WBP_AwayMissionDetailView_C",
     "WBP_AwayMissionEventView_C", "WBP_PoiEventWidget_C",
+    -- First launch only: Performance Selection, then Gamma
+    "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C",
 }
 
 -- Text widget classes, listed separately in case FindAllOf does not

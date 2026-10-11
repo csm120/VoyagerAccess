@@ -147,6 +147,24 @@ local MAX_WAIT_POLLS = 15
 
 local crumb = require("crumb")
 
+-- First launch only: the gamma screen after Performance Selection opens with
+-- nothing focused, so nothing was spoken and Enter found no button (proven
+-- 2026-10-11 with both CustomShow...SplashScreen flags set back to True in
+-- GameUserSettings.ini). Focus its CONFIRM; Up and Down reach DARKER and
+-- BRIGHTER from there.
+local function focus_first_run_screen()
+    for _, w in ipairs(FindAllOf("WBP_GammaCorrection_C") or {}) do
+        if w:IsValid() and live(w) and w:IsInViewport() then
+            local confirm = w.CloseButton
+            if confirm and confirm:IsValid() then
+                confirm:SetFocus()
+                return confirm
+            end
+        end
+    end
+    return nil
+end
+
 local function poll()
     crumb.at("focus: pending click")
     if pending_click then
@@ -163,6 +181,7 @@ local function poll()
     end
     crumb.at("focus: scan buttons")
     local b = focused_button()
+    if not b then b = focus_first_run_screen() end
     local path = b and path_of(b) or nil
     if path == current then return end
     crumb.at("focus: changed to " .. tostring(path))
