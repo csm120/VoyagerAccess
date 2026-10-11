@@ -218,25 +218,39 @@ local function shared_panel(a, b)
     return nil
 end
 
+local ROWS = { HorizontalBox = true, UniformGridPanel = true, WrapBox = true }
+
 local function step_in_window(path, dir)
     BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
     USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
     PANEL = PANEL or StaticFindObject("/Script/UMG.PanelWidget")
-    local root = resolve(path:match("^(/Engine/Transient%.[^%.]+%.[^%.]+)"))
+    -- The top of the button's real parent chain, not of its name: the away
+    -- team hero buttons are named as top-level widgets but sit in a panel
+    -- inside the loadout ("1 of 1" in the log, 2026-10-11).
+    local root = resolve(path)
     if not root then return end
+    for _ = 1, 64 do
+        local up = up_one(root)
+        if not up then break end
+        root = up
+    end
     local list = {}
     buttons_in(root, list, 0)
     for i, b in ipairs(list) do
         if path_of(b) == path then
             local target = list[i + dir]
             -- Only along a row: the nearest panel holding both buttons must
-            -- be a HorizontalBox. In a vertical list the game moves focus
-            -- itself, and a late move of its own plus this one skipped an
-            -- item (reported by a JAWS user, 2026-10-11, not reproduced).
+            -- lay them out side by side (the away team slots are in a
+            -- HorizontalBox, the hero list in a UniformGridPanel). In a
+            -- vertical list the game moves focus itself, and a late move of
+            -- its own plus this one skipped an item (reported by a JAWS
+            -- user, 2026-10-11, not reproduced). A grid with several rows
+            -- (the full game may have more heroes) still gets the game's
+            -- own Up and Down where a row lies below.
             local row = target and shared_panel(b, target)
             print(string.format("[VoyagerAccess] arrow fallback: %d of %d -> %s (%s)\n", i, #list,
                 target and path_of(target):match("([^%.]+)$") or "edge", row or "no row"))
-            if target and row == "HorizontalBox" then target:SetFocus() end
+            if target and ROWS[row] then target:SetFocus() end
             return
         end
     end
