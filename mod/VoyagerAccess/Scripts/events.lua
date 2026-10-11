@@ -51,7 +51,8 @@ local function option_for(wording)
     return nil
 end
 
--- "good 70 percent, bad 30 percent", or nil.
+-- "Good: 70% chance of a good outcome, 30% chance of a bad
+-- outcome", or nil.
 local function chances(o)
     local list, total = {}, 0
     local ok = pcall(function()
@@ -66,16 +67,35 @@ local function chances(o)
     end)
     if not ok or total == 0 then return nil end
     table.sort(list, function(a, b) return a.outcome < b.outcome end)
-    -- Short form (Casey, 2026-10-10): "good 80%, average 20%", or "always good".
+    -- "70% chance of a good outcome, 30% chance of a bad outcome" (Casey,
+    -- 2026-10-11: players misread "good 70%, average 30%" as statistics).
+    -- An option with one outcome says nothing: its bar is one solid block,
+    -- and "always good" confused more than it told (Casey, 2026-10-11).
     -- Sighted players see only the maximum reward and the colored bar, so
     -- no per-outcome amounts are read (Casey chose parity, 2026-10-11).
-    if #list == 1 then return "always " .. (OUTCOMES[list[1].outcome] or "the same") end
+    if #list == 1 then return nil end
     local out = {}
+    -- The glance a sighted player gets from the bar ("mostly green"),
+    -- said before the numbers in the game's own words (Casey, 2026-10-11).
+    -- Excellent and good count as good, bad and terrible as bad, and
+    -- average as half of each.
+    local score = 0
     for _, e in ipairs(list) do
-        out[#out + 1] = string.format("%s %d%%", OUTCOMES[e.outcome] or "outcome " .. e.outcome,
-            math.floor(e.weight * 100 / total + 0.5))
+        local share = e.weight / total
+        if e.outcome <= 1 then score = score + share
+        elseif e.outcome == 2 then score = score + share / 2 end
     end
-    return table.concat(out, ", ")
+    score = math.floor(score * 100 + 0.5)
+    -- One word; the percentages after it give the detail ("likely" was
+    -- redundant with them, Casey 2026-10-11).
+    local verdict = score >= 65 and "Good" or score > 35 and "Mixed" or "Bad"
+    for _, e in ipairs(list) do
+        local word = OUTCOMES[e.outcome] or "another"
+        local article = word == "another" and "" or (word:match("^[aeiou]") and "an " or "a ")
+        out[#out + 1] = string.format("%d%% chance of %s%s outcome",
+            math.floor(e.weight * 100 / total + 0.5), article, word)
+    end
+    return verdict .. ": " .. table.concat(out, ", ")
 end
 
 -- Rooms that improve an option. Each result's BonusWeight entries

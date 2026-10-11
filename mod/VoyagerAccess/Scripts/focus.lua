@@ -165,7 +165,64 @@ local function focus_first_run_screen()
     return nil
 end
 
+-- Up and Down move through every screen, whatever its layout (Casey,
+-- 2026-10-11: a screen reader user does not know whether things sit side
+-- by side or one above another). The game only moves focus along its own
+-- layout, so on a row (the away team slots) Up and Down did nothing. When
+-- an Up or Down leaves focus where it was, the mod moves to the previous or
+-- next on-screen button of the same window, in the window's widget order.
+-- Grids keep their own keys (ship view, System Map) and never get here.
+local pending_arrow = nil    -- { path = focused path, dir = -1 or 1, polls = n }
+local BUTTON_CLASS, USER_WIDGET, PANEL = nil, nil, nil
+
+local function buttons_in(w, out, depth)
+    if depth > 40 or not (w and w:IsValid()) then return end
+    if not require("screen").shown(w) then return end
+    if w:IsA(BUTTON_CLASS) then
+        if w:GetIsEnabled() then out[#out + 1] = w end
+        return
+    end
+    if w:IsA(USER_WIDGET) then
+        local tree = w.WidgetTree
+        local root = tree and tree:IsValid() and tree.RootWidget
+        if root and root:IsValid() then buttons_in(root, out, depth + 1) end
+    elseif w:IsA(PANEL) then
+        for i = 0, w:GetChildrenCount() - 1 do buttons_in(w:GetChildAt(i), out, depth + 1) end
+    end
+end
+
+local function step_in_window(path, dir)
+    BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+    USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
+    PANEL = PANEL or StaticFindObject("/Script/UMG.PanelWidget")
+    local root = resolve(path:match("^(/Engine/Transient%.[^%.]+%.[^%.]+)"))
+    if not root then return end
+    local list = {}
+    buttons_in(root, list, 0)
+    for i, b in ipairs(list) do
+        if path_of(b) == path then
+            local target = list[i + dir]
+            print(string.format("[VoyagerAccess] arrow fallback: %d of %d -> %s\n", i, #list,
+                target and path_of(target):match("([^%.]+)$") or "edge"))
+            if target then target:SetFocus() end
+            return
+        end
+    end
+end
+
 local function poll()
+    crumb.at("focus: arrow fallback")
+    if pending_arrow then
+        local a = pending_arrow
+        a.polls = a.polls + 1
+        if current ~= a.path then
+            pending_arrow = nil
+        elseif a.polls >= 2 then
+            pending_arrow = nil
+            local b = resolve(a.path)
+            if b and require("screen").shown(b) and not is_setting(b) then step_in_window(a.path, a.dir) end
+        end
+    end
     crumb.at("focus: pending click")
     if pending_click then
         local p = pending_click
@@ -201,6 +258,10 @@ local function poll()
         label = require("events").option_label(b)
     elseif require("warpcore").handles(path) then
         label = require("warpcore").label(path)
+    elseif require("awaymission").is_slot(path) then
+        label = require("awaymission").slot_label(path) or with_value(label_of(path), b)
+    elseif require("awaymission").is_hero_button(path) then
+        label = require("awaymission").hero_label(path) or with_value(label_of(path), b)
     elseif require("rooms").is_hero_button(path) then
         label = require("rooms").hero_label(path) or with_value(label_of(path), b)
     elseif require("rooms").is_module_button(path) then
@@ -438,13 +499,19 @@ function M.install()
         if require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
-        else last_dir = -1 end
+        else
+            last_dir = -1
+            if current then pending_arrow = { path = current, dir = -1, polls = 0 } end
+        end
     end)
     keys.on("down", function()
         if require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
-        else last_dir = 1 end
+        else
+            last_dir = 1
+            if current then pending_arrow = { path = current, dir = 1, polls = 0 } end
+        end
     end)
     local rooms = require("rooms")
     keys.on("left", function()

@@ -128,6 +128,26 @@ end
 -- CurrentValue and an AttributeIcon whose material names the skill
 -- ("MI_UI_Engineering"); the title text is empty. Read 2026-10-11 in Main
 -- Engineering: Tom Paris Command 21, Engineering 11, Medicine 17.
+-- "Command 21, Engineering 11, Medicine 17" from a hero's stat sheet; the
+-- away team plaques use the same sheet.
+function M.skills_of(sheet)
+    local skills = {}
+    if not (sheet and sheet:IsValid()) then return "" end
+    for i = 1, 3 do
+        local a = sheet["AttributeDisplay" .. i]
+        if a and a:IsValid() and (a.CurrentValue or 0) > 0 then
+            local skill = "Skill"
+            local im = a.AttributeIcon
+            if im and im:IsValid() then
+                local ro = im.Brush.ResourceObject
+                if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
+            end
+            skills[#skills + 1] = skill .. " " .. a.CurrentValue
+        end
+    end
+    return table.concat(skills, ", ")
+end
+
 function M.is_hero_button(path)
     return path ~= nil and path:find("WBP_RoomHeroSelectionButton_C_%d+") ~= nil
 end
@@ -144,21 +164,8 @@ function M.hero_label(path)
     if by.RankText then head = head .. ", " .. by.RankText:lower() end
     if by.TraitText and by.TraitText ~= "" then head = head .. ", " .. by.TraitText end
     parts[#parts + 1] = head
-    local skills = {}
-    local sheet = plaque.HeroStatSheet
-    for i = 1, 3 do
-        local a = sheet["AttributeDisplay" .. i]
-        if a and a:IsValid() and (a.CurrentValue or 0) > 0 then
-            local skill = "Skill"
-            local im = a.AttributeIcon
-            if im and im:IsValid() then
-                local ro = im.Brush.ResourceObject
-                if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
-            end
-            skills[#skills + 1] = skill .. " " .. a.CurrentValue
-        end
-    end
-    if #skills > 0 then parts[#parts + 1] = table.concat(skills, ", ") end
+    local skills = M.skills_of(plaque.HeroStatSheet)
+    if skills ~= "" then parts[#parts + 1] = skills end
     -- The bonus this hero gives the room ("+11% warp core repair rate.").
     for _, text in pairs(by) do
         if text:find("%%") then parts[#parts + 1] = (text:gsub("^%+", "Plus ")) end

@@ -4,7 +4,12 @@ Casey's rules for how the mod's keys behave (2026-10-10). Every new screen
 follows them.
 
 1. Anything that is a list moves with Up and Down Arrow: menus, settings,
-   rooms, points of interest, action lists.
+   rooms, points of interest, action lists. This holds whatever the screen's
+   layout: a screen reader user cannot tell whether things sit side by side
+   or one above another (Casey, 2026-10-11), so a row of buttons is a list
+   too. focus.lua enforces it: when Up or Down leaves focus where it was, the
+   mod moves to the previous or next on-screen button of the same window.
+   Only true grids (ship decks and rooms) use Left and Right to move.
 2. Home and End go to the top and bottom of any list or menu, unless the game
    itself uses the key there. (Checked 2026-10-10: the game binds neither
    anywhere.)
@@ -20,7 +25,11 @@ follows them.
 7. O reads the current objective; C reads the resources (cargo); R repeats the
    last line, tutorial or card.
 8. Never describe anything by color. A chance bar is read as its outcomes and
-   their chances (excellent, good, average, bad, terrible).
+   their chances (excellent, good, average, bad, terrible), after the
+   rewards, worded "Good: 70% chance of a good outcome, 30% chance of a bad
+   outcome" (Casey, 2026-10-11). The one-word verdict is the sighted glance:
+   Good (65% or more on the good side, average counting half), Mixed, or Bad
+   (35% or less). A bar with one outcome is not read.
 9. A key the mod uses must be unbound in the game in that context
    (the game's own key bindings), because the game also receives it.
 

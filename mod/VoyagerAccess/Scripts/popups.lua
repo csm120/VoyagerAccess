@@ -49,6 +49,9 @@ local WATCH = {
     "WBP_StoryDetailView_C", "WBP_ResourceEventDetailView_C",
     "WBP_GenericLocationDetailView_C", "WBP_AwayMissionDetailView_C",
     "WBP_AwayMissionEventView_C", "WBP_PoiEventWidget_C",
+    -- Away team selection: the mission, heroes needed, recommendations and
+    -- challenges (awaymission.lua reads the slots and heroes)
+    "WBP_AwayMissionLoadout_C",
     -- First launch only: Performance Selection, then Gamma
     "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C",
 }
@@ -219,7 +222,8 @@ local function poi_event(parts, path)
 end
 
 local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
-    WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end }
+    WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end,
+    WBP_AwayMissionLoadout_C = function() return require("awaymission").window_text() end }
 
 -- All on-screen text inside the widget at path, in reading order.
 function M.text_under(path)
