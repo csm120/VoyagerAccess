@@ -20,8 +20,8 @@ follows them.
 4. Enter does the selected thing. Where a thing has more than one action,
    Enter opens a short list of its actions instead.
 5. Backspace goes back, or closes a list the mod opened.
-6. F1 says the keys for the current screen. The first time each kind of
-   screen comes up in a session, "Press F1 for help" is said once.
+6. F1 says the keys for the current screen. No "Press F1 for help" hint is
+   spoken on screens (Casey, 2026-10-11: it repeated on every screen).
 7. O reads the current objective; C reads the resources (cargo); R repeats the
    last line, tutorial or card.
 8. Never describe anything by color. A chance bar is read as its outcomes and

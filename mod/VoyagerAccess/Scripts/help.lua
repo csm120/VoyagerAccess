@@ -1,14 +1,11 @@
--- F1: the keys for the screen Casey is on. The first time each kind of
--- screen comes up in a session, "Press F1 for help" is said once (Casey,
--- 2026-10-10: "switch the power on" did not say how). F1 is unused by the
--- game (the game's own key bindings).
+-- F1: the keys for the screen Casey is on. F1 is unused by the game
+-- (the game's own key bindings). The "Press F1 for help" hint on each new kind
+-- of screen was removed (Casey, 2026-10-11): it came back on every screen
+-- after each mod reload and update.
 
 local speech = require("speech")
-local crumb = require("crumb")
 
 local M = {}
-
-local INTERVAL_MS = 500
 
 local HELP = {
     cutscene = "Cutscene. Shift+Enter skips it.",
@@ -57,25 +54,8 @@ function M.say_help()
     speech.say(HELP[ctx] .. (ctx ~= "none" and " " .. HELP.none or ""), true)
 end
 
-local hinted = { none = true }
-local last = nil
-
-local function poll()
-    crumb.at("help: poll")
-    local ctx = M.context()
-    if ctx ~= last and not hinted[ctx] then
-        hinted[ctx] = true
-        speech.say("Press F1 for help.", false)
-    end
-    last = ctx
-end
-
 function M.install()
     require("keys").on("f1", M.say_help)
-    LoopInGameThreadWithDelay(INTERVAL_MS, function()
-        local ok, err = pcall(poll)
-        if not ok then print("[VoyagerAccess] help error: " .. tostring(err) .. "\n") end
-    end)
 end
 
 return M
