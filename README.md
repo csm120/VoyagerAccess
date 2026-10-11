@@ -1,0 +1,75 @@
+# Voyager Access
+
+Voyager Access makes Star Trek: Voyager - Across the Unknown playable with a screen reader. It speaks the menus, dialogue, tutorials, objectives, ship rooms, the System Map, point of interest events and your resources through NVDA or JAWS, and adds keyboard controls where the game only offers a mouse or a controller.
+
+So far it has been tested on the opening of the free Steam demo; the full game should work too. This is an early version, built by a blind player for blind players, so expect gaps. If something is silent or a key does nothing, please tell us.
+
+## Not official
+
+Voyager Access is a free, unofficial fan project. It is not made, endorsed or supported by Daedalic Entertainment, gameXcite, CBS Studios or Paramount. Star Trek and related marks are trademarks of CBS Studios Inc. Voyager Access does not include any of the game's files; you need your own copy of the game from Steam.
+
+## What you need
+
+1. Windows 10 or 11, 64-bit.
+2. Star Trek: Voyager - Across the Unknown, or its free demo, installed through Steam.
+3. NVDA or JAWS running. Without a screen reader, Windows' own speech is used.
+
+## Installing
+
+1. Download VoyagerAccessSetup.exe from the Releases page.
+2. Run it. Windows may say "Windows protected your PC", because the installer is not signed by a paid certificate. Choose More info, then Run anyway.
+3. The installer finds the game through Steam and adds Voyager Access to it. If the game is not installed, it offers to open Steam's install window for the free demo, or the store page for the full game.
+4. Some computers crash when the game uses DirectX 12, so Voyager Access sets the game to start in DirectX 11. To do that, Steam has to close for a moment and start again; the installer asks first. If you would rather not, choose No, and the game keeps its own setting.
+5. Start the game from Steam as usual. Speech starts when the game loads.
+
+Voyager Access starts quietly when you sign in to Windows, and only does anything while the game is running. When the game updates, or Steam's file check removes Voyager Access, it puts itself back before your next game.
+
+## Keys
+
+Press F1 anywhere in the game to hear the keys for the screen you are on.
+
+Everywhere:
+
+1. F1: help for this screen.
+2. O: your current objective.
+3. C: your resources (cargo), crew, and how long your fuel lasts.
+4. V: switch between the ship and the System Map.
+5. R: repeat the last line, tutorial or window.
+
+Menus and settings:
+
+1. Up and Down Arrow move through the items; Home and End go to the first and last.
+2. Enter selects. Backspace goes back.
+3. Left and Right Arrow change a setting's value.
+
+Dialogue and cutscenes:
+
+1. Enter continues. When choices appear, Up and Down Arrow move between them and Enter picks one.
+2. Shift+Enter skips ahead in a dialogue, or skips a cutscene.
+
+Ship view:
+
+1. Up and Down Arrow change deck; Left and Right Arrow move between the rooms on a deck.
+2. Home and End go to the first and last room on the deck.
+3. Enter opens the room. Its window reads its state, and each button reads what it costs and why it cannot be used yet. Left and Right Arrow switch the room's tabs. Escape closes the room.
+
+System Map:
+
+1. Up and Down Arrow move through the points of interest, nearest first. Each says whether it has been scanned and what it holds.
+2. Enter opens a list of actions: Scan, or Set course.
+
+Point of interest events: each option reads its reward, its risk, and its chances of a good or bad outcome. Locked options are read when the event opens, and with R.
+
+Tutorials are read aloud and then closed for you. R repeats the last one.
+
+## Uninstalling
+
+Use Windows Settings, Apps, Installed apps, Voyager Access, Uninstall. The uninstaller takes Voyager Access out of the game folder and puts back anything it replaced, removes the DirectX 11 setting if it added it, and leaves the game exactly as it was.
+
+## License
+
+Voyager Access's own code is under the MIT License (LICENSE). It includes RE-UE4SS, Tolk and the NVDA Controller Client under their own licenses; see THIRD-PARTY-NOTICES.txt.
+
+## For developers
+
+The mod is UE4SS Lua in mod/VoyagerAccess. The Windows program that speaks, reads keys and installs is Python in voyager/. Keyboard rules are in docs/keyboard.md, and the installer build in installer/. Building needs the UE4SS release zip and Tolk's DLLs in a vendor/ folder (see installer/build_payload.py and installer/VoyagerAccess.spec).

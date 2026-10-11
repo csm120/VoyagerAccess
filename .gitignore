@@ -1,0 +1,9 @@
+dumps/
+logs/
+*.pak
+*.utoc
+*.ucas
+vendor/
+__pycache__/
+build/
+dist/

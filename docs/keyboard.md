@@ -1,0 +1,40 @@
+# Keyboard rules for Voyager Access
+
+Casey's rules for how the mod's keys behave (2026-10-10). Every new screen
+follows them.
+
+1. Anything that is a list moves with Up and Down Arrow: menus, settings,
+   rooms, points of interest, action lists.
+2. Home and End go to the top and bottom of any list or menu, unless the game
+   itself uses the key there. (Checked 2026-10-10: the game binds neither
+   anywhere.)
+3. Left and Right Arrow change a value (settings), and are not used to move
+   through lists. Exception: the ship view is a grid, so Up and Down change
+   deck and Left and Right move along it (Casey, 2026-10-11: Page Up and Page
+   Down are hard to find on laptops).
+4. Enter does the selected thing. Where a thing has more than one action,
+   Enter opens a short list of its actions instead.
+5. Backspace goes back, or closes a list the mod opened.
+6. F1 says the keys for the current screen. The first time each kind of
+   screen comes up in a session, "Press F1 for help" is said once.
+7. O reads the current objective; C reads the resources (cargo); R repeats the
+   last line, tutorial or card.
+8. Never describe anything by color. A chance bar is read as its outcomes and
+   their chances (excellent, good, average, bad, terrible).
+9. A key the mod uses must be unbound in the game in that context
+   (the game's own key bindings), because the game also receives it.
+
+## Keys in use
+
+1. Everywhere: F1 help, O objective, C resources, V ship view or System Map,
+   R repeat.
+2. Menus and settings: Up, Down, Home, End, Enter, Backspace; Left and Right
+   change a setting.
+3. Dialogue: Enter continues, Shift+Enter skips ahead.
+4. Cutscene: Shift+Enter skips.
+5. Ship view: Up and Down (or Page Up and Page Down) change deck, Left and
+   Right move along it, Home and End go to the ends of the deck, Enter opens
+   a room. In a room window: Up and Down through its buttons, Left and Right
+   switch tabs, Escape closes it (the game's own Escape).
+6. System map: Up and Down through the points of interest, Home and End,
+   Enter opens the action list (Scan, Set course).
