@@ -16,13 +16,16 @@ Voyager Access is a free, unofficial fan project. It is not made, endorsed or su
 
 ## Installing
 
-1. Download VoyagerAccessSetup.exe from the Releases page.
-2. Run it. Windows may say "Windows protected your PC", because the installer is not signed by a paid certificate. Choose More info, then Run anyway.
-3. The installer finds the game through Steam and adds Voyager Access to it. If the game is not installed, it offers to open Steam's install window for the free demo, or the store page for the full game.
-4. Some computers crash when the game uses DirectX 12, so Voyager Access sets the game to start in DirectX 11. To do that, Steam has to close for a moment and start again; the installer asks first. If you would rather not, choose No, and the game keeps its own setting.
-5. Start the game from Steam as usual. Speech starts when the game loads.
+1. [Download the Voyager Access installer](https://github.com/csm120/VoyagerAccess/releases/latest/download/VoyagerAccessSetup.exe). This link always gets the newest version.
+2. Open the file you downloaded. If Windows says "Windows protected your PC", choose More info, then Run anyway. (Windows says this because the installer is not signed by a paid certificate.)
+3. The installer finds the game in Steam and adds Voyager Access to it, then tells you when it is ready.
+4. Start the game from Steam as usual. Speech starts when the game loads.
 
-Voyager Access starts quietly when you sign in to Windows, and only does anything while the game is running. When the game updates, or Steam's file check removes Voyager Access, it puts itself back before your next game.
+You may be asked one question along the way. Some computers crash when the game uses DirectX 12, so Voyager Access sets the game to use DirectX 11, and Steam has to close for a moment and start again to do that. Choose Yes to let it, or No to leave the game's setting alone.
+
+If the game is not installed yet, the installer offers to open Steam's install window for the free demo, or the store page for the full game.
+
+After that, there is nothing to look after. Voyager Access starts quietly when you sign in to Windows and only does anything while the game is running. It updates itself while the game is closed and tells you when it has, and if a game update removes it, it puts itself back before you play.
 
 ## Keys
 
