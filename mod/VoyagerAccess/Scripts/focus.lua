@@ -191,6 +191,33 @@ local function buttons_in(w, out, depth)
     end
 end
 
+-- The widget above w, crossing from a UserWidget's tree to the UserWidget.
+local function up_one(w)
+    local parent = w:GetParent()
+    if parent and parent:IsValid() then return parent end
+    local tree = w:GetOuter()
+    local owner = tree and tree:IsValid() and tree:GetOuter()
+    if owner and owner:IsValid() and owner:IsA(USER_WIDGET) then return owner end
+    return nil
+end
+
+-- Class name of the nearest panel that holds both a and b, or nil.
+local function shared_panel(a, b)
+    local above = {}
+    local node, hops = up_one(a), 0
+    while node and hops < 64 do
+        above[path_of(node)] = node
+        node, hops = up_one(node), hops + 1
+    end
+    node, hops = up_one(b), 0
+    while node and hops < 64 do
+        local hit = above[path_of(node)]
+        if hit then return hit:GetClass():GetFName():ToString() end
+        node, hops = up_one(node), hops + 1
+    end
+    return nil
+end
+
 local function step_in_window(path, dir)
     BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
     USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
@@ -202,9 +229,14 @@ local function step_in_window(path, dir)
     for i, b in ipairs(list) do
         if path_of(b) == path then
             local target = list[i + dir]
-            print(string.format("[VoyagerAccess] arrow fallback: %d of %d -> %s\n", i, #list,
-                target and path_of(target):match("([^%.]+)$") or "edge"))
-            if target then target:SetFocus() end
+            -- Only along a row: the nearest panel holding both buttons must
+            -- be a HorizontalBox. In a vertical list the game moves focus
+            -- itself, and a late move of its own plus this one skipped an
+            -- item (reported by a JAWS user, 2026-10-11, not reproduced).
+            local row = target and shared_panel(b, target)
+            print(string.format("[VoyagerAccess] arrow fallback: %d of %d -> %s (%s)\n", i, #list,
+                target and path_of(target):match("([^%.]+)$") or "edge", row or "no row"))
+            if target and row == "HorizontalBox" then target:SetFocus() end
             return
         end
     end

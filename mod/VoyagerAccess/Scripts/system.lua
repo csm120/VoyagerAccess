@@ -184,6 +184,50 @@ local function selected_point()
     return i and list[i] or nil
 end
 
+-- Set course sometimes did nothing (Casey, 2026-10-11, not caught in a
+-- log; it worked on the next try). The game has a silent travel error
+-- (STVUserError_CanTravelSilent, SetCourseErrorSilent) next to the ones it
+-- shows as toasts, and set course is a hold-to-charge input the mod fires
+-- in one go. Cause not known yet, so: watch whether Voyager starts moving
+-- or the pawn has a travel target, say so if neither happens within six
+-- seconds, and log what the pawn had selected for the next diagnosis.
+local function short(o)
+    return (o and o:IsValid()) and o:GetFullName():match("([^%.]+)$") or "none"
+end
+
+local function verify_course(name)
+    local ship = voyager()
+    local start = ship and ship:K2_GetActorLocation()
+    if not start then return end
+    local x0, y0 = start.X, start.Y
+    local pw = pawn()
+    print(string.format("[VoyagerAccess] course: selected=%s travel=%s\n",
+        short(pw and pw.SelectedActor), short(pw and pw.PoiSelectedForTravel)))
+    local function check(tries)
+        local ok, done = pcall(function()
+            local v = voyager()
+            local at = v and v:K2_GetActorLocation()
+            if at and ((at.X - x0) ^ 2 + (at.Y - y0) ^ 2) > 1 then return true end
+            local q = pawn()
+            local t = q and q.PoiSelectedForTravel
+            return t ~= nil and t:IsValid()
+        end)
+        if ok and done then
+            print("[VoyagerAccess] course: under way\n")
+            return
+        end
+        if tries > 1 then
+            ExecuteInGameThreadWithDelay(2000, function() check(tries - 1) end)
+            return
+        end
+        local q = pawn()
+        print(string.format("[VoyagerAccess] course: not set (selected=%s travel=%s)\n",
+            short(q and q.SelectedActor), short(q and q.PoiSelectedForTravel)))
+        speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
+    end
+    ExecuteInGameThreadWithDelay(2000, function() check(3) end)
+end
+
 local function run(action, p)
     local pw = pawn()
     if not pw then return end
@@ -218,6 +262,7 @@ local function run(action, p)
         pw:SetFocusPoint(p.actor)
         pw:OnSetCourseActionStarted({})
         pw:OnSetCourseActionTriggered({})
+        verify_course(name)
     end
 end
 
