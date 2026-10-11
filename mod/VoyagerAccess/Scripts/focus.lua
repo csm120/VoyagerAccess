@@ -168,11 +168,17 @@ end
 -- Up and Down move through every screen, whatever its layout (Casey,
 -- 2026-10-11: a screen reader user does not know whether things sit side
 -- by side or one above another). The game only moves focus along its own
--- layout, so on a row (the away team slots) Up and Down did nothing. When
--- an Up or Down leaves focus where it was, the mod moves to the previous or
--- next on-screen button of the same window, in the window's widget order.
--- Grids keep their own keys (ship view, System Map) and never get here.
-local pending_arrow = nil    -- { path = focused path, dir = -1 or 1, polls = n }
+-- layout, so on a row (the away team slots) Up and Down did nothing, or
+-- jumped to whatever lay below the row: Down on slot 1 went to Start
+-- Mission and skipped slot 2 (2026-10-11). Moving focus from the mod after
+-- the key raced the game's own move (items skipped, then a quarter-second
+-- stall while focus was pulled back). Instead, when focus enters a window
+-- that has a row, the mod gives the row's buttons and their neighbors
+-- explicit Up and Down navigation rules in the window's widget order, so
+-- the game itself moves to the right button. Other lists keep the game's
+-- own navigation. Grids keep their own keys (ship view, System Map).
+local NAV_UP, NAV_DOWN = 2, 3     -- EUINavigation
+local wired = {}                  -- window path -> signature of its buttons
 local BUTTON_CLASS, USER_WIDGET, PANEL = nil, nil, nil
 
 local function buttons_in(w, out, depth)
@@ -220,7 +226,7 @@ end
 
 local ROWS = { HorizontalBox = true, UniformGridPanel = true, WrapBox = true }
 
-local function step_in_window(path, dir)
+local function wire_rows(path)
     BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
     USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
     PANEL = PANEL or StaticFindObject("/Script/UMG.PanelWidget")
@@ -236,39 +242,35 @@ local function step_in_window(path, dir)
     end
     local list = {}
     buttons_in(root, list, 0)
-    for i, b in ipairs(list) do
-        if path_of(b) == path then
-            local target = list[i + dir]
-            -- Only along a row: the nearest panel holding both buttons must
-            -- lay them out side by side (the away team slots are in a
-            -- HorizontalBox, the hero list in a UniformGridPanel). In a
-            -- vertical list the game moves focus itself, and a late move of
-            -- its own plus this one skipped an item (reported by a JAWS
-            -- user, 2026-10-11, not reproduced). A grid with several rows
-            -- (the full game may have more heroes) still gets the game's
-            -- own Up and Down where a row lies below.
-            local row = target and shared_panel(b, target)
-            print(string.format("[VoyagerAccess] arrow fallback: %d of %d -> %s (%s)\n", i, #list,
-                target and path_of(target):match("([^%.]+)$") or "edge", row or "no row"))
-            if target and ROWS[row] then target:SetFocus() end
-            return
+    local names = {}
+    for i, b in ipairs(list) do names[i] = path_of(b) end
+    local key, sig = path_of(root), table.concat(names, "|")
+    if wired[key] == sig then return end
+    wired[key] = sig
+    -- A button is in a row when the nearest panel it shares with a
+    -- neighbor lays them side by side. A grid with several rows (the full
+    -- game may have more heroes) is still walked in widget order.
+    local in_row = {}
+    for i = 1, #list - 1 do
+        if ROWS[shared_panel(list[i], list[i + 1])] then
+            in_row[i], in_row[i + 1] = true, true
         end
+    end
+    local n = 0
+    for i = 1, #list - 1 do
+        if in_row[i] or in_row[i + 1] then
+            list[i]:SetNavigationRuleExplicit(NAV_DOWN, list[i + 1])
+            list[i + 1]:SetNavigationRuleExplicit(NAV_UP, list[i])
+            n = n + 1
+        end
+    end
+    if n > 0 then
+        print(string.format("[VoyagerAccess] rows wired: %d links among %d buttons in %s\n",
+            n, #list, key:match("([^%.]+)$")))
     end
 end
 
 local function poll()
-    crumb.at("focus: arrow fallback")
-    if pending_arrow then
-        local a = pending_arrow
-        a.polls = a.polls + 1
-        if current ~= a.path then
-            pending_arrow = nil
-        elseif a.polls >= 2 then
-            pending_arrow = nil
-            local b = resolve(a.path)
-            if b and require("screen").shown(b) and not is_setting(b) then step_in_window(a.path, a.dir) end
-        end
-    end
     crumb.at("focus: pending click")
     if pending_click then
         local p = pending_click
@@ -289,6 +291,10 @@ local function poll()
     if path == current then return end
     crumb.at("focus: changed to " .. tostring(path))
     current = path
+    if path then
+        local ok, err = pcall(wire_rows, path)
+        if not ok then print("[VoyagerAccess] rows error: " .. tostring(err) .. "\n") end
+    end
     if not path then return end
     -- Arriving back at a button Enter was pressed on closes everything opened after it.
     for i = #back_stack, 1, -1 do
@@ -545,19 +551,13 @@ function M.install()
         if require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
-        else
-            last_dir = -1
-            if current then pending_arrow = { path = current, dir = -1, polls = 0 } end
-        end
+        else last_dir = -1 end
     end)
     keys.on("down", function()
         if require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
-        else
-            last_dir = 1
-            if current then pending_arrow = { path = current, dir = 1, polls = 0 } end
-        end
+        else last_dir = 1 end
     end)
     local rooms = require("rooms")
     keys.on("left", function()
