@@ -27,7 +27,8 @@ follows them.
 ## Keys in use
 
 1. Everywhere: F1 help, O objective, C resources, V ship view or System Map,
-   R repeat.
+   R repeat. F12 belongs to the helper, not the mod: after "fixes applied" it
+   restarts the game to finish an update (does nothing otherwise).
 2. Menus and settings: Up, Down, Home, End, Enter, Backspace; Left and Right
    change a setting.
 3. Dialogue: Enter continues, Shift+Enter skips ahead.

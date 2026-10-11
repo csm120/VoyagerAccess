@@ -25,7 +25,13 @@ You may be asked one question along the way. Some computers crash when the game 
 
 If the game is not installed yet, the installer offers to open Steam's install window for the free demo, or the store page for the full game.
 
-After that, there is nothing to look after. Voyager Access starts quietly when you sign in to Windows and only does anything while the game is running. It updates itself while the game is closed and tells you when it has, and if a game update removes it, it puts itself back before you play.
+After that, there is nothing to look after. Voyager Access starts quietly when you sign in to Windows and only does anything while the game is running. If a game update removes it, it puts itself back before you play.
+
+Voyager Access also keeps itself up to date. It checks for a new version when the game starts and every 10 minutes while you play:
+
+1. If an update turns up in the first minute, while you are still at the main menu, the game closes, updates and starts again by itself.
+2. If one turns up later, its fixes go into the game straight away and you hear "Voyager Access fixes applied." The rest finishes when you close the game, or press F12 to restart and finish it now. The game only saves at story points, so it is never closed unless you press F12.
+3. After an update you hear which version you now have.
 
 ## Keys
 
@@ -38,6 +44,7 @@ Everywhere:
 3. C: your resources (cargo), crew, and how long your fuel lasts.
 4. V: switch between the ship and the System Map.
 5. R: repeat the last line, tutorial or window.
+6. F12: after "Voyager Access fixes applied," restart the game to finish the update.
 
 Menus and settings:
 
