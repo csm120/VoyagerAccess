@@ -1,14 +1,19 @@
 """Voyager Access: the program the installer puts on the computer.
 
-    VoyagerAccess.exe                   wait for the game and speak while it runs
-                                        (started at sign-in; one copy at a time)
+    VoyagerAccess.exe --launch CMD...   Steam runs this in place of the game (the
+                                        game's launch options): put the mod in if
+                                        needed, start CMD (the game), speak and check
+                                        for updates while it runs, exit with it
+    VoyagerAccess.exe                   what setup runs after installing: put the
+                                        mod in, set the launch options if missing,
+                                        start the game again after an update, exit
     VoyagerAccess.exe --install-mod     put the mod into the game, with a message
     VoyagerAccess.exe --uninstall-mod   take it out of every game it was put in
     VoyagerAccess.exe --speech-check F  write a report on the bundled files to F
 
-While the game is closed, the waiting copy also keeps the mod installed and
-current: after an update, or if Steam's file check removed it, it puts the
-mod back before the next launch.
+Nothing runs at Windows sign-in (Casey, 2026-10-11): the helper starts with
+the game and ends with it. Before starting the game it puts the mod back if
+an update or Steam's file check removed it.
 """
 import argparse
 import ctypes
@@ -26,7 +31,6 @@ from .version import __version__
 PAYLOAD = RESOURCES / "payload"
 TITLE = "Voyager Access"
 GAME = "Star Trek: Voyager - Across the Unknown"
-CHECK_INSTALL_SECONDS = 30
 
 log = logging.getLogger("voyager")
 
@@ -117,63 +121,101 @@ def _load_launch_record():
         return []
 
 
-def set_dx11(games):
-    """Adds -dx11 to each game's Steam launch options. On Casey's computer the
-    game crashed under DirectX 12 and ran under DirectX 11 (2026-10-10), and
-    Casey asked for it to be set automatically. Only options this adds are
-    recorded, so uninstall removes only those."""
-    import json
+def helper_exe():
+    """This program's own path when installed (a PyInstaller build), else
+    None: a development run must not point Steam at python.exe."""
+    return str(Path(sys.executable)) if getattr(sys, "frozen", False) else None
+
+
+def _needs_launch_edit(games, dx11):
     from . import launchopts
-    steam_dir = steam.steam_path()
-    files = launchopts.config_files(steam_dir)
+    exe = helper_exe()
     todo = []
-    for f in files:
+    for f in launchopts.config_files(steam.steam_path()):
         text = launchopts.read_file(f)
         for g in games:
-            if DX11 not in (launchopts.get_option(text, g.appid) or "").split():
-                todo.append((f, g.appid))
+            current = launchopts.unescape(launchopts.get_option(text, g.appid)) or ""
+            wrap = exe is not None and ('"%s" --launch ' % exe) not in current
+            add_dx11 = dx11 and DX11 not in current.split()
+            if wrap or add_dx11:
+                todo.append((f, g.appid, add_dx11, wrap))
+    return todo
+
+
+def set_launch_options(games, dx11=True, ask=None):
+    """Sets each game's Steam launch options so Steam starts this helper,
+    which starts the game (nothing runs at Windows sign-in; Casey,
+    2026-10-11), and adds -dx11 (the game crashed under DirectX 12 on
+    Casey's computer, 2026-10-10). Steam has to be closed while its file
+    is edited. What is added is recorded, so uninstall removes only that.
+    Returns False when the player declined or Steam would not close."""
+    import json
+    from . import launchopts
+    todo = _needs_launch_edit(games, dx11)
     if not todo:
-        return
-    if steam_running() and message(
-            "Some computers need this game to start in DirectX 11 mode, and Voyager Access sets that "
-            "for you. To do it, Steam has to close for a moment and start again.\n\n"
-            "Close and restart Steam now?", MB_YESNOCANCEL | MB_ICONQUESTION) != IDYES:
-        log.info("dx11 skipped by the player")
-        return
+        return True
+    if steam_running() and message(ask or (
+            "Voyager Access starts together with the game, so nothing of it runs when you are not "
+            "playing. To set that up, and to start the game in DirectX 11 mode, which some computers "
+            "need, Steam has to close for a moment and start again.\n\n"
+            "Close and restart Steam now? Without this, the game has no speech."),
+            MB_YESNOCANCEL | MB_ICONQUESTION) != IDYES:
+        log.info("launch options skipped by the player")
+        return False
     record = _load_launch_record()
+    exe = helper_exe()
 
     def edit():
-        for f, appid in todo:
-            created = launchopts.get_option(launchopts.read_file(f), appid) is None
-            if launchopts.edit_file(f, lambda t: launchopts.add_option(t, appid, DX11)):
-                record.append({"file": str(f), "appid": appid, "created": created})
-                log.info("added %s for %s in %s", DX11, appid, f)
+        for f, appid, add_dx11, wrap in todo:
+            if add_dx11:
+                created = launchopts.get_option(launchopts.read_file(f), appid) is None
+                if launchopts.edit_file(f, lambda t: launchopts.add_option(t, appid, DX11)):
+                    record.append({"file": str(f), "appid": appid, "created": created})
+                    log.info("added %s for %s in %s", DX11, appid, f)
+            if wrap:
+                info = {}
 
-    if _restart_steam(steam_dir, edit):
+                def change(t):
+                    new, i = launchopts.wrap_launch(t, appid, exe)
+                    if i:
+                        info.update(i)
+                    return new
+                if launchopts.edit_file(f, change):
+                    record.append(dict(kind="wrap", file=str(f), appid=appid, exe=exe, **info))
+                    log.info("launch options for %s in %s now start Voyager Access", appid, f)
+
+    if _restart_steam(steam.steam_path(), edit):
         LAUNCH_RECORD.parent.mkdir(parents=True, exist_ok=True)
         LAUNCH_RECORD.write_text(json.dumps(record, indent=1), encoding="utf-8")
-    else:
-        log.info("Steam did not close; dx11 not set")
+        return True
+    log.info("Steam did not close; launch options not set")
+    return False
 
 
-def unset_dx11():
-    """Removes the -dx11 options set_dx11 added, and nothing else."""
+def unset_launch_options():
+    """Removes what set_launch_options added (the wrapper and -dx11), and
+    nothing else."""
     from . import launchopts
     record = _load_launch_record()
     if not record:
         return
     if steam_running() and message(
-            "Voyager Access added a DirectX 11 setting to the game in Steam. To remove it, Steam has to "
+            "Voyager Access changed the game's launch options in Steam. To put them back, Steam has to "
             "close for a moment and start again.\n\nClose and restart Steam now?",
             MB_YESNOCANCEL | MB_ICONQUESTION) != IDYES:
         return
 
     def edit():
-        for entry in record:
+        # Newest first, so each edit is undone on the text it produced.
+        for entry in reversed(record):
             f = Path(entry["file"])
             try:
-                launchopts.edit_file(f, lambda t: launchopts.remove_option(
-                    t, entry["appid"], DX11, drop_empty=entry.get("created", False)))
+                if entry.get("kind") == "wrap":
+                    launchopts.edit_file(f, lambda t: launchopts.unwrap_launch(
+                        t, entry["appid"], entry["exe"], entry))
+                else:
+                    launchopts.edit_file(f, lambda t: launchopts.remove_option(
+                        t, entry["appid"], DX11, drop_empty=entry.get("created", False)))
             except OSError:
                 continue
 
@@ -208,7 +250,7 @@ def install_mod():
         except OSError as e:
             message(f"Voyager Access could not be added to the game.\n\n{e}", MB_OK | MB_ICONWARNING)
             return 1
-    set_dx11(games)
+    set_launch_options(games)
     names = " and ".join(g.name for g in games)
     message(f"Voyager Access is ready for {names}.\n\n"
             "Start the game from Steam as usual. Speech starts when the game loads.")
@@ -219,7 +261,7 @@ def uninstall_mod():
     while True:
         try:
             modfiles.uninstall_all(DATA_DIR)
-            unset_dx11()
+            unset_launch_options()
             return 0
         except modfiles.GameRunning:
             if message(f"{GAME} is running. Close the game, then choose Retry.",
@@ -228,69 +270,96 @@ def uninstall_mod():
 
 
 def single_instance():
-    """True for the first waiting copy; later copies exit."""
+    """True for the first helper; a second one (the game started again while
+    one was still running) just starts the game."""
     ctypes.windll.kernel32.CreateMutexW(None, False, "Local\\VoyagerAccessHelper")
     return ctypes.windll.kernel32.GetLastError() != 183  # ERROR_ALREADY_EXISTS
 
 
-def resident():
-    if not single_instance():
-        return 0
-    log.info("Voyager Access %s waiting for the game", __version__)
+def post_install():
+    """What setup runs after installing or updating. Upgrades arrive
+    silently (no --install-mod), so this also sets the launch options:
+    without them, nothing starts the helper and the game has no speech."""
+    log.info("Voyager Access %s installed", __version__)
     relaunch = updater.relaunch_target(UPDATE_MARKER)
-    news = update_news()
-    last_check = 0.0
+    keep_installed()
+    games = steam.find_games(steam.steam_path())
+    if games and helper_exe():
+        set_launch_options(games, dx11=False, ask=(
+            "Voyager Access now starts together with the game, so nothing of it runs when you are not "
+            "playing. To set that up, Steam has to close for a moment and start again.\n\n"
+            "Close and restart Steam now? Without this, the game has no speech."))
     if relaunch:
-        # Restarted for an update: put the new mod in, then start the game again.
-        keep_installed()
-        last_check = time.monotonic()
+        updater.clear_relaunch(UPDATE_MARKER)
         log.info("starting the game again (%s)", relaunch)
         import os
         os.startfile(f"steam://rungameid/{relaunch}")
-    next_update_check = time.monotonic() + FIRST_UPDATE_CHECK_SECONDS
-    pending = None            # (version, installer, scripts) found while the game ran
-    while True:
-        if modfiles.game_is_running():
-            log.info("game started")
-            session = PlaySession(found=pending)
-            tolk = Tolk(DEFAULT_TOLK)
-            try:
-                if news:
-                    tolk.say(news, False)
-                    news = None
+    return 0
 
-                def keep_going():
-                    if not modfiles.game_is_running():
-                        return False
-                    session.step(lambda text: tolk.say(text, True), apply_in_game)
-                    return not session.restart
 
-                serve(tolk, DEFAULT_FILE, keep_going, on_keys=session.key)
-                if session.restart and restart_for_update(tolk, session.found, session.early):
-                    return 0      # setup stops this copy and starts the new one
-            finally:
-                tolk.unload()
-            log.info("game exited")
-            RELOAD_FLAG.unlink(missing_ok=True)
-            session.wait()
-            pending = session.found
-            next_update_check = time.monotonic() + UPDATE_CHECK_SECONDS
-            last_check = 0.0
-        elif pending:
-            install_update(pending[0], pending[1])
-            pending = None
-        elif time.monotonic() - last_check >= CHECK_INSTALL_SECONDS:
-            last_check = time.monotonic()
-            keep_installed()
-        elif time.monotonic() >= next_update_check:
-            next_update_check = time.monotonic() + UPDATE_CHECK_SECONDS
-            try_update()
-        time.sleep(2)
+GAME_START_SECONDS = 180
+
+
+def launch_game(command):
+    """Steam's launch: start the game, speak while it runs, exit with it."""
+    import subprocess
+    if not command:
+        return 1
+    first = single_instance()
+    if first:
+        keep_installed()
+    log.info("starting the game: %s", " ".join(command))
+    # Start the speech file empty, before the mod can write to it: when the
+    # last session left a short file, the reader started past the mod's
+    # first line and "Voyager Access loaded" was missed (2026-10-11).
+    try:
+        Path(DEFAULT_FILE).parent.mkdir(parents=True, exist_ok=True)
+        Path(DEFAULT_FILE).write_text("", encoding="utf-8")
+    except OSError:
+        pass
+    try:
+        subprocess.Popen(command)
+    except OSError as e:
+        log.info("the game would not start: %s", e)
+        return 1
+    if not first:
+        return 0
+    news = update_news()
+    started = time.monotonic()
+    while not modfiles.game_is_running():
+        if time.monotonic() - started > GAME_START_SECONDS:
+            log.info("the game did not start")
+            return 0
+        time.sleep(1)
+    log.info("game started")
+    session = PlaySession()
+    tolk = Tolk(DEFAULT_TOLK)
+    try:
+        if news:
+            tolk.say(news, False)
+
+        def keep_going():
+            if not modfiles.game_is_running():
+                return False
+            session.step(lambda text: tolk.say(text, True), apply_in_game)
+            return not session.restart
+
+        serve(tolk, DEFAULT_FILE, keep_going, on_keys=session.key)
+        if session.restart and restart_for_update(tolk, session.found, session.early):
+            return 0      # setup stops this copy, and the new one starts the game
+    finally:
+        tolk.unload()
+    log.info("game exited")
+    RELOAD_FLAG.unlink(missing_ok=True)
+    session.wait()
+    if session.found:
+        install_update(session.found[0], session.found[1])
+    return 0
 
 
 # Updates (Casey, 2026-10-11): checked when the game starts and every ten
-# minutes while it runs, and while it is closed a minute after sign-in and
-# then every six hours.
+# minutes while it runs. Nothing checks while the game is closed: the helper
+# only runs with the game.
 # 1. Found within a minute of the game starting (intro or main menu): the
 #    game restarts to install it.
 # 2. Found later: the new Lua scripts go into the running game and the mod
@@ -299,8 +368,6 @@ def resident():
 #    progress is never closed without that key.
 # VOYAGER_UPDATE_FEED points the check elsewhere for testing (file:// works);
 # VOYAGER_PLAY_CHECK_SECONDS shortens the in-game interval for testing.
-FIRST_UPDATE_CHECK_SECONDS = 60
-UPDATE_CHECK_SECONDS = 6 * 3600
 PLAY_CHECK_SECONDS = int(os.environ.get("VOYAGER_PLAY_CHECK_SECONDS", 10 * 60))
 RESTART_WINDOW_SECONDS = 60
 RESTART_KEY = "f12"
@@ -486,12 +553,6 @@ def install_update(version, path, relaunch=None):
     updater.run_installer(path)
 
 
-def try_update():
-    found = fetch_update()
-    if found:
-        install_update(found[0], found[1])
-
-
 def speech_check(report):
     """Checks the bundled files a silent build would be missing."""
     lines, ok = [f"Voyager Access {__version__}"], True
@@ -519,6 +580,7 @@ def main(argv=None):
     group.add_argument("--install-mod", action="store_true")
     group.add_argument("--uninstall-mod", action="store_true")
     group.add_argument("--speech-check", metavar="REPORT")
+    group.add_argument("--launch", nargs=argparse.REMAINDER, metavar="GAME")
     args = ap.parse_args(argv)
     setup_logging()
     if args.install_mod:
@@ -527,7 +589,9 @@ def main(argv=None):
         return uninstall_mod()
     if args.speech_check:
         return speech_check(args.speech_check)
-    return resident()
+    if args.launch is not None:
+        return launch_game(args.launch)
+    return post_install()
 
 
 if __name__ == "__main__":

@@ -157,6 +157,17 @@ def relaunch_target(marker):
         return None
 
 
+def clear_relaunch(marker):
+    """Drops the relaunch request once acted on, keeping "expected" so the
+    next game start can still say whether the update worked."""
+    try:
+        data = json.loads(Path(marker).read_text(encoding="utf-8"))
+        data.pop("relaunch", None)
+        Path(marker).write_text(json.dumps(data), encoding="utf-8")
+    except (OSError, ValueError, AttributeError):
+        pass
+
+
 def read_marker(marker, running):
     """After an update: "updated", "failed", or None when there was none.
     The marker is removed once read."""

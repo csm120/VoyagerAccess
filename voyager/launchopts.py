@@ -104,6 +104,81 @@ def remove_option(text, appid, option, drop_empty=False):
     return text
 
 
+def escape(value):
+    """A launch option as Steam stores it in the file (\\ and \" escaped)."""
+    return value.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def unescape(raw):
+    return re.sub(r"\\(.)", r"\1", raw) if raw is not None else None
+
+
+def _drop_line(text, appid):
+    """Removes the game's LaunchOptions line, and its app block if that is
+    then empty (both were created by this program)."""
+    _, values = _scan(text)
+    span = values.get(APPS + (appid, "launchoptions"))
+    if not span:
+        return text
+    line_start = text.rfind("\n", 0, span[0])
+    text = text[:line_start] + text[span[1] + 1:]
+    blocks, _ = _scan(text)
+    app = blocks.get(APPS + (appid,))
+    if app and not text[app[0] + 1:app[1]].strip():
+        key = text.rfind('"%s"' % appid, 0, app[0])
+        start = text.rfind("\n", 0, key)
+        text = text[:start] + text[app[1] + 1:]
+    return text
+
+
+def _set_value(text, appid, value):
+    """Sets the game's launch options to value (unescaped), adding the line
+    or the app block when missing."""
+    _, values = _scan(text)
+    span = values.get(APPS + (appid, "launchoptions"))
+    raw = escape(value)
+    if span:
+        return text[:span[0]] + raw + text[span[1]:]
+    return add_option(text, appid, raw)
+
+
+def _wrapper(exe):
+    return '"%s" --launch ' % exe
+
+
+def wrap_launch(text, appid, exe):
+    """Makes Steam start exe with the game's own command line:
+    '"exe" --launch %command% <the options that were there>'. Options that
+    already use %command% keep their own layout around it. Returns (text,
+    info) where info is what unwrap_launch needs, or (text, None) when the
+    game is already wrapped."""
+    appid = str(appid)
+    current = unescape(get_option(text, appid))
+    if current is not None and _wrapper(exe) in current:
+        return text, None
+    had_command = current is not None and "%command%" in current
+    if had_command:
+        value = current.replace("%command%", _wrapper(exe) + "%command%", 1)
+    else:
+        value = (_wrapper(exe) + "%command% " + (current or "")).strip()
+    info = {"had_command": had_command, "created": current is None}
+    return _set_value(text, appid, value), info
+
+
+def unwrap_launch(text, appid, exe, info):
+    """Undoes wrap_launch, keeping anything the player added since."""
+    appid = str(appid)
+    current = unescape(get_option(text, appid))
+    if current is None or _wrapper(exe) not in current:
+        return text
+    value = current.replace(_wrapper(exe), "", 1)
+    if not info.get("had_command"):
+        value = value.replace("%command%", "", 1).strip()
+    if not value and info.get("created"):
+        return _drop_line(text, appid)
+    return _set_value(text, appid, value)
+
+
 def read_file(path):
     """The file's text exactly as stored (no newline translation)."""
     return Path(path).read_bytes().decode("utf-8", errors="surrogateescape")

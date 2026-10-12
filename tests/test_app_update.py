@@ -217,6 +217,62 @@ class RelaunchMarkerTests(unittest.TestCase):
             self.assertIsNone(updater.relaunch_target(marker))
 
 
+class LaunchModeTests(unittest.TestCase):
+    """Steam runs '"VoyagerAccess.exe" --launch %command% -dx11'."""
+
+    def test_launch_passes_the_whole_game_command(self):
+        saved = app.launch_game, app.setup_logging
+        got = []
+        app.launch_game = lambda cmd: got.append(cmd) or 0
+        app.setup_logging = lambda: None
+        try:
+            app.main(["--launch", r"C:\Games\STVoyager.exe", "-dx11", "--some-flag"])
+        finally:
+            app.launch_game, app.setup_logging = saved
+        self.assertEqual(got, [[r"C:\Games\STVoyager.exe", "-dx11", "--some-flag"]])
+
+    def test_no_arguments_is_the_after_install_run(self):
+        saved = app.post_install, app.setup_logging
+        called = []
+        app.post_install = lambda: called.append(True) or 0
+        app.setup_logging = lambda: None
+        try:
+            app.main([])
+        finally:
+            app.post_install, app.setup_logging = saved
+        self.assertEqual(called, [True])
+
+    def test_launch_empties_the_speech_file_before_the_game_starts(self):
+        # "Voyager Access loaded" was missed when the last session left a
+        # short speech file: the reader started past the mod's first line.
+        import subprocess
+        saved = (app.DEFAULT_FILE, subprocess.Popen, app.single_instance, app.keep_installed)
+        seen = []
+        with tempfile.TemporaryDirectory() as d:
+            speech = Path(d) / "speech.txt"
+            speech.write_text("I|old\n")
+            app.DEFAULT_FILE = speech
+            subprocess.Popen = lambda cmd: seen.append(speech.read_text())
+            app.single_instance = lambda: False      # second copy: start the game and return
+            app.keep_installed = lambda: None
+            try:
+                app.launch_game(["game.exe"])
+            finally:
+                app.DEFAULT_FILE, subprocess.Popen, app.single_instance, app.keep_installed = saved
+        self.assertEqual(seen, [""])
+
+    def test_development_run_never_points_steam_at_python(self):
+        self.assertIsNone(app.helper_exe())
+
+    def test_clear_relaunch_keeps_the_expected_version(self):
+        with tempfile.TemporaryDirectory() as d:
+            m = Path(d) / "pending-update.json"
+            updater.write_marker(m, "9.9.9", relaunch="4054540")
+            updater.clear_relaunch(m)
+            self.assertIsNone(updater.relaunch_target(m))
+            self.assertEqual(json.loads(m.read_text())["expected"], "9.9.9")
+
+
 class InGameUpdateTests(unittest.TestCase):
     """2026-10-11: the update-reload flag froze the game twice in four
     tries, so an update found during play must not reload the mod."""

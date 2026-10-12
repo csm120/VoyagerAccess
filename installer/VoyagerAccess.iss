@@ -3,10 +3,12 @@
 ; prompt, and the welcome, folder and ready pages skipped.
 ; Build with installer\build.ps1.
 ;
-; Setup installs VoyagerAccess.exe, starts it at every sign-in (it waits
-; quietly for the game), and runs it once with --install-mod, which puts the
-; mod into the game and says so. Uninstall takes the mod back out of the
-; game first, so the game folder is left as it was found.
+; Setup installs VoyagerAccess.exe and runs it once with --install-mod,
+; which puts the mod into the game, points the game's Steam launch options
+; at the helper (Steam then starts the helper, and the helper starts the
+; game), and says so. Nothing runs at Windows sign-in (Casey, 2026-10-11).
+; Uninstall takes the mod and the launch options back out first, so the
+; game folder and Steam are left as they were found.
 
 #define MyAppName "Voyager Access"
 #define MyAppPublisher "Web Friendly Help"
@@ -60,9 +62,9 @@ Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion
 
 [Registry]
-; Start the waiting helper at sign-in. It uses almost nothing until the
-; game starts.
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; Flags: uninsdeletevalue
+; Versions up to 0.2.0 started a waiting helper at sign-in. Remove that
+; entry when upgrading: the helper now starts with the game.
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: none; ValueName: "{#MyAppName}"; Flags: deletevalue
 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}\Add Voyager Access to the game"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod"
@@ -70,10 +72,14 @@ Name: "{autoprograms}\{#MyAppName}\Read me"; Filename: "{app}\README.txt"
 
 [Run]
 ; Interactive install: add the mod to the game and say so. A silent
-; install (the updater) skips this; the waiting helper reinstalls the mod
-; itself when it sees the new version.
+; install (the updater) skips this; the run without arguments that follows
+; puts the new mod in, sets the launch options if they are missing (asking
+; to restart Steam), and starts the game again after an update.
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod"; Flags: skipifsilent
-Filename: "{app}\{#MyAppExeName}"; Flags: nowait
+; Only for silent installs (updates): an interactive install's
+; --install-mod has already done this, and a second Steam prompt there
+; would be confusing.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "StopHelper"

@@ -115,5 +115,50 @@ class LaunchOptionTests(unittest.TestCase):
         self.assertEqual(get_option(BASE % (DEMO_WITH % "-dx11"), "4054540"), "-dx11")
 
 
+EXE = r"C:\Users\Player\AppData\Local\Programs\VoyagerAccess\VoyagerAccess.exe"
+
+
+class WrapTests(unittest.TestCase):
+    """Steam starts the helper, and the helper starts the game (Casey,
+    2026-10-11: nothing of ours runs at Windows sign-in)."""
+
+    def wrapped(self, text):
+        from voyager.launchopts import unescape, wrap_launch
+        new, info = wrap_launch(text, "4054540", EXE)
+        return new, info, unescape(get_option(new, "4054540"))
+
+    def test_wraps_when_there_are_no_options(self):
+        _, info, value = self.wrapped(BASE % DEMO_WITHOUT)
+        self.assertEqual(value, '"%s" --launch %%command%%' % EXE)
+        self.assertTrue(info["created"])
+
+    def test_keeps_plain_options_after_the_game(self):
+        _, _, value = self.wrapped(BASE % (DEMO_WITH % "-dx11"))
+        self.assertEqual(value, '"%s" --launch %%command%% -dx11' % EXE)
+
+    def test_wraps_inside_an_existing_command_line(self):
+        _, info, value = self.wrapped(BASE % (DEMO_WITH % "LANG=x %command% -foo"))
+        self.assertEqual(value, 'LANG=x "%s" --launch %%command%% -foo' % EXE)
+        self.assertTrue(info["had_command"])
+
+    def test_wrapping_twice_changes_nothing(self):
+        from voyager.launchopts import wrap_launch
+        once, _ = wrap_launch(BASE % (DEMO_WITH % "-dx11"), "4054540", EXE)
+        twice, info = wrap_launch(once, "4054540", EXE)
+        self.assertEqual(twice, once)
+        self.assertIsNone(info)
+
+    def test_file_value_is_escaped_for_steam(self):
+        new, _, _ = self.wrapped(BASE % DEMO_WITHOUT)
+        self.assertIn('"\\"C:\\\\Users\\\\Player', new)
+
+    def test_unwrap_restores_every_case_exactly(self):
+        from voyager.launchopts import unwrap_launch, wrap_launch
+        for original in (BASE % DEMO_WITHOUT, BASE % (DEMO_WITH % "-dx11"),
+                         BASE % (DEMO_WITH % "LANG=x %command% -foo"), BASE % ""):
+            new, info = wrap_launch(original, "4054540", EXE)
+            self.assertEqual(unwrap_launch(new, "4054540", EXE, info), original)
+
+
 if __name__ == "__main__":
     unittest.main()
