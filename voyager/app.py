@@ -422,6 +422,7 @@ RESTART_WINDOW_SECONDS = 60
 RESTART_KEY = "f12"
 ANNOUNCE_DELAY_SECONDS = 3
 UPDATE_MARKER = DATA_DIR / "pending-update.json"
+SETUP_LOG = DATA_DIR / "setup.log"   # the last update's installer log, for the report
 RELOAD_FLAG = DATA_DIR / "reload"
 
 
@@ -599,7 +600,7 @@ def install_update(version, path, relaunch=None):
         return
     updater.write_marker(UPDATE_MARKER, version, relaunch=relaunch)
     log.info("running the %s installer", version)
-    updater.run_installer(path)
+    updater.run_installer(path, log=SETUP_LOG)
 
 
 REPORT_KEY = "grave"
@@ -625,6 +626,13 @@ def build_report(helper_log, game_logs, configs):
         out += Path(helper_log).read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
     except OSError:
         out.append("(none)")
+    setup_log = Path(helper_log).with_name("setup.log")
+    if setup_log.exists():
+        out += ["", "== Last update's setup log (end) =="]
+        try:
+            out += setup_log.read_text(encoding="utf-8", errors="replace").splitlines()[-25:]
+        except OSError:
+            out.append("(unreadable)")
     for game_log in game_logs:
         out += ["", "== Game log: %s ==" % game_log]
         try:

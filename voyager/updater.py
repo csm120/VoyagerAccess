@@ -131,12 +131,23 @@ def download_scripts(release, folder):
     return folder / "Scripts"
 
 
-def run_installer(path):
+def run_installer(path, log=None):
     """Starts the installer silently, outside this process: setup stops the
-    running helper (this process) and starts the new one."""
+    running helper (this process) and starts the new one.
+
+    Steam starts the helper inside a Windows job, and on Pawsi's computer
+    (2026-10-11) setup never finished when started from there, five times,
+    while installs started by the old sign-in helper worked. So setup is
+    started outside the job (CREATE_BREAKAWAY_FROM_JOB), falling back to a
+    plain start if Windows refuses, and writes a log (log) to read later."""
+    args = [str(path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"]
+    if log:
+        args.append("/LOG=" + str(log))
     flags = 0x08000000 | 0x00000200   # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
-    subprocess.Popen([str(path), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART"],
-                     creationflags=flags, close_fds=True)
+    try:
+        subprocess.Popen(args, creationflags=flags | 0x01000000, close_fds=True)
+    except OSError:
+        subprocess.Popen(args, creationflags=flags, close_fds=True)
 
 
 def write_marker(marker, version, relaunch=None):

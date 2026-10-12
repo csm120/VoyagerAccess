@@ -2,6 +2,13 @@
 
 ## Sunday October 11th 2026
 
+Version 0.2.6
+
+- Fixed: on some computers an update was found, the game closed, and then nothing happened: the update never installed and the game never came back, and the same thing repeated at every start. The installer is now started so that Steam cannot stop it part way. If you are stuck like this, download the installer from the link in the README once and run it; updates work by themselves after that.
+- New: each update's installer keeps a log, and the troubleshooting report (backtick) includes it, so a failed update can be explained.
+
+## Sunday October 11th 2026
+
 Version 0.2.5
 
 - New: Ctrl+F12 lists what is new in Voyager Access, one item at a time, like the status list on C. Up and Down move; Ctrl+F12, Backspace or Enter close it. After an update, you hear that Ctrl+F12 is there.
