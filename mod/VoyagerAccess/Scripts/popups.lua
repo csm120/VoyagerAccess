@@ -52,6 +52,12 @@ local WATCH = {
     -- Away team selection: the mission, heroes needed, recommendations and
     -- challenges (awaymission.lua reads the slots and heroes)
     "WBP_AwayMissionLoadout_C",
+    -- An away mission's end: MISSION COMPLETE, challenges, experience,
+    -- rewards (inside the mission window's DialogueConsequences)
+    "WBP_AwayMissionOutcome_C",
+    -- Its combat counterpart, found by scanning for like screens; not yet
+    -- seen, so read as plain text until a battle shows its layout
+    "WBP_BattleResultLCARS_C",
     -- First launch only: Performance Selection, then Gamma
     "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C",
 }
@@ -223,7 +229,8 @@ end
 
 local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
     WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end,
-    WBP_AwayMissionLoadout_C = function() return require("awaymission").window_text() end }
+    WBP_AwayMissionLoadout_C = function() return require("awaymission").window_text() end,
+    WBP_AwayMissionOutcome_C = function(_, path) return require("awaymission").outcome_text(path) end }
 
 -- All on-screen text inside the widget at path, in reading order.
 function M.text_under(path)

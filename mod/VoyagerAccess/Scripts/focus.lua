@@ -535,8 +535,12 @@ function M.install()
         if b and require("screen").shown(b) then return false end
         return system.active()
     end
+    -- Away mission choices: the game has no keyboard path, so the mod
+    -- walks them (awaymission.lua).
+    local away = require("awaymission")
     keys.on("enter", function()
         if require("popups").close_tutorial() then return end
+        if away.mission_active() then return away.mission_enter() end
         if ship_mode() then return ship.open() end
         if map_mode() then return system.enter() end
         activate()
@@ -548,13 +552,15 @@ function M.install()
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
-        if require("warpcore").handles(current) then require("warpcore").move(current, 1)
+        if away.mission_active() then away.mission_step(-1)
+        elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
         else last_dir = -1 end
     end)
     keys.on("down", function()
-        if require("warpcore").handles(current) then require("warpcore").move(current, -1)
+        if away.mission_active() then away.mission_step(1)
+        elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
         else last_dir = 1 end
@@ -571,6 +577,7 @@ function M.install()
     keys.on("pageup", function() if ship_mode() then ship.deck(-1) end end)
     keys.on("pagedown", function() if ship_mode() then ship.deck(1) end end)
     local function home_end(last)
+        if away.mission_active() then return away.mission_edge(last) end
         if ship_mode() then return ship.edge(last) end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end

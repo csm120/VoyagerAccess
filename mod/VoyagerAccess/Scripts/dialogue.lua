@@ -31,7 +31,9 @@ end
 -- (Janeway to Engineering, 2026-10-10; its parent class is the Sector one).
 -- FindAllOf did not return the side panel for the first class, so each
 -- class is listed. All have DialogueText, DialogueSpeakerText and the popup.
-local WINDOW_CLASSES = { "WBP_Dialogue_Window_C", "WBP_Dialogue_Window_SideView_C", "WBP_Dialogue_Window_Sector_C" }
+-- The away mission window too (2026-10-11: its text was never read).
+local WINDOW_CLASSES = { "WBP_Dialogue_Window_C", "WBP_Dialogue_Window_SideView_C", "WBP_Dialogue_Window_Sector_C",
+    "WBP_Dialogue_Window_AwayMission_C" }
 
 local function find_window()
     if window_path then
@@ -135,7 +137,11 @@ local function poll()
     end
     typing = line
     if line == "" or line == last_line or not settled then return end
-    local speaker = plain(w.DialogueSpeakerText:GetText():ToString())
+    local sp = w.DialogueSpeakerText
+    -- The away mission window keeps the placeholder in a hidden speaker
+    -- field, so its lines were never read (2026-10-11): a hidden speaker
+    -- counts as none.
+    local speaker = (sp and sp:IsValid() and screen.shown(sp)) and plain(sp:GetText():ToString()) or ""
     if speaker == PLACEHOLDER_SPEAKER then return end
     last_line = line
     speak_story(speaker ~= "" and (speaker .. ": " .. line) or line)
@@ -156,10 +162,46 @@ local function text_of(w)
 end
 
 function M.is_choice(path)
-    return path ~= nil and path:find("WBP_Dialogue_Choice_Sector_C_%d+%.") ~= nil
+    return path ~= nil and (path:find("WBP_Dialogue_Choice_Sector_C_%d+%.") ~= nil
+        or path:find("WBP_Dialogue_Choice_AwayMission_C_%d+%.WidgetTree_%d+%.RightButton") ~= nil)
 end
 
+-- An away mission choice (WBP_Dialogue_Choice_AwayMission, read
+-- 2026-10-11): RightButton.ChoiceText has the wording, AttributeAmount the
+-- skill value needed, AttributeImage the skill's icon ("MI_UI_Science").
+-- Heroes and Lock In are inside.
+
+local function away_choice_label(c)
+    local parts = {}
+    local wording = ""
+    pcall(function() wording = plain(text_of(c.RightButton.ChoiceText)) end)
+    if wording ~= "" then parts[#parts + 1] = wording end
+    local amount = plain(text_of(c.AttributeAmount))
+    if amount ~= "" and amount ~= "-" then
+        local skill = "skill"
+        pcall(function()
+            local ro = c.AttributeImage.Brush.ResourceObject
+            if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
+        end)
+        parts[#parts + 1] = "Needs " .. skill .. " " .. amount
+    end
+    -- Risk is not read yet: riskLvl_1 to riskLvl_3 are always visible (the
+    -- level is drawn some other way, likely by color), and reading them said
+    -- "High risk" for every choice (2026-10-11).
+    if #parts == 0 then return nil end
+    for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
+    -- No period after ! or ? ("Demand to know what is going on!.", 2026-10-11).
+    return ((table.concat(parts, ". ") .. "."):gsub("([!?])%.", "%1"))
+end
+
+M.away_choice_label = away_choice_label
+
 function M.choice_label(path)
+    local apath = path:match("^(.-WBP_Dialogue_Choice_AwayMission_C_%d+)")
+    if apath then
+        local c = StaticFindObject(apath)
+        return (c and c:IsValid()) and away_choice_label(c) or nil
+    end
     local cpath = path:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)")
     local c = cpath and StaticFindObject(cpath)
     if not (c and c:IsValid()) then return nil end
