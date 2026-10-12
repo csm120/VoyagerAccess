@@ -9,6 +9,7 @@
                                         start the game again after an update, exit
     VoyagerAccess.exe --install-mod     put the mod into the game, with a message
     VoyagerAccess.exe --uninstall-mod   take it out of every game it was put in
+    VoyagerAccess.exe --start-game      start the game through Steam (setup's Finish)
     VoyagerAccess.exe --speech-check F  write a report on the bundled files to F
 
 Nothing runs at Windows sign-in (Casey, 2026-10-11): the helper starts with
@@ -34,7 +35,7 @@ GAME = "Star Trek: Voyager - Across the Unknown"
 
 log = logging.getLogger("voyager")
 
-MB_OK, MB_YESNOCANCEL, MB_RETRYCANCEL = 0x0, 0x3, 0x5
+MB_OK, MB_YESNOCANCEL, MB_YESNO, MB_RETRYCANCEL = 0x0, 0x3, 0x4, 0x5
 MB_ICONINFORMATION, MB_ICONWARNING, MB_ICONQUESTION = 0x40, 0x30, 0x20
 IDYES, IDNO, IDRETRY = 6, 7, 4
 
@@ -269,19 +270,18 @@ def unset_launch_options():
         LAUNCH_RECORD.unlink(missing_ok=True)
 
 
-def install_mod():
+def install_mod(from_setup=False):
+    """from_setup: run by setup, whose Finish page says it is ready, so no
+    box of its own on success (Casey, 2026-10-11: one box, not OK and
+    Finish). Nothing names the demo, so the wording fits the demo and the
+    full game alike."""
     games = steam.find_games(steam.steam_path())
     if not games:
-        answer = message(
-            f"{GAME} is not installed in Steam, and Voyager Access needs it.\n\n"
-            "Yes opens Steam's install window for the free demo.\n"
-            "No opens the full game's store page.\n"
-            "Cancel does neither.\n\n"
-            "Once the game is installed, Voyager Access adds itself to it automatically.",
-            MB_YESNOCANCEL | MB_ICONQUESTION)
-        if answer == IDYES:
-            steam.open_install_dialog(steam.DEMO)
-        elif answer == IDNO:
+        if message(
+                f"{GAME} is not installed in Steam, and Voyager Access needs it.\n\n"
+                "Open the game's page in Steam now?\n\n"
+                "Once the game is installed, Voyager Access adds itself to it automatically.",
+                MB_YESNO | MB_ICONQUESTION) == IDYES:
             steam.open_store_page(steam.FULL)
         return 0
     while True:
@@ -297,9 +297,21 @@ def install_mod():
             message(f"Voyager Access could not be added to the game.\n\n{e}", MB_OK | MB_ICONWARNING)
             return 1
     set_launch_options(games)
-    names = " and ".join(g.name for g in games)
-    message(f"Voyager Access is ready for {names}.\n\n"
-            "Start the game from Steam as usual. Speech starts when the game loads.")
+    if not from_setup:
+        message(f"Voyager Access is ready for {GAME}.\n\n"
+                "Start the game from Steam as usual. Speech starts when the game loads.")
+    return 0
+
+
+def start_game():
+    """Setup's Finish starts the game (Casey, 2026-10-11): through Steam, so
+    its launch options start this helper too. The full game if installed,
+    else the demo."""
+    import os
+    games = steam.find_games(steam.steam_path())
+    if not games:
+        return 1
+    os.startfile(f"steam://rungameid/{games[0].appid}")
     return 0
 
 
@@ -707,14 +719,18 @@ def main(argv=None):
     group = ap.add_mutually_exclusive_group()
     group.add_argument("--install-mod", action="store_true")
     group.add_argument("--uninstall-mod", action="store_true")
+    group.add_argument("--start-game", action="store_true")
     group.add_argument("--speech-check", metavar="REPORT")
     group.add_argument("--launch", nargs=argparse.REMAINDER, metavar="GAME")
+    ap.add_argument("--from-setup", action="store_true")
     args = ap.parse_args(argv)
     setup_logging()
     if args.install_mod:
-        return install_mod()
+        return install_mod(from_setup=args.from_setup)
     if args.uninstall_mod:
         return uninstall_mod()
+    if args.start_game:
+        return start_game()
     if args.speech_check:
         return speech_check(args.speech_check)
     if args.launch is not None:

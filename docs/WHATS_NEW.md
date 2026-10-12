@@ -2,6 +2,16 @@
 
 ## Sunday October 11th 2026
 
+Version 0.2.7
+
+A tidier installer.
+
+- Changed: installing shows one window at the end instead of two. The setup's last page says Voyager Access is ready, and the extra OK box is gone.
+- New: that last page has a "Start Star Trek: Voyager - Across the Unknown" checkbox, already checked, so pressing Finish starts the game.
+- Changed: the installer no longer mentions the demo. It works the same for the demo and the full game.
+
+## Sunday October 11th 2026
+
 Version 0.2.6
 
 - Fixed: on some computers an update was found, the game closed, and then nothing happened: the update never installed and the game never came back, and the same thing repeated at every start. The installer is now started so that Steam cannot stop it part way. If you are stuck like this, download the installer from the link in the README once and run it; updates work by themselves after that.

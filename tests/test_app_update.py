@@ -312,6 +312,72 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(VK["grave"], 0xC0)
 
 
+class InstallModMessageTests(unittest.TestCase):
+    """Casey, 2026-10-11: setup should show one box (its Finish page), and
+    no wording should name the demo, so it fits the demo and the full game."""
+
+    def setUp(self):
+        self.saved = (app.steam.find_games, app.install_into, app.set_launch_options, app.message)
+        self.said = []
+        app.message = lambda text, flags=0: self.said.append(text) or 6
+        app.install_into = lambda g: None
+        app.set_launch_options = lambda games, dx11=True: True
+
+    def tearDown(self):
+        app.steam.find_games, app.install_into, app.set_launch_options, app.message = self.saved
+
+    def demo(self):
+        class G:
+            name = "Star Trek Voyager - Across the Unknown Demo"
+            appid = "4054540"
+        return [G()]
+
+    def test_from_setup_says_nothing_on_success(self):
+        app.steam.find_games = lambda s=None: self.demo()
+        self.assertEqual(app.install_mod(from_setup=True), 0)
+        self.assertEqual(self.said, [])
+
+    def test_start_menu_run_confirms_without_naming_the_demo(self):
+        app.steam.find_games = lambda s=None: self.demo()
+        app.install_mod()
+        self.assertEqual(len(self.said), 1)
+        self.assertNotIn("Demo", self.said[0])
+        self.assertIn(app.GAME, self.said[0])
+
+    def test_not_installed_message_does_not_offer_the_demo(self):
+        app.steam.find_games = lambda s=None: []
+        saved = app.steam.open_store_page
+        app.steam.open_store_page = lambda appid: None
+        try:
+            app.install_mod(from_setup=True)
+        finally:
+            app.steam.open_store_page = saved
+        self.assertEqual(len(self.said), 1)
+        self.assertNotIn("demo", self.said[0].lower())
+
+
+class StartGameTests(unittest.TestCase):
+    """Casey, 2026-10-11: Finish on setup's last page starts the game."""
+
+    def test_starts_the_first_installed_game_through_steam(self):
+        import os
+        saved = (app.steam.find_games, getattr(os, "startfile", None))
+        opened = []
+
+        class G:
+            def __init__(self, appid):
+                self.appid = appid
+        app.steam.find_games = lambda s=None: [G("2643390"), G("4054540")]
+        os.startfile = lambda target: opened.append(target)
+        try:
+            self.assertEqual(app.main(["--start-game"]), 0)
+        finally:
+            app.steam.find_games = saved[0]
+            if saved[1]:
+                os.startfile = saved[1]
+        self.assertEqual(opened, ["steam://rungameid/2643390"])
+
+
 class UpdateNewsTests(unittest.TestCase):
     def test_update_news_names_ctrl_f12(self):
         # Casey, 2026-10-11: when the version is spoken, say Ctrl+F12 for what's new.

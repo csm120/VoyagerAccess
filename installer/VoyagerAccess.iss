@@ -70,16 +70,26 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 Name: "{autoprograms}\{#MyAppName}\Add Voyager Access to the game"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod"
 Name: "{autoprograms}\{#MyAppName}\Read me"; Filename: "{app}\README.txt"
 
+[Messages]
+; One box at the end (Casey, 2026-10-11): the Finish page says it is ready,
+; and --install-mod --from-setup shows no box of its own on success.
+FinishedLabel=Voyager Access is installed and added to Star Trek: Voyager - Across the Unknown.%n%nStart the game from Steam as usual. Speech starts when the game loads.
+FinishedLabelNoIcons=Voyager Access is installed and added to Star Trek: Voyager - Across the Unknown.%n%nStart the game from Steam as usual. Speech starts when the game loads.
+
 [Run]
 ; Interactive install: add the mod to the game and say so. A silent
 ; install (the updater) skips this; the run without arguments that follows
 ; puts the new mod in, sets the launch options if they are missing (asking
 ; to restart Steam), and starts the game again after an update.
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod"; Flags: skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod --from-setup"; Flags: skipifsilent
 ; Only for silent installs (updates): an interactive install's
 ; --install-mod has already done this, and a second Steam prompt there
 ; would be confusing.
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent
+
+; The Finish page's checkbox, ticked: Finish starts the game through Steam
+; (Casey, 2026-10-11). Silent installs never show it.
+Filename: "{app}\{#MyAppExeName}"; Parameters: "--start-game"; Description: "Start Star Trek: Voyager - Across the Unknown"; Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "StopHelper"
