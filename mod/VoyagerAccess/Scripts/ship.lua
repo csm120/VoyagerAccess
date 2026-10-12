@@ -46,6 +46,27 @@ end
 
 local selected = nil   -- { deck = n, y = number } of the selected room
 
+-- The selection is kept in a file: a mod reload (an update, or development)
+-- wiped it, and leaving a room then started over at Deck 1 (2026-10-11).
+local SELECTED_FILE = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\ship-selected.txt"
+
+local function save_selected()
+    local f = io.open(SELECTED_FILE, "w")
+    if f then
+        f:write(string.format("%d %f\n", selected.deck, selected.y))
+        f:close()
+    end
+end
+
+do
+    local f = io.open(SELECTED_FILE, "r")
+    if f then
+        local deck, y = (f:read("l") or ""):match("^(%d+) (%S+)$")
+        f:close()
+        if deck and tonumber(y) then selected = { deck = tonumber(deck), y = tonumber(y) } end
+    end
+end
+
 local function path_of(o)
     return o:GetFullName():match("^%S+%s+(.+)$")
 end
@@ -75,11 +96,13 @@ end
 local STATE_PARTS = {
     { "Damaged_NoLifeSupport_State", "Damaged, no life support" },
     { "Damaged_State", "Damaged" },
-    { "Offline_State", "Offline" },
+    { "Offline_State", "off" },
     { "PauseImage", "Paused" },
 }
--- Ruined rooms, life support and turbolifts are not rooms you power.
-local NO_POWER = { RuinedRoom = true, LifeSupport = true, TurboShaft = true }
+-- Ruined rooms and turbolifts are not rooms you power. Life support is:
+-- each deck has one, and it shows Offline_State when switched off (read
+-- 2026-10-11). "on" and "off" match the power button (Casey, 2026-10-11).
+local NO_POWER = { RuinedRoom = true, TurboShaft = true }
 
 local function room_state(h, raw)
     local w = h.RoomHullWidget
@@ -88,7 +111,7 @@ local function room_state(h, raw)
         local x = w[part[1]]
         if x and x:IsValid() and x:IsVisible() then return part[2] end
     end
-    return NO_POWER[raw] and "" or "Online"
+    return NO_POWER[raw] and "" or "on"
 end
 
 local function describe(r, with_deck)
@@ -133,6 +156,7 @@ end
 -- words (Casey, 2026-10-10). prefix is optional text said first.
 local function select(r, with_deck, prefix)
     selected = { deck = r.deck, y = r.y }
+    save_selected()
     local text = describe(r, with_deck)
     if prefix then text = prefix .. ": " .. text end
     print("[VoyagerAccess] ship: " .. text .. "\n")
@@ -192,6 +216,13 @@ function M.deck(dir)
         if r.deck == want and math.abs(r.y - here.y) < best_d then target, best_d = r, math.abs(r.y - here.y) end
     end
     select(target, true)
+end
+
+-- For L (where am I): the selected room with its deck, or nil.
+function M.where()
+    local list = rooms()
+    local i = index_of_selected(list)
+    return i and describe(list[i], true) or nil
 end
 
 -- Enter: what a mouse click on the room does.

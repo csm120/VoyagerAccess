@@ -347,6 +347,13 @@ local function refresh()
     return false
 end
 
+-- For L (where am I): the item the arrows are on.
+function M.mission_where()
+    refresh()
+    local it = mission_items[mission_index or 1]
+    return it and item_label(it) or nil
+end
+
 function M.mission_step(dir)
     refresh()
     if #mission_items == 0 then return end

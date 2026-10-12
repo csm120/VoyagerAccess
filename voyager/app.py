@@ -262,7 +262,7 @@ def resident():
                 def keep_going():
                     if not modfiles.game_is_running():
                         return False
-                    session.step(lambda text: tolk.say(text, True), patch_running_game)
+                    session.step(lambda text: tolk.say(text, True), apply_in_game)
                     return not session.restart
 
                 serve(tolk, DEFAULT_FILE, keep_going, on_keys=session.key)
@@ -392,6 +392,15 @@ class PlaySession:
     def wait(self):
         if self.thread:
             self.thread.join(120)
+
+
+def apply_in_game(found):
+    """What an update found during play does to the running game: nothing.
+    Reloading the mod through RELOAD_FLAG froze the game twice in four
+    tries on 2026-10-11, so the update waits for
+    F12 or the game closing. patch_running_game is kept for when the
+    freeze is understood."""
+    return False
 
 
 def patch_running_game(found):

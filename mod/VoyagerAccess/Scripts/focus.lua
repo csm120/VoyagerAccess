@@ -17,6 +17,7 @@ local current = nil          -- path of the focused button
 local back_stack = {}
 local pending_click = nil    -- { button = path, menu = path, polls = n }
 local click
+local label_for
 
 local function path_of(obj)
     return obj:GetFullName():match("^%S+%s+(.+)$")
@@ -270,6 +271,29 @@ local function wire_rows(path)
     end
 end
 
+-- The spoken label for a focused button.
+label_for = function(b, path)
+    local label
+    if b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C" then
+        label = require("events").option_label(b)
+    elseif require("warpcore").handles(path) then
+        label = require("warpcore").label(path)
+    elseif require("awaymission").is_slot(path) then
+        label = require("awaymission").slot_label(path) or with_value(label_of(path), b)
+    elseif require("awaymission").is_hero_button(path) then
+        label = require("awaymission").hero_label(path) or with_value(label_of(path), b)
+    elseif require("rooms").is_hero_button(path) then
+        label = require("rooms").hero_label(path) or with_value(label_of(path), b)
+    elseif require("rooms").is_module_button(path) then
+        label = require("rooms").button_label(path, with_value(label_of(path), b) or "Button")
+    elseif require("dialogue").is_choice(path) then
+        label = require("dialogue").choice_label(path) or with_value(label_of(path), b)
+    else
+        label = with_value(label_of(path), b)
+    end
+    return label
+end
+
 local function poll()
     crumb.at("focus: pending click")
     if pending_click then
@@ -305,24 +329,7 @@ local function poll()
     end
     if is_setting(b) and is_heading(b) and skip_heading(b) then return end
     crumb.at("focus: label of " .. path)
-    local label
-    if b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C" then
-        label = require("events").option_label(b)
-    elseif require("warpcore").handles(path) then
-        label = require("warpcore").label(path)
-    elseif require("awaymission").is_slot(path) then
-        label = require("awaymission").slot_label(path) or with_value(label_of(path), b)
-    elseif require("awaymission").is_hero_button(path) then
-        label = require("awaymission").hero_label(path) or with_value(label_of(path), b)
-    elseif require("rooms").is_hero_button(path) then
-        label = require("rooms").hero_label(path) or with_value(label_of(path), b)
-    elseif require("rooms").is_module_button(path) then
-        label = require("rooms").button_label(path, with_value(label_of(path), b) or "Button")
-    elseif require("dialogue").is_choice(path) then
-        label = require("dialogue").choice_label(path) or with_value(label_of(path), b)
-    else
-        label = with_value(label_of(path), b)
-    end
+    local label = label_for(b, path)
     if section_prefix then
         label = label and (section_prefix .. ", " .. label) or section_prefix
         section_prefix = nil
@@ -450,7 +457,29 @@ local function activate()
         -- poll() waits for the panel animation to finish.
         pending_click = { button = current, menu = path_of(menu), polls = 0 }
     else
+        local before = label_for(b, current)
+        local path = current
         click(b)
+        -- The power button's text changed later than 400 ms (Switch Off on
+        -- Life Support, 2026-10-11), so check every 300 ms for 2.4 s.
+        local function check(tries)
+            local done = true
+            pcall(function()
+                local now = resolve(path)
+                if not (now and require("screen").shown(now)) then return end
+                local after = label_for(now, path)
+                if after and after ~= before then
+                    print("[VoyagerAccess] changed: " .. after .. "\n")
+                    speech.say(after, true)
+                else
+                    done = false
+                end
+            end)
+            if not done and tries > 1 then
+                ExecuteInGameThreadWithDelay(300, function() check(tries - 1) end)
+            end
+        end
+        ExecuteInGameThreadWithDelay(300, function() check(8) end)
     end
 end
 
@@ -508,6 +537,14 @@ local function edge(last)
             return
         end
     end
+end
+
+-- For L (where am I): the focused button as the arrows read it, or nil.
+function M.current_label()
+    local b = resolve(current)
+    if not (b and require("screen").shown(b)) then return nil end
+    local ok, label = pcall(label_for, b, current)
+    return ok and label or nil
 end
 
 -- "settings" or "menu" when an on-screen button has focus, else nil.

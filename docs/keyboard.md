@@ -36,8 +36,8 @@ follows them.
 ## Keys in use
 
 1. Everywhere: F1 help, O objective, C resources, V ship view or System Map,
-   R repeat. F12 belongs to the helper, not the mod: after "fixes applied" it
-   restarts the game to finish an update; otherwise it checks for an update
+   L where am I, R repeat. F12 belongs to the helper, not the mod: after an
+   update is offered it restarts the game to install it; otherwise it checks for an update
    now and says what it found (a found update is offered, never installed
    by that same press).
 2. Menus and settings: Up, Down, Home, End, Enter, Backspace; Left and Right

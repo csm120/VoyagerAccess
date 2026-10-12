@@ -283,6 +283,17 @@ function M.enter()
     run(action, p)
 end
 
+-- For L (where am I): the selected point, or nil.
+function M.where()
+    local list = points()
+    local i = index_of_selected(list)
+    if not i then return nil end
+    local p = list[i]
+    local text = string.format("%s, %s, %d of %d", name_of(p.actor), status(p), i, #list)
+    if menu then text = text .. ". Action list open: " .. ACTIONS[menu] end
+    return text
+end
+
 -- Up and Down inside the action list.
 function M.menu_step(dir)
     local i = menu + dir

@@ -28,6 +28,7 @@ local function plain(s)
 end
 
 -- Buttons whose only text is a picture.
+local open_window   -- defined below; the power button label needs it
 local BUTTON_NAMES = { OpenSelectionButton = "Assign a hero" }
 
 -- Texts on screen under path, as name -> text (first of each name).
@@ -91,6 +92,19 @@ function M.button_label(path, label)
     local by = texts_under(m)
     local name = path:match("([^%.]+)$")
     if BUTTON_NAMES[name] and (label == nil or label == "Button" or label == "") then label = BUTTON_NAMES[name] end
+    -- The power button says what it would do ("Switch Off"); say the room's
+    -- state instead (Casey, 2026-10-11).
+    -- After Enter, focus.lua speaks the new label, so the change is heard
+    -- as "Life Support off".
+    if name == "PowerToggleButton" and label then
+        local w = open_window()
+        local room = w and texts_under(path_of(w)).RoomNameText or "This room"
+        local action = label:gsub("%.$", "")
+        local lower = action:lower()
+        -- Just the state (Casey, 2026-10-11): "Life Support on".
+        if lower == "switch off" then label = room .. " on"
+        elseif lower == "switch on" then label = room .. " off" end
+    end
     local parts = { label }
     -- The Heroes tab: the skill this room uses, and what a hero gives.
     if by.HeroAttribute_TXT then parts[#parts + 1] = "Skill: " .. by.HeroAttribute_TXT end
@@ -175,7 +189,7 @@ function M.hero_label(path)
 end
 
 -- The open room window, or nil.
-local function open_window()
+open_window = function()
     for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
         if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then return w end
     end

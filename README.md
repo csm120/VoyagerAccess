@@ -30,7 +30,7 @@ After that, there is nothing to look after. Voyager Access starts quietly when y
 Voyager Access also keeps itself up to date. It checks for a new version when the game starts and every 10 minutes while you play:
 
 1. If an update turns up in the first minute, while you are still at the main menu, the game closes, updates and starts again by itself.
-2. If one turns up later, its fixes go into the game straight away and you hear "Voyager Access fixes applied." The rest finishes when you close the game, or press F12 to restart and finish it now. The game only saves at story points, so it is never closed unless you press F12.
+2. If one turns up later, you hear that it is ready. It installs when you close the game, or press F12 to restart and install it now. The game only saves at story points, so it is never closed unless you press F12.
 3. After an update you hear which version you now have.
 
 ## Keys
@@ -44,7 +44,7 @@ Everywhere:
 3. C: your resources (cargo), crew, and how long your fuel lasts.
 4. V: switch between the ship and the System Map.
 5. R: repeat the last line, tutorial or window.
-6. F12: check for a Voyager Access update now. If one is found, its fixes go in and you hear "Voyager Access fixes applied"; press F12 again to restart the game and finish the update.
+6. F12: check for a Voyager Access update now. If one is found, you hear that it is ready; press F12 again to restart the game and install it.
 
 Menus and settings:
 

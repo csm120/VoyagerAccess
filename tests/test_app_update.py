@@ -217,5 +217,20 @@ class RelaunchMarkerTests(unittest.TestCase):
             self.assertIsNone(updater.relaunch_target(marker))
 
 
+class InGameUpdateTests(unittest.TestCase):
+    """2026-10-11: the update-reload flag froze the game twice in four
+    tries, so an update found during play must not reload the mod."""
+
+    def test_in_game_update_does_not_reload_the_mod(self):
+        saved = app.RELOAD_FLAG
+        with tempfile.TemporaryDirectory() as d:
+            app.RELOAD_FLAG = Path(d) / "reload"
+            try:
+                self.assertFalse(app.apply_in_game(FOUND))
+                self.assertFalse(app.RELOAD_FLAG.exists())
+            finally:
+                app.RELOAD_FLAG = saved
+
+
 if __name__ == "__main__":
     unittest.main()
