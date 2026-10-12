@@ -18,6 +18,7 @@ local back_stack = {}
 local pending_click = nil    -- { button = path, menu = path, polls = n }
 local click
 local label_for
+local restore_focus
 
 local function path_of(obj)
     return obj:GetFullName():match("^%S+%s+(.+)$")
@@ -278,6 +279,45 @@ end
 -- Called each poll when no button has real focus.
 local track_wait = 0
 
+-- After the game window loses and regains the foreground, a menu can be
+-- left with nothing focused, and the arrows do nothing (main menu,
+-- 2026-10-11). Put focus back on the last button that had it, if it is
+-- still on screen. Not in the ship view or System Map, where having no
+-- focus is normal, and not during dialogue. Tried every second at most.
+local last_real = nil
+local restore_wait = 0
+
+-- A mod list (What's new, status) open over a focused menu: the game also
+-- gets Up and Down, so the menu moved with the list and both talked
+-- (2026-10-11). Opening a list parks the game's focus on the viewport;
+-- closing it lets restore_focus put it back.
+local function mod_list_open()
+    return require("whatsnew").open() or require("resources").list_open()
+end
+
+function M.park_focus()
+    pcall(function()
+        StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary"):SetFocusToGameViewport()
+    end)
+end
+
+restore_focus = function()
+    if not last_real or mod_list_open() then return false end
+    restore_wait = restore_wait - 1
+    if restore_wait > 0 then return false end
+    restore_wait = 10
+    local ctx = require("help").context()
+    if ctx == "ship" or ctx == "system" or ctx == "dialogue" or ctx == "cutscene" then return false end
+    local b = resolve(last_real)
+    if not (b and require("screen").shown(b)) then
+        last_real = nil
+        return false
+    end
+    print("[VoyagerAccess] focus: restoring " .. last_real:match("([^%.]+)$") .. "\n")
+    b:SetFocus()
+    return true
+end
+
 local function track_unfocused_window()
     -- A dialogue takes Enter (continue) and focus: after Life Support came
     -- back on, its message took focus from the room and this list took
@@ -423,8 +463,20 @@ local function poll()
     end
     crumb.at("focus: scan buttons")
     local b = focused_button()
+    -- While a mod list is open the game still moves menu focus on Up and
+    -- Down; say nothing about it and park focus again, or the menu talks
+    -- over the list ("bleeding through", 2026-10-11).
+    if mod_list_open() then
+        if b then M.park_focus() end
+        return
+    end
     if not b then b = focus_first_run_screen() end
-    if b then virtual = nil elseif not current then track_unfocused_window() end
+    if b then
+        virtual = nil
+        last_real = path_of(b)
+    elseif not current and not restore_focus() then
+        track_unfocused_window()
+    end
     local path = b and path_of(b) or nil
     if path == current then return end
     crumb.at("focus: changed to " .. tostring(path))
@@ -691,6 +743,7 @@ function M.install()
     local away = require("awaymission")
     keys.on("enter", function()
         if require("popups").close_tutorial() then return end
+        if require("whatsnew").open() then return require("whatsnew").close() end
         if require("resources").list_open() then return require("resources").close() end
         if require("view").nav_open() then return require("view").nav_enter() end
         if away.mission_active() then return away.mission_enter() end
@@ -700,6 +753,7 @@ function M.install()
         activate()
     end)
     keys.on("backspace", function()
+        if require("whatsnew").close() then return end
         if require("resources").close() then return end
         if require("view").nav_close() then return end
         if map_mode() and system.menu_close() then return end
@@ -708,7 +762,8 @@ function M.install()
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
-        if require("resources").list_open() then require("resources").step(-1)
+        if require("whatsnew").open() then require("whatsnew").step(-1)
+        elseif require("resources").list_open() then require("resources").step(-1)
         elseif require("view").nav_open() then require("view").nav_step(-1)
         elseif away.mission_active() then away.mission_step(-1)
         elseif M.virtual_active() then M.virtual_step(-1)
@@ -718,7 +773,8 @@ function M.install()
         else last_dir = -1 end
     end)
     keys.on("down", function()
-        if require("resources").list_open() then require("resources").step(1)
+        if require("whatsnew").open() then require("whatsnew").step(1)
+        elseif require("resources").list_open() then require("resources").step(1)
         elseif require("view").nav_open() then require("view").nav_step(1)
         elseif away.mission_active() then away.mission_step(1)
         elseif M.virtual_active() then M.virtual_step(1)
@@ -741,6 +797,7 @@ function M.install()
     keys.on("pageup", function() if ship_mode() then ship.deck(-1) end end)
     keys.on("pagedown", function() if ship_mode() then ship.deck(1) end end)
     local function home_end(last)
+        if require("whatsnew").open() then return require("whatsnew").edge(last) end
         if require("resources").list_open() then return require("resources").edge(last) end
         if require("view").nav_open() then return require("view").nav_edge(last) end
         if away.mission_active() then return away.mission_edge(last) end

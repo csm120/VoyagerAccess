@@ -125,6 +125,7 @@ function M.say()
         return
     end
     items, index = parts, 1
+    require("focus").park_focus()
     say_item()
 end
 

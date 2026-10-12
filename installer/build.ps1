@@ -13,6 +13,14 @@ $version = (Select-String voyager\version.py -Pattern '__version__ = "([^"]+)"')
 $numeric = ($version -split '\.' | Select-Object -First 3) -join '.'
 "Building Voyager Access $version"
 
+# A release build (three-part version) needs its entry in docs\WHATS_NEW.md,
+# the player-facing changelog (Casey, 2026-10-11: keep it updated). Test
+# builds such as 0.2.0.1 never go public and are not checked.
+if (($version -split '\.').Count -eq 3) {
+    $top = (Select-String docs\WHATS_NEW.md -Pattern '^Version (\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value
+    if ($top -ne $version) { throw "docs\WHATS_NEW.md starts with version ${top}, not ${version}: add this release's entry first" }
+}
+
 py -3.11 installer\build_payload.py
 if ($LASTEXITCODE) { throw "payload failed" }
 

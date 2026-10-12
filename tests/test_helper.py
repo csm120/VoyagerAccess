@@ -121,6 +121,20 @@ class KeyWatcherTests(unittest.TestCase):
             self.kb.state = {}
             self.w.poll()
 
+    def test_ctrl_f12_is_the_one_ctrl_chord(self):
+        # Casey, 2026-10-11: Ctrl+F12 opens What's new in the game.
+        self.kb.state = {VK["f12"]: DOWN, VK_CONTROL: DOWN}
+        self.assertEqual(self.w.poll(), ["ctrl+f12"])
+        self.kb.state = {}
+        self.w.poll()
+        # Other Ctrl chords, and F12 with a screen reader key, stay ignored.
+        self.kb.state = {VK["c"]: DOWN, VK_CONTROL: DOWN}
+        self.assertEqual(self.w.poll(), [])
+        self.kb.state = {}
+        self.w.poll()
+        self.kb.state = {VK["f12"]: DOWN, VK_CONTROL: DOWN, VK_INSERT: DOWN}
+        self.assertEqual(self.w.poll(), [])
+
     def test_nothing_when_game_not_in_front(self):
         self.front = False
         self.kb.state[VK["up"]] = DOWN

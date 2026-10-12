@@ -33,6 +33,10 @@ Voyager Access also keeps itself up to date. It checks for a new version when th
 2. If one turns up later, you hear that it is ready. It installs when you close the game, or press F12 to restart and install it now. The game only saves at story points, so it is never closed unless you press F12.
 3. After an update you hear which version you now have.
 
+## What's new
+
+Every release is described in plain words in [What's new in Voyager Access](docs/WHATS_NEW.md), newest first.
+
 ## Keys
 
 Press F1 anywhere in the game to hear the keys for the screen you are on.

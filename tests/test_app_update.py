@@ -312,6 +312,21 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(VK["grave"], 0xC0)
 
 
+class UpdateNewsTests(unittest.TestCase):
+    def test_update_news_names_ctrl_f12(self):
+        # Casey, 2026-10-11: when the version is spoken, say Ctrl+F12 for what's new.
+        saved = app.UPDATE_MARKER
+        with tempfile.TemporaryDirectory() as d:
+            app.UPDATE_MARKER = Path(d) / "pending-update.json"
+            try:
+                updater.write_marker(app.UPDATE_MARKER, app.__version__)
+                news = app.update_news()
+            finally:
+                app.UPDATE_MARKER = saved
+        self.assertIn(app.__version__, news)
+        self.assertIn("Ctrl+F12", news)
+
+
 class InGameUpdateTests(unittest.TestCase):
     """2026-10-11: the update-reload flag froze the game twice in four
     tries, so an update found during play must not reload the mod."""

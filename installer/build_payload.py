@@ -20,6 +20,8 @@ def main():
     with zipfile.ZipFile(UE4SS_ZIP) as z:
         z.extractall(OUT)
     shutil.copytree(REPO / "mod" / "VoyagerAccess", OUT / "ue4ss" / "Mods" / "VoyagerAccess")
+    # What's new, read in the game with Ctrl+F12 (whatsnew.lua).
+    shutil.copy2(REPO / "docs" / "WHATS_NEW.md", OUT / "ue4ss" / "Mods" / "VoyagerAccess" / "whats_new.md")
     for required in ("dwmapi.dll", "ue4ss/UE4SS.dll", "ue4ss/Mods/VoyagerAccess/enabled.txt",
                      "ue4ss/Mods/VoyagerAccess/Scripts/main.lua"):
         if not (OUT / required).is_file():

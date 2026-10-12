@@ -141,7 +141,14 @@ class KeyWatcher:
         new = [vk for vk, s in states.items()
                if (s & 0x8000 and vk not in self.held) or (s & 0x0001 and not s & 0x8000)]
         self.held = down
-        if not new or any(self.key_state(m) & 0x8000 for m in CHORD_KEYS):
+        if not new:
+            return []
+        held = {m for m in CHORD_KEYS if self.key_state(m) & 0x8000}
+        # Ctrl+F12 opens What's new (Casey, 2026-10-11); every other chord
+        # stays ignored, so screen reader keys and Ctrl shortcuts never act.
+        if held == {VK_CONTROL} and VK["f12"] in new:
+            return ["ctrl+f12"]
+        if held:
             return []
         shift = bool(self.key_state(VK_SHIFT) & 0x8000)
         names = []

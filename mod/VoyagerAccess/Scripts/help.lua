@@ -25,7 +25,7 @@ local HELP = {
         .. "Home and End go to the first and last. Backspace goes back.",
     menu = "Up and Down move. Home and End go to the first and last. Enter selects. Backspace goes back.",
     none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
-        .. "L says where you are. R repeats the last line.",
+        .. "L says where you are. R repeats the last line. Ctrl+F12 lists what is new in Voyager Access.",
 }
 
 -- Which kind of screen is in front, most specific first.

@@ -563,7 +563,7 @@ def update_news():
     result = updater.read_marker(UPDATE_MARKER, __version__)
     if result == "updated":
         log.info("updated to %s", __version__)
-        return f"Voyager Access was updated to version {__version__}."
+        return f"Voyager Access was updated to version {__version__}. Ctrl+F12 lists what is new."
     if result == "failed":
         log.info("update did not finish; still %s", __version__)
         return "A Voyager Access update did not finish. It will try again later."
