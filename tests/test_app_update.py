@@ -273,6 +273,20 @@ class LaunchModeTests(unittest.TestCase):
             self.assertEqual(json.loads(m.read_text())["expected"], "9.9.9")
 
 
+class SteamRestartTests(unittest.TestCase):
+    """Casey, 2026-10-11: the player should not have to answer anything.
+    Steam restarts by itself unless another game is running through it."""
+
+    def test_steam_closed_means_edit_at_once(self):
+        self.assertEqual(app.steam_restart_plan(steam_on=False, game_running=False), "edit")
+
+    def test_idle_steam_restarts_without_asking(self):
+        self.assertEqual(app.steam_restart_plan(steam_on=True, game_running=False), "restart")
+
+    def test_a_running_game_is_waited_for(self):
+        self.assertEqual(app.steam_restart_plan(steam_on=True, game_running=True), "wait")
+
+
 class InGameUpdateTests(unittest.TestCase):
     """2026-10-11: the update-reload flag froze the game twice in four
     tries, so an update found during play must not reload the mod."""

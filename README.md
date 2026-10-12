@@ -21,7 +21,7 @@ Voyager Access is a free, unofficial fan project. It is not made, endorsed or su
 3. The installer finds the game in Steam and adds Voyager Access to it, then tells you when it is ready.
 4. Start the game from Steam as usual. Speech starts when the game loads.
 
-You will be asked one question along the way. Voyager Access sets the game's launch options in Steam so that it starts together with the game, and sets the game to use DirectX 11, because some computers crash when it uses DirectX 12. Steam has to close for a moment and start again to do that. Choose Yes. If you choose No, the game has no speech.
+Along the way, Steam closes for a moment and starts again by itself; there is nothing to answer. Voyager Access does that to set the game's launch options in Steam, so that it starts together with the game, and to set the game to use DirectX 11, because some computers crash when it uses DirectX 12. If you are playing another game through Steam at that moment, it waits until that game closes.
 
 If the game is not installed yet, the installer offers to open Steam's install window for the free demo, or the store page for the full game.
 

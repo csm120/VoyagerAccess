@@ -142,26 +142,69 @@ def _needs_launch_edit(games, dx11):
     return todo
 
 
-def set_launch_options(games, dx11=True, ask=None):
+def steam_game_running():
+    """True while Steam is running a game: Steam keeps its app id in
+    HKCU\\Software\\Valve\\Steam\\RunningAppID (0 when none)."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as k:
+            return int(winreg.QueryValueEx(k, "RunningAppID")[0]) != 0
+    except (OSError, ValueError):
+        return False
+
+
+def steam_restart_plan(steam_on, game_running):
+    """No question for the player (Casey, 2026-10-11): edit at once when
+    Steam is closed, restart it when it is idle, and wait while it runs a
+    game, so nobody's game is cut off."""
+    if not steam_on:
+        return "edit"
+    return "wait" if game_running else "restart"
+
+
+WAIT_POLL_SECONDS = 30
+WAIT_LIMIT_SECONDS = 12 * 3600
+RUN_ONCE = r"Software\Microsoft\Windows\CurrentVersion\RunOnce"
+
+
+def _run_once(on):
+    """A one-time sign-in entry that finishes this setup if the computer is
+    shut down while waiting; Windows deletes it when it runs."""
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_ONCE, 0, winreg.KEY_SET_VALUE) as k:
+            if on and helper_exe():
+                winreg.SetValueEx(k, TITLE, 0, winreg.REG_SZ, '"%s"' % helper_exe())
+            else:
+                winreg.DeleteValue(k, TITLE)
+    except OSError:
+        pass
+
+
+def set_launch_options(games, dx11=True):
     """Sets each game's Steam launch options so Steam starts this helper,
     which starts the game (nothing runs at Windows sign-in; Casey,
     2026-10-11), and adds -dx11 (the game crashed under DirectX 12 on
     Casey's computer, 2026-10-10). Steam has to be closed while its file
     is edited. What is added is recorded, so uninstall removes only that.
-    Returns False when the player declined or Steam would not close."""
+    Nothing is asked: see steam_restart_plan. Returns False when Steam
+    would not close or a game kept running past the wait limit."""
     import json
     from . import launchopts
     todo = _needs_launch_edit(games, dx11)
     if not todo:
         return True
-    if steam_running() and message(ask or (
-            "Voyager Access starts together with the game, so nothing of it runs when you are not "
-            "playing. To set that up, and to start the game in DirectX 11 mode, which some computers "
-            "need, Steam has to close for a moment and start again.\n\n"
-            "Close and restart Steam now? Without this, the game has no speech."),
-            MB_YESNOCANCEL | MB_ICONQUESTION) != IDYES:
-        log.info("launch options skipped by the player")
-        return False
+    if steam_restart_plan(steam_running(), steam_game_running()) == "wait":
+        log.info("a game is running in Steam; waiting to set the launch options")
+        _run_once(True)
+        waited = 0
+        while steam_running() and steam_game_running():
+            if waited >= WAIT_LIMIT_SECONDS:
+                log.info("still running after the wait limit; finishing at the next sign-in")
+                return False
+            time.sleep(WAIT_POLL_SECONDS)
+            waited += WAIT_POLL_SECONDS
+        _run_once(False)
     record = _load_launch_record()
     exe = helper_exe()
 
@@ -199,9 +242,12 @@ def unset_launch_options():
     record = _load_launch_record()
     if not record:
         return
-    if steam_running() and message(
+    # Uninstall has to finish now, so it asks only when closing Steam would
+    # cut off a game that is running.
+    if steam_restart_plan(steam_running(), steam_game_running()) == "wait" and message(
             "Voyager Access changed the game's launch options in Steam. To put them back, Steam has to "
-            "close for a moment and start again.\n\nClose and restart Steam now?",
+            "close for a moment and start again, and a game is running in Steam now.\n\n"
+            "Close and restart Steam now?",
             MB_YESNOCANCEL | MB_ICONQUESTION) != IDYES:
         return
 
@@ -285,10 +331,7 @@ def post_install():
     keep_installed()
     games = steam.find_games(steam.steam_path())
     if games and helper_exe():
-        set_launch_options(games, dx11=False, ask=(
-            "Voyager Access now starts together with the game, so nothing of it runs when you are not "
-            "playing. To set that up, Steam has to close for a moment and start again.\n\n"
-            "Close and restart Steam now? Without this, the game has no speech."))
+        set_launch_options(games, dx11=False)
     if relaunch:
         updater.clear_relaunch(UPDATE_MARKER)
         log.info("starting the game again (%s)", relaunch)
