@@ -28,7 +28,7 @@ function M.toggle()
     b:HandleButtonPressed()
     b:HandleButtonReleased()
     b:HandleButtonClicked()
-    speech.say(to_map and "System map" or "Ship view", true)
+    -- help.lua says the new view and what is selected once it is up.
 end
 
 function M.install()

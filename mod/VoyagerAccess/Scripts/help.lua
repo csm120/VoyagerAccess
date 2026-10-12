@@ -101,10 +101,35 @@ end
 -- Entering and leaving a room window (Casey, 2026-10-11): the first room
 -- window ever opened says once that Escape closes it (kept in a file, so
 -- reloads and updates do not repeat it; the old per-screen F1 hint came
--- back after every reload), and closing one says where you are again.
+-- back after every reload).
 local HINT_FILE = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\hint-room-escape"
 local room_was_open = false
-local back_to_ship = 0    -- polls left to wait for the ship view after a room closes
+
+-- Arriving in the ship view or the System Map says where you are, as L
+-- does (Casey, 2026-10-11: resuming a game said nothing about where you
+-- were). That covers a resumed game, a closed room or dialogue, and V. A
+-- view must hold for two polls (600 ms) before it is spoken, so loading
+-- screens do not make it speak twice.
+local stable_view, candidate, candidate_polls = nil, nil, 0
+
+local function view_poll()
+    local ctx = M.context()
+    local v = (ctx == "ship" or ctx == "system") and ctx or "other"
+    if v ~= candidate then
+        candidate, candidate_polls = v, 1
+        return
+    end
+    candidate_polls = candidate_polls + 1
+    if candidate_polls < 2 or v == stable_view then return end
+    stable_view = v
+    if v == "other" then return end
+    local here
+    if v == "ship" then here = require("ship").where() or "no room selected"
+    else here = require("system").where() or "nothing selected" end
+    local text = (v == "ship" and "Ship view" or "System map") .. ". " .. here
+    print("[VoyagerAccess] view: " .. text .. "\n")
+    speech.say(text, true)
+end
 
 local function room_poll()
     local open = require("rooms").window_open()
@@ -117,18 +142,9 @@ local function room_poll()
             local w = io.open(HINT_FILE, "w")
             if w then w:write("heard\n") w:close() end
         end
-    elseif room_was_open and not open then
-        back_to_ship = 10
     end
     room_was_open = open
-    if back_to_ship > 0 then
-        back_to_ship = back_to_ship - 1
-        if require("ship").active() then
-            back_to_ship = 0
-            local here = require("ship").where()
-            speech.say("Ship view" .. (here and (". " .. here) or ""), true)
-        end
-    end
+    view_poll()
 end
 
 function M.install()

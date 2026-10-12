@@ -345,8 +345,10 @@ local function poll()
         if not announced[p] or reread then
             crumb.at("popups: read " .. p)
             local text = M.text_under(p)
-            if text ~= "" and text ~= last_text[p] and not (reread and last_text[p] == nil) then
-                print("[VoyagerAccess] popup: " .. text .. "\n")
+            -- A window with no words, only a number, said just "1" when the
+            -- System Map opened (2026-10-11); it is skipped.
+            if text:find("%a") and text ~= last_text[p] and not (reread and last_text[p] == nil) then
+                print("[VoyagerAccess] popup: " .. text .. " (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
                 speech.say_long(text)
                 spoken[#spoken + 1] = text
             end
