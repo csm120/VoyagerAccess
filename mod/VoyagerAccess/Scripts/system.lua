@@ -195,25 +195,72 @@ local function short(o)
     return (o and o:IsValid()) and o:GetFullName():match("([^%.]+)$") or "none"
 end
 
-local function verify_course(name)
+-- "Arrived at Shipwreck" once Voyager is there (Casey, 2026-10-11: arriving
+-- where nothing opens said nothing). Voyager circles a point once it gets
+-- there, so its position keeps changing but its distance does not (900 from
+-- a Class Y planet for 30 s, 2026-10-11). Arrived means the distance to the
+-- target held within 5 units for two checks a second apart and is clearly
+-- less than at the start (the game can pause mid-flight for a message). The
+-- watch gives up after five minutes; a new course replaces it.
+local watch_id = 0
+
+local function target_distance(target)
+    local v = voyager()
+    local a = v and v:K2_GetActorLocation()
+    local t = StaticFindObject(target)
+    local b = t and t:IsValid() and t:K2_GetActorLocation()
+    if not (a and b) then return nil end
+    return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2)
+end
+
+local function watch_arrival(name, target, start_d)
+    watch_id = watch_id + 1
+    local mine = watch_id
+    local last, still, left = nil, 0, 300
+    local function tick()
+        if mine ~= watch_id then return end
+        local ok, d = pcall(target_distance, target)
+        if not (ok and d) then return end
+        if last and math.abs(d - last) <= 5 then still = still + 1 else still = 0 end
+        last = d
+        if still >= 2 and (not start_d or d <= start_d * 0.9) then
+            print("[VoyagerAccess] course: arrived at " .. name .. "\n")
+            speech.say("Arrived at " .. name, false)
+            return
+        end
+        left = left - 1
+        if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) end
+    end
+    ExecuteInGameThreadWithDelay(1000, tick)
+end
+
+local function verify_course(name, target)
     local ship = voyager()
     local start = ship and ship:K2_GetActorLocation()
     if not start then return end
     local x0, y0 = start.X, start.Y
     local pw = pawn()
-    print(string.format("[VoyagerAccess] course: selected=%s travel=%s\n",
-        short(pw and pw.SelectedActor), short(pw and pw.PoiSelectedForTravel)))
+    local ok0, d0 = pcall(target_distance, target)
+    local start_d = ok0 and d0 or nil
+    print(string.format("[VoyagerAccess] course: selected=%s travel=%s distance=%s\n",
+        short(pw and pw.SelectedActor), short(pw and pw.PoiSelectedForTravel), tostring(start_d)))
+    -- Under way means getting closer to the chosen point, not just moving.
+    -- (A stale SelectedActor, seen in Pawsi's log, does not redirect the
+    -- course: tested 2026-10-11 with Class P selected and Class Y chosen,
+    -- Voyager flew to Class Y.)
     local function check(tries)
         local ok, done = pcall(function()
+            if start_d then
+                local d = target_distance(target)
+                return d ~= nil and d < start_d - 1
+            end
             local v = voyager()
             local at = v and v:K2_GetActorLocation()
-            if at and ((at.X - x0) ^ 2 + (at.Y - y0) ^ 2) > 1 then return true end
-            local q = pawn()
-            local t = q and q.PoiSelectedForTravel
-            return t ~= nil and t:IsValid()
+            return at ~= nil and ((at.X - x0) ^ 2 + (at.Y - y0) ^ 2) > 1
         end)
         if ok and done then
             print("[VoyagerAccess] course: under way\n")
+            watch_arrival(name, target, start_d)
             return
         end
         if tries > 1 then
@@ -262,7 +309,7 @@ local function run(action, p)
         pw:SetFocusPoint(p.actor)
         pw:OnSetCourseActionStarted({})
         pw:OnSetCourseActionTriggered({})
-        verify_course(name)
+        verify_course(name, p.path)
     end
 end
 

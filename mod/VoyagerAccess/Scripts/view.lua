@@ -31,8 +31,118 @@ function M.toggle()
     -- help.lua says the new view and what is selected once it is up.
 end
 
+-- N: the navigation bar as a list (Casey, 2026-10-11: "how do I get to the
+-- other tabs from ship view?"). The bar (WBP_NavigationBar) takes only the
+-- mouse and is shown only in the ship and map views. Up and Down choose,
+-- Enter presses, Backspace closes the list. N is unbound in the game.
+local NAV = {
+    { "Ship view", "ShowShipButton" }, { "System map", "ShowSystemButton" },
+    { "Sector map", "ShowSectorButton" }, { "Overview", "OverviewButton" },
+    { "Research", "ResearchButton" }, { "Wait one cycle", "WaitOneCycleButton" },
+    { "Incoming calls", "IncomingCallsButton" }, { "Sector switch", "SectorSwitchButton" },
+}
+local nav_items, nav_index = nil, nil
+
+-- Only in the ship view and the System Map, where the bar lives: opened
+-- over the game menu, Up and Down moved both the list and the menu, and the
+-- two talked over each other (2026-10-11).
+local function nav_place()
+    local ctx = require("help").context()
+    return ctx == "ship" or ctx == "system"
+end
+
+function M.nav_open()
+    if nav_items and not nav_place() then nav_items = nil end
+    return nav_items ~= nil
+end
+
+local function say_nav()
+    local it = nav_items[nav_index]
+    speech.say(string.format("%s, %d of %d", it[1], nav_index, #nav_items), true)
+end
+
+function M.nav_toggle()
+    if nav_items then
+        nav_items = nil
+        speech.say("Closed", true)
+        return
+    end
+    if not nav_place() then
+        speech.say("Navigation is available in the ship view and the System Map", true)
+        return
+    end
+    local items = {}
+    for _, it in ipairs(NAV) do
+        local b = find(it[2])
+        if b and b:GetIsEnabled() then items[#items + 1] = it end
+    end
+    if #items == 0 then
+        speech.say("Navigation is not available here", true)
+        return
+    end
+    nav_items, nav_index = items, 1
+    say_nav()
+end
+
+function M.nav_step(dir)
+    local i = nav_index + dir
+    if nav_items[i] then nav_index = i end
+    say_nav()
+end
+
+function M.nav_edge(last)
+    nav_index = last and #nav_items or 1
+    say_nav()
+end
+
+function M.nav_close()
+    if not nav_items then return false end
+    nav_items = nil
+    speech.say("Closed", true)
+    return true
+end
+
+function M.nav_enter()
+    local it = nav_items[nav_index]
+    nav_items = nil
+    local b = find(it[2])
+    if not b then
+        speech.say(it[1] .. " is not available here", true)
+        return
+    end
+    print("[VoyagerAccess] nav: " .. it[1] .. "\n")
+    b:HandleButtonPressed()
+    b:HandleButtonReleased()
+    b:HandleButtonClicked()
+    -- Ship view and System map are announced by help.lua once they are up.
+    if it[2] ~= "ShowShipButton" and it[2] ~= "ShowSystemButton" then speech.say(it[1], true) end
+end
+
+-- Left and Right switch the Overview's tabs, as in a room window; the new
+-- tab is read by popups.lua when its text changes. True when it did.
+function M.overview_tab(dir)
+    local w = nil
+    for _, x in ipairs(FindAllOf("WBP_OverviewInfoWidget_C") or {}) do
+        if x:IsValid() and x:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(x) then w = x end
+    end
+    if not w then return false end
+    local wp = w:GetFullName():match("^%S+%s+(.+)$") .. "."
+    local want = dir < 0 and "PreviousTabButton" or "NextTabButton"
+    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+        local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
+        if p and p:sub(1, #wp) == wp and p:find("%." .. want .. "$") then
+            b:HandleButtonPressed()
+            b:HandleButtonReleased()
+            b:HandleButtonClicked()
+            return true
+        end
+    end
+    return true
+end
+
 function M.install()
     require("keys").on("v", M.toggle)
+    require("keys").on("n", M.nav_toggle)
 end
 
 return M

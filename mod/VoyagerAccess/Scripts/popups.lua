@@ -55,6 +55,9 @@ local WATCH = {
     -- An away mission's end: MISSION COMPLETE, challenges, experience,
     -- rewards (inside the mission window's DialogueConsequences)
     "WBP_AwayMissionOutcome_C",
+    -- The Overview (Warp Core, Morale, Crew, Heroes, Combat tabs; reached
+    -- with N); read again when its tab changes
+    "WBP_OverviewInfoWidget_C",
     -- Its combat counterpart, found by scanning for like screens; not yet
     -- seen, so read as plain text until a battle shows its layout
     "WBP_BattleResultLCARS_C",
@@ -227,7 +230,230 @@ local function poi_event(parts, path)
     return table.concat(out, ". ") .. "."
 end
 
+-- The Construction Report (WBP_ConstructionInfoWidget, read 2026-10-11),
+-- which comes up when building, repair or dismantling finishes. Its parts
+-- came out in storage order ("ENTER SHIP to manage manually. 18. 36. Total
+-- costs after activation. Dismantled. Repaired. Built."). Each room is a
+-- WBP_ConstructionActionReportWidget in a section box named Dismantled,
+-- Repaired or Built (its parent's name); those are read here, not alone.
+local function shown_widget(cls)
+    for _, w in ipairs(FindAllOf(cls) or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then return w end
+    end
+    return nil
+end
+
+local function text_of_widget(w)
+    if not (w and w:IsValid() and screen.shown(w)) then return "" end
+    local ok, s = pcall(function() return w:GetText():ToString() end)
+    return ok and plain(s) or ""
+end
+
+local function construction_report(parts)
+    local by = {}
+    for _, p in ipairs(parts) do if not by[p.name] then by[p.name] = p.text end end
+    local out = { by.HeaderTextBlock or "Construction Report" }
+    local sections, order = {}, { "Dismantled", "Repaired", "Built" }
+    for _, w in ipairs(FindAllOf("WBP_ConstructionActionReportWidget_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            local parent = w:GetParent()
+            local section = parent and parent:IsValid() and parent:GetFName():ToString() or "Other"
+            local entry = { text_of_widget(w.RoomName) }
+            local level = text_of_widget(w.RoomLevel)
+            if level ~= "" then entry[#entry + 1] = level:lower() end
+            local ls = text_of_widget(w.LifeSupport)
+            if ls ~= "" then entry[#entry + 1] = ls:lower() end
+            local crew = text_of_widget(w.CrewValueNew)
+            if crew ~= "" then entry[#entry + 1] = "crew " .. crew end
+            local energy = text_of_widget(w.EnergyValueNew)
+            if energy ~= "" then entry[#entry + 1] = "energy " .. energy end
+            sections[section] = sections[section] or {}
+            table.insert(sections[section], table.concat(entry, ", "))
+        end
+    end
+    for _, name in ipairs(order) do
+        if sections[name] then out[#out + 1] = name .. ": " .. table.concat(sections[name], "; ") end
+    end
+    local totals = {}
+    if by.CrewValue then totals[#totals + 1] = "crew " .. by.CrewValue end
+    if by.EnergyValue then totals[#totals + 1] = "energy " .. by.EnergyValue end
+    if #totals > 0 then
+        out[#out + 1] = (by.NewUsage or "Total costs after activation") .. ": " .. table.concat(totals, ", ")
+    end
+    out[#out + 1] = "Close finishes all actions, activates the rooms and collects resources; "
+        .. "Enter Ship lets you manage it yourself"
+    for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
+-- Texts of a window in screen order: a walk of its widget tree, which is
+-- the order they are laid out in (FindAllOf gives creation order, which
+-- came out jumbled more than once). Hidden widgets and buttons' own labels
+-- are left out; skip(name, text) returns true to drop a text, or a string
+-- to say instead.
+local function ordered_texts(root, skip)
+    local W = StaticFindObject("/Script/UMG.UserWidget")
+    local PANEL = StaticFindObject("/Script/UMG.PanelWidget")
+    local BTN = StaticFindObject("/Script/CommonUI.CommonButtonBase")
+    local out = {}
+    local function walk(w, depth)
+        if depth > 40 or not (w and w:IsValid()) or not screen.shown(w) then return end
+        if w:IsA(BTN) then return end
+        local ok, txt = pcall(function() return w:GetText():ToString() end)
+        if ok and type(txt) == "string" then
+            local t = plain(txt)
+            local name = w:GetFName():ToString()
+            if t ~= "" and skip then
+                local keep = skip(name, t)
+                if type(keep) == "string" then t = keep elseif keep then t = "" end
+            end
+            if t ~= "" then out[#out + 1] = t end
+            return
+        end
+        if w:IsA(W) then
+            local tree = w.WidgetTree
+            if tree and tree:IsValid() and tree.RootWidget then walk(tree.RootWidget, depth + 1) end
+        elseif w:IsA(PANEL) then
+            for i = 0, w:GetChildrenCount() - 1 do walk(w:GetChildAt(i), depth + 1) end
+        end
+    end
+    walk(root, 0)
+    return out
+end
+
+-- Joins texts into sentences, putting numbers with the label before them:
+-- "Available Energy", "78", "120" -> "Available Energy 78 of 120".
+local function join_numbers(texts)
+    local out, run = {}, 0
+    for _, t in ipairs(texts) do
+        local number = t:match("^[%+%-]?[%d,%.]+%%?$") or t:match("^%(?[%d,]+ %- [%d,]+%)?$")
+        if number and #out > 0 then
+            run = run + 1
+            out[#out] = out[#out] .. (run == 2 and " of " or " ") .. t
+        else
+            run = 0
+            out[#out + 1] = t
+        end
+    end
+    for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
+-- The Overview (WBP_OverviewInfoWidget, read 2026-10-11): its tab bar,
+-- then the selected tab's content. Left and Right switch tabs (focus.lua).
+local OVERVIEW_SKIP = { ScreenName_Text = true, CommonTextBlock_30 = true, CommonTextBlock_18 = true }
+-- Numbers that have no label of their own on screen (the label is an icon
+-- or a position), said with one.
+local OVERVIEW_LABELS = {
+    ConsumedDeuteriumText = "The warp core uses %s deuterium per cycle",
+    ProducedEnergyText = "and produces %s energy",
+    CyclesText = "%s before forced gray mode",
+    SmallBatteriesAmount = "Small batteries: %s",
+    LargeBatterieAmount = "Large batteries: %s",
+    -- Morale tab: each row is an amount, a condition and its effect.
+    ConditionAmount = "%s crew", ConditionAmountSevere = "%s crew",
+    ConditionMaxMoraleDeduction = "max morale %s", SevereConditionMaxMoraleDeduction = "max morale %s",
+    TotalMaxMoraleDeductionAmount = "Total max morale change %s",
+    Happiness_Text = "Total %s per cycle",
+    current_morale = "Current morale %s",
+}
+-- Said by name only, no number: "Max Morale" after every row.
+local OVERVIEW_DROP = { Morale = true, Morale1 = true }
+
+local function overview(_, path)
+    local w = StaticFindObject(path)
+    if not (w and w:IsValid()) then return "" end
+    local tab = nil
+    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+        local p = b:IsValid() and path_of(b)
+        if p and p:sub(1, #path + 1) == path .. "." and p:find("_Tab_Button$") and screen.shown(b) then
+            local ok, sel = pcall(function() return b:GetSelected() end)
+            if ok and sel then
+                local okt, t = pcall(function() return b.Button_Text:GetText():ToString() end)
+                tab = okt and t or nil
+            end
+        end
+    end
+    local level = nil   -- Heroes tab: "Lv. 1" comes before the name it belongs to
+    local texts = ordered_texts(w, function(name, t)
+        if OVERVIEW_LABELS[name] then
+            return string.format(OVERVIEW_LABELS[name], (t:gsub("^%+", ""):gsub("/$", "")))
+        end
+        if name == "LevelText" then
+            level = t:gsub("^Lv%.%s*", "level ")
+            return true
+        end
+        if name == "HeroName" and level then
+            local said = t .. ", " .. level
+            level = nil
+            return said
+        end
+        return OVERVIEW_SKIP[name] or OVERVIEW_DROP[name] or t == "?" or t == "Undiscovered" or t == ")" or t == "!"
+            or name:find("^Upgrade") or name:find("^AddedValue") or name == "SkillValue"
+    end)
+    table.insert(texts, 1, "Overview, " .. (tab or "") .. " tab")
+    return join_numbers(texts)
+end
+
+M.ordered_texts = ordered_texts
+
+-- Tutorials describe the mouse and what is seen ("Open the OVERVIEW
+-- screen"). After a tutorial's page the mod says its own keys for the same
+-- thing (Casey, 2026-10-11). Keyed by the tutorial's title.
+local TUTORIAL_KEYS = {
+    ["Activate Room"] = "in the ship view, choose the room with the arrows, press Enter, then Enter on its power button",
+    ["Away Mission"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
+    ["Away Mission - Advanced"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
+    ["Basic Resources"] = "C reads your resources",
+    ["Consequences"] = "Up and Down move between the options, and each says its outcome odds; Enter picks one",
+    ["Engineering Office"] = "choose the Engineering Office in the ship view and press Enter to open it",
+    ["Help"] = "F1 lists the keys for the screen you are on, and L says where you are",
+    ["Life support"] = "rooms say on or off as you move through the decks; open Life support with Enter and press Enter on its power button",
+    ["Morale"] = "press N, choose Overview, then press Right to reach the Morale tab",
+    ["Points of Interest"] = "V switches to the System Map; Up and Down move through the points, nearest first, and Enter opens Scan and Set course",
+    ["Repairing Rooms"] = "choose the damaged room in the ship view, press Enter, then Enter on Repair",
+    ["Scan"] = "on the System Map, choose a point with Up and Down, press Enter, then Enter on Scan",
+    ["System Map Navigation"] = "V switches between the ship and the System Map; on the map, Up and Down move through the points and Enter opens Scan and Set course",
+    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero",
+    ["Warp Core"] = "open Main Engineering with Enter, press Right to reach the Warp Core tab, then Up and Down choose the tier",
+    ["Fatigue"] = "a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes",
+}
+
+local function tutorial_title()
+    for _, w in ipairs(FindAllOf("WBP_TutorialInfoWidget_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            for _, p in ipairs(parts_under(path_of(w))) do
+                local t = p.text:match("^Tutorial: (.+)$")
+                if t then return t end
+                if TUTORIAL_KEYS[p.text] then return p.text end
+            end
+        end
+    end
+    return nil
+end
+
+local function tutorial_page(parts)
+    local out = {}
+    for _, p in ipairs(parts) do out[#out + 1] = p.text end
+    local text = table.concat(out, ". ")
+    local title = tutorial_title()
+    local keys = title and TUTORIAL_KEYS[title]
+    if keys then text = text .. ". With Voyager Access: " .. keys .. "." end
+    return text
+end
+
 local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
+    WBP_TUT_CenterView_C = tutorial_page, WBP_TUT_CharacterView_C = tutorial_page,
+    WBP_TUT_ColumnView_C = tutorial_page,
+    WBP_OverviewInfoWidget_C = overview,
+    WBP_ConstructionInfoWidget_C = construction_report,
+    -- Read with the report above; alone it would come out unlabeled.
+    WBP_ConstructionActionReportWidget_C = function(parts)
+        if shown_widget("WBP_ConstructionInfoWidget_C") then return "" end
+        local out = {}
+        for _, p in ipairs(parts) do out[#out + 1] = p.text end
+        return table.concat(out, ". ")
+    end,
     WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end,
     WBP_AwayMissionLoadout_C = function() return require("awaymission").window_text() end,
     WBP_AwayMissionOutcome_C = function(_, path) return require("awaymission").outcome_text(path) end }
@@ -277,6 +503,10 @@ local function on_screen()
     table.sort(outer, function(a, b) return order[a] < order[b] end)
     return outer
 end
+
+-- The watched windows on screen now (focus.lua focuses one that opens
+-- with nothing focused).
+M.open_windows = on_screen
 
 -- Dry run for development: what would be spoken now, without speaking.
 function M.preview()
@@ -341,7 +571,8 @@ local function poll()
         end
         -- An event window changes in place (options, then the result), so
         -- it is read again whenever its text changes (2026-10-11).
-        local reread = announced[p] and p:find("WBP_POIMultipleChoice_C", 1, true)
+        local reread = announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
+            or p:find("WBP_OverviewInfoWidget_C", 1, true))
         if not announced[p] or reread then
             crumb.at("popups: read " .. p)
             local text = M.text_under(p)

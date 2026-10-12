@@ -287,6 +287,31 @@ class SteamRestartTests(unittest.TestCase):
         self.assertEqual(app.steam_restart_plan(steam_on=True, game_running=True), "wait")
 
 
+class ReportTests(unittest.TestCase):
+    """Backtick copies a report for Casey (2026-10-11): version, launch
+    options, the helper's log and the mod's lines from the game log."""
+
+    def test_report_has_each_part(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / "helper.log").write_text("line one\nline two\n", encoding="utf-8")
+            game_log = d / "UE4SS.log"
+            game_log.write_text("[x] other\n[x] [Lua] [VoyagerAccess] course: under way\n", encoding="utf-8")
+            cfg = d / "localconfig.vdf"
+            cfg.write_text('"LaunchOptions"\t\t"\\"C:\\\\VoyagerAccess.exe\\" --launch %command% -dx11"\n',
+                           encoding="utf-8")
+            text = app.build_report(d / "helper.log", [game_log], [cfg])
+        self.assertIn(app.__version__, text)
+        self.assertIn("--launch %command% -dx11", text)
+        self.assertIn("line two", text)
+        self.assertIn("course: under way", text)
+        self.assertNotIn("other", text)
+
+    def test_backtick_is_watched(self):
+        from voyager.helper import VK
+        self.assertEqual(VK["grave"], 0xC0)
+
+
 class InGameUpdateTests(unittest.TestCase):
     """2026-10-11: the update-reload flag froze the game twice in four
     tries, so an update found during play must not reload the mod."""

@@ -24,7 +24,7 @@ local HELP = {
     settings = "Up and Down move between settings. Left and Right change the value. "
         .. "Home and End go to the first and last. Backspace goes back.",
     menu = "Up and Down move. Home and End go to the first and last. Enter selects. Backspace goes back.",
-    none = "O reads your objective. C reads your resources. V switches between the ship and the System Map. "
+    none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
         .. "L says where you are. R repeats the last line.",
 }
 

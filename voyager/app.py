@@ -387,7 +387,13 @@ def launch_game(command):
             session.step(lambda text: tolk.say(text, True), apply_in_game)
             return not session.restart
 
-        serve(tolk, DEFAULT_FILE, keep_going, on_keys=session.key)
+        def on_keys(names):
+            session.key(names)
+            if REPORT_KEY in names:
+                tolk.say("Report copied to the clipboard." if copy_report()
+                         else "The report could not be copied.", True)
+
+        serve(tolk, DEFAULT_FILE, keep_going, on_keys=on_keys)
         if session.restart and restart_for_update(tolk, session.found, session.early):
             return 0      # setup stops this copy, and the new one starts the game
     finally:
@@ -594,6 +600,77 @@ def install_update(version, path, relaunch=None):
     updater.write_marker(UPDATE_MARKER, version, relaunch=relaunch)
     log.info("running the %s installer", version)
     updater.run_installer(path)
+
+
+REPORT_KEY = "grave"
+
+
+def build_report(helper_log, game_logs, configs):
+    """What Casey needs to look into a problem on someone's computer: the
+    version, the game's launch options, the helper's log, and the mod's
+    lines from each game log (2026-10-11, backtick in the game)."""
+    from . import launchopts
+    import time as _time
+    out = ["Voyager Access report, " + _time.strftime("%Y-%m-%d %H:%M"), "Version: " + __version__,
+           "", "== Launch options =="]
+    for cfg in configs:
+        try:
+            for line in launchopts.read_file(cfg).splitlines():
+                if "LaunchOptions" in line and ("VoyagerAccess" in line or "dx11" in line):
+                    out.append(launchopts.unescape(line.strip()))
+        except OSError:
+            continue
+    out += ["", "== Helper log =="]
+    try:
+        out += Path(helper_log).read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
+    except OSError:
+        out.append("(none)")
+    for game_log in game_logs:
+        out += ["", "== Game log: %s ==" % game_log]
+        try:
+            lines = Path(game_log).read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            out.append("(none)")
+            continue
+        out += [l for l in lines if "[VoyagerAccess]" in l or "error" in l.lower()][-120:]
+    return "\r\n".join(out)
+
+
+def copy_to_clipboard(text):
+    """Puts text on the Windows clipboard (Unicode)."""
+    k32, u32 = ctypes.windll.kernel32, ctypes.windll.user32
+    k32.GlobalAlloc.restype = ctypes.c_void_p
+    k32.GlobalLock.restype = ctypes.c_void_p
+    k32.GlobalLock.argtypes = [ctypes.c_void_p]
+    k32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    u32.SetClipboardData.argtypes = [ctypes.c_uint, ctypes.c_void_p]
+    data = (text + "\0").encode("utf-16-le")
+    for _ in range(10):
+        if u32.OpenClipboard(None):
+            break
+        time.sleep(0.1)
+    else:
+        return False
+    try:
+        u32.EmptyClipboard()
+        h = k32.GlobalAlloc(0x0002, len(data))   # GMEM_MOVEABLE
+        p = k32.GlobalLock(h)
+        ctypes.memmove(p, data, len(data))
+        k32.GlobalUnlock(h)
+        return bool(u32.SetClipboardData(13, h))  # CF_UNICODETEXT
+    finally:
+        u32.CloseClipboard()
+
+
+def copy_report():
+    from . import launchopts
+    games = steam.find_games(steam.steam_path())
+    text = build_report(DATA_DIR / "helper.log",
+                        [Path(g.bin_dir) / "ue4ss" / "UE4SS.log" for g in games],
+                        launchopts.config_files(steam.steam_path()))
+    ok = copy_to_clipboard(text)
+    log.info("report copied to the clipboard" if ok else "report could not be copied")
+    return ok
 
 
 def speech_check(report):

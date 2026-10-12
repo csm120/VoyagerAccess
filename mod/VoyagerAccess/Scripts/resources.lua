@@ -34,7 +34,8 @@ local function shown_widgets(cls)
     return out
 end
 
-function M.say()
+-- The status lines, each one item (resources, crew, fuel, energy, morale).
+local function lines()
     local by = {}
     for _, w in ipairs(shown_widgets("STVSingleResourceWidget")) do
         by[w:GetFName():ToString()] = w
@@ -62,7 +63,86 @@ function M.say()
     -- Not cycles passed: it went 16, then 14 as Deuterium went 396, then 348
     -- at 24 a cycle, so it is how many cycles the fuel lasts.
     if cycles then parts[#parts + 1] = "Fuel lasts " .. text_of(cycles.CyclesAmount) .. " cycles" end
-    speech.say(#parts > 0 and table.concat(parts, ". ") or "Resources are not shown here", true)
+    -- The rest of the strip (2026-10-11): energy (WBP_AggregateEnergy_Energy:
+    -- CurrentResourceAmountText the output, UpkeepAmountText what rooms
+    -- use), the battery (BatteryAmount stored, ExcessEnergyText the surplus
+    -- going in) and morale (MoraleNumber, ChangeTextBlock per cycle).
+    local function first(cls)
+        return shown_widgets(cls)[1]
+    end
+    local energy = first("WBP_AggregateEnergy_Energy_C")
+    if energy then
+        local use = text_of(energy.UpkeepAmountText):gsub("^%-", "")
+        parts[#parts + 1] = "Energy " .. text_of(energy.CurrentResourceAmountText)
+            .. (use ~= "" and (", rooms use " .. use) or "")
+    end
+    local battery = first("WBP_AggregateEnergy_Battery_C")
+    if battery then
+        local excess = text_of(battery.ExcessEnergyText):gsub("^%+", "")
+        parts[#parts + 1] = "Battery " .. text_of(battery.BatteryAmount)
+            .. (excess:match("^%d") and (", charging " .. excess) or "")
+    end
+    local morale = first("WBP_Morale_03_C")
+    if morale then
+        -- ChangeTextBlock is not a property of the widget; find it by path.
+        local change = ""
+        local mp = morale:GetFullName():match("^%S+%s+(.+)$") .. "."
+        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
+            local p = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
+            if p and p:sub(1, #mp) == mp and p:find("%.ChangeTextBlock$") and screen.shown(t) then change = text_of(t) end
+        end
+        local text = "Morale " .. text_of(morale.MoraleNumber)
+        if change:match("^[%+%-]%d") then
+            text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
+        end
+        parts[#parts + 1] = text
+    end
+    return parts
+end
+
+-- C opens the status as a list, one item at a time (Casey, 2026-10-11:
+-- "each item on its own line"): Up and Down move, Home and End go to the
+-- ends, Backspace or C again closes it.
+local items, index = nil, nil
+
+local function say_item()
+    speech.say(string.format("%s, %d of %d", items[index], index, #items), true)
+end
+
+function M.list_open()
+    return items ~= nil
+end
+
+function M.say()
+    if items then
+        items = nil
+        speech.say("Closed", true)
+        return
+    end
+    local parts = lines()
+    if #parts == 0 then
+        speech.say("Resources are not shown here", true)
+        return
+    end
+    items, index = parts, 1
+    say_item()
+end
+
+function M.step(dir)
+    if items[index + dir] then index = index + dir end
+    say_item()
+end
+
+function M.edge(last)
+    index = last and #items or 1
+    say_item()
+end
+
+function M.close()
+    if not items then return false end
+    items = nil
+    speech.say("Closed", true)
+    return true
 end
 
 function M.install()

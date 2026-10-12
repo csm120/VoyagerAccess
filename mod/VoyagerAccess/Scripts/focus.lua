@@ -227,6 +227,119 @@ end
 
 local ROWS = { HorizontalBox = true, UniformGridPanel = true, WrapBox = true }
 
+-- A window the mod reads that opens with nothing focused left Enter with
+-- nothing to press: the Construction Report (2026-10-11), after the Gamma
+-- screen and the away mission did the same. The game would not put
+-- keyboard focus on the report's buttons even when asked (SetFocus and
+-- SetKeyboardFocus both left HasKeyboardFocus false), so the mod keeps its
+-- own current button for such a window: Up and Down move between its
+-- buttons, Home and End go to the ends, Enter presses the current one. It
+-- starts on Close, Confirm or Continue when there is one, else the first,
+-- and is read once when the window opens. Tutorials close on Enter by
+-- themselves and are left alone.
+local PREFERRED = { "CloseButton", "ConfirmButton", "ContinueButton", "AcceptButton" }
+local virtual = nil   -- { window = path, buttons = { paths }, index = n }
+
+local function window_buttons(wpath)
+    BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+    USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
+    PANEL = PANEL or StaticFindObject("/Script/UMG.PanelWidget")
+    local w = resolve(wpath)
+    local list = {}
+    if w then buttons_in(w, list, 0) end
+    -- Tab buttons switch a window's pages (Left and Right do that); in this
+    -- list a room's "Management" tab read like a button that did nothing
+    -- (2026-10-11).
+    -- Also left out: invisible back buttons and buttons with no label at all
+    -- (the Overview's six warp core upgrade buttons only display levels and
+    -- were heard as a row of unlabeled buttons, 2026-10-11).
+    local paths = {}
+    for _, b in ipairs(list) do
+        local p = path_of(b)
+        local name = p:match("([^%.]+)$")
+        local skip = name:match("Tab_?Button") or name:find("InvisBack", 1, true)
+        if not skip then
+            local ok, label = pcall(label_for, b, p)
+            if ok and label and label ~= "" then paths[#paths + 1] = p end
+        end
+    end
+    return paths
+end
+
+local function say_virtual()
+    local b = virtual and resolve(virtual.buttons[virtual.index])
+    if not b then return end
+    local label = label_for(b, virtual.buttons[virtual.index]) or "Button"
+    label = string.format("%s, %d of %d", label:gsub("%.$", ""), virtual.index, #virtual.buttons)
+    print("[VoyagerAccess] window button: " .. label .. "\n")
+    speech.say(label, false)
+end
+
+-- Called each poll when no button has real focus.
+local track_wait = 0
+
+local function track_unfocused_window()
+    -- A dialogue takes Enter (continue) and focus: after Life Support came
+    -- back on, its message took focus from the room and this list took
+    -- Enter from the message (2026-10-11).
+    if require("dialogue").active() then
+        virtual = nil
+        return
+    end
+    -- Every third poll (300 ms): finding the open windows scans many classes.
+    track_wait = track_wait - 1
+    if track_wait > 0 then return end
+    track_wait = 3
+    if virtual then
+        local w = resolve(virtual.window)
+        if w and require("screen").shown(w) then return end
+        virtual = nil
+    end
+    for _, wpath in ipairs(require("popups").open_windows()) do
+        if not wpath:find("Tutorial", 1, true) then
+            local buttons = window_buttons(wpath)
+            if #buttons > 0 then
+                local index = 1
+                for _, want in ipairs(PREFERRED) do
+                    local found = nil
+                    for i, bp in ipairs(buttons) do
+                        if not found and bp:match("([^%.]+)$") == want then found = i end
+                    end
+                    if found then index = found break end
+                end
+                virtual = { window = wpath, buttons = buttons, index = index }
+                say_virtual()
+                return
+            end
+        end
+    end
+end
+
+function M.virtual_active()
+    if virtual and require("dialogue").active() then virtual = nil end
+    return virtual ~= nil
+end
+
+function M.virtual_step(dir)
+    if not virtual then return end
+    local i = virtual.index + dir
+    if virtual.buttons[i] then virtual.index = i end
+    say_virtual()
+end
+
+function M.virtual_edge(last)
+    if not virtual then return end
+    virtual.index = last and #virtual.buttons or 1
+    say_virtual()
+end
+
+function M.virtual_enter()
+    local b = virtual and resolve(virtual.buttons[virtual.index])
+    if not b then return end
+    print("[VoyagerAccess] enter: window button " .. virtual.buttons[virtual.index] .. "\n")
+    click(b)
+end
+
 local function wire_rows(path)
     BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
     USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
@@ -311,6 +424,7 @@ local function poll()
     crumb.at("focus: scan buttons")
     local b = focused_button()
     if not b then b = focus_first_run_screen() end
+    if b then virtual = nil elseif not current then track_unfocused_window() end
     local path = b and path_of(b) or nil
     if path == current then return end
     crumb.at("focus: changed to " .. tostring(path))
@@ -577,26 +691,37 @@ function M.install()
     local away = require("awaymission")
     keys.on("enter", function()
         if require("popups").close_tutorial() then return end
+        if require("resources").list_open() then return require("resources").close() end
+        if require("view").nav_open() then return require("view").nav_enter() end
         if away.mission_active() then return away.mission_enter() end
+        if M.virtual_active() then return M.virtual_enter() end
         if ship_mode() then return ship.open() end
         if map_mode() then return system.enter() end
         activate()
     end)
     keys.on("backspace", function()
+        if require("resources").close() then return end
+        if require("view").nav_close() then return end
         if map_mode() and system.menu_close() then return end
         go_back()
     end)
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
-        if away.mission_active() then away.mission_step(-1)
+        if require("resources").list_open() then require("resources").step(-1)
+        elseif require("view").nav_open() then require("view").nav_step(-1)
+        elseif away.mission_active() then away.mission_step(-1)
+        elseif M.virtual_active() then M.virtual_step(-1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
         else last_dir = -1 end
     end)
     keys.on("down", function()
-        if away.mission_active() then away.mission_step(1)
+        if require("resources").list_open() then require("resources").step(1)
+        elseif require("view").nav_open() then require("view").nav_step(1)
+        elseif away.mission_active() then away.mission_step(1)
+        elseif M.virtual_active() then M.virtual_step(1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
@@ -604,17 +729,22 @@ function M.install()
     end)
     local rooms = require("rooms")
     keys.on("left", function()
+        if require("view").overview_tab(-1) then return end
         if rooms.window_open() then rooms.switch_tab(-1)
         elseif ship_mode() then ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
+        if require("view").overview_tab(1) then return end
         if rooms.window_open() then rooms.switch_tab(1)
         elseif ship_mode() then ship.step(1) elseif not map_mode() then adjust(false) end
     end)
     keys.on("pageup", function() if ship_mode() then ship.deck(-1) end end)
     keys.on("pagedown", function() if ship_mode() then ship.deck(1) end end)
     local function home_end(last)
+        if require("resources").list_open() then return require("resources").edge(last) end
+        if require("view").nav_open() then return require("view").nav_edge(last) end
         if away.mission_active() then return away.mission_edge(last) end
+        if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end

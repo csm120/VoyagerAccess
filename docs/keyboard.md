@@ -35,8 +35,9 @@ follows them.
 
 ## Keys in use
 
-1. Everywhere: F1 help, O objective, C resources, V ship view or System Map,
-   L where am I, R repeat. F12 belongs to the helper, not the mod: after an
+1. Everywhere: F1 help, O objective, C resources, energy and morale, V ship view or System Map, N navigation list,
+   L where am I, R repeat. Backtick (the key left of 1) copies a report for
+   troubleshooting to the clipboard (the helper's job, like F12). F12 belongs to the helper, not the mod: after an
    update is offered it restarts the game to install it; otherwise it checks for an update
    now and says what it found (a found update is offered, never installed
    by that same press).
