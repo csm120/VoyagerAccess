@@ -68,8 +68,17 @@ local WATCH = {
     "WBP_BattleResultLCARS_C",
     -- First launch only: Performance Selection, then Gamma
     "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C",
+    -- The loading screen: a new campaign opens on "You are the Captain of
+    -- the Federation starship U.S.S. Voyager..." (full game, 2026-10-14)
+    "WBP_Loading_Screen_C",
     -- The away team's start confirmation (WARNING, unassigned slots)
     "WBP_AM_ConfirmStart_C",
+    -- The pause menu's confirmations ("Exit to Main Menu. Are you sure? You
+    -- will lose all progress..."): silent, with nothing focused (2026-10-14)
+    "WBP_PauseMenu_Confirms_C",
+    -- Q Trials setup: its first page is a warning ("Q Trials is designed
+    -- for experienced Captains..."), ABORT and ACCEPT (2026-10-14)
+    "WBP_Sandbox_Setup_C",
     -- A ship room's action ring: its centre says what the room is
     -- (2026-10-14; focus.lua names the segments)
     "WBP_RadialMenu_C",
@@ -88,6 +97,11 @@ local TEXT_CLASSES = { "TextBlock", "CommonTextBlock", "RichTextBlock",
 local NOISE = { CLOSE = true, TUTORIAL = true, ["ENTER SHIP"] = true }
 
 local announced = {}   -- path -> true while it stays on screen
+
+-- True once the window at path has been read (focus.lua's window list).
+function M.was_announced(path)
+    return announced[path] == true
+end
 
 local function path_of(o)
     return o:GetFullName():match("^%S+%s+(.+)$")
@@ -656,6 +670,42 @@ end
 
 local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
+    -- Heading, then the question, then the rest: creation order put "Are
+    -- you sure?" last on the second opening (2026-10-14).
+    -- The warning page: its heading and message. The setup page after it
+    -- (ship, captain, heroes, Q modifier, Q challenges) is not read yet, so
+    -- say so rather than leave the player in silence.
+    WBP_Sandbox_Setup_C = function(parts)
+        local head, body = nil, nil
+        for _, p in ipairs(parts) do
+            if p.name == "HeaderTextBlock_1" then head = p.text end
+            if p.name == "Mainline" then body = p.text end
+        end
+        if not body then
+            return "Q Trials setup. Voyager Access does not read this screen yet. Escape goes back."
+        end
+        return (head and (head .. ". ") or "") .. body
+    end,
+    WBP_PauseMenu_Confirms_C = function(parts, path)
+        local rank = { HeaderTextBlock = 1, ReportContent = 2, ReportContent_1 = 3 }
+        local kept = {}
+        for i, p in ipairs(parts) do p.i = i kept[#kept + 1] = p end
+        table.sort(kept, function(a, b)
+            local ra, rb = rank[a.name] or 9, rank[b.name] or 9
+            if ra ~= rb then return ra < rb end
+            return a.i < b.i
+        end)
+        return without_buttons(kept, path)
+    end,
+    -- Its progress line ("Caching Shaders 67.61%") changes all the time and
+    -- would read the screen again and again; only the story text is read.
+    WBP_Loading_Screen_C = function(parts)
+        local out = {}
+        for _, p in ipairs(parts) do
+            if not p.path:find("%.StepText$") then out[#out + 1] = p.text end
+        end
+        return table.concat(out, " ")
+    end,
     WBP_EndOfGameMissionInfo_01_C = end_of_game,
     WBP_MultipleChoiceWidget_C = multiple_choice,
     WBP_AwayMissionDetailView_C = away_detail, WBP_BattleResultLCARS_C = battle_result,
@@ -796,7 +846,8 @@ local function poll()
         -- The away mission summary fills in after it opens (only "Mission
         -- complete" was read, 2026-10-14).
         local reread = announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
-            or p:find("WBP_OverviewInfoWidget_C", 1, true) or p:find("WBP_AwayMissionOutcome", 1, true))
+            or p:find("WBP_OverviewInfoWidget_C", 1, true) or p:find("WBP_AwayMissionOutcome", 1, true)
+            or p:find("WBP_Sandbox_Setup_C", 1, true))
         if not announced[p] or reread then
             crumb.at("popups: read " .. p)
             local text = M.text_under(p)
@@ -837,7 +888,8 @@ local function poll()
                 local first_event = not announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
                     or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
                     or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
-                    or p:find("WBP_MultipleChoiceWidget_C", 1, true))
+                    or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
+                    or p:find("WBP_Sandbox_Setup_C", 1, true))
                 speech.say_long(text, first_event and true or nil)
                 -- An offer that opened over the construction ring left focus
                 -- on the ring behind it, and its options could not be reached
@@ -856,7 +908,10 @@ local function poll()
                         if best and not (best:HasKeyboardFocus() or best:HasFocusedDescendants()) then best:SetFocus() end
                     end)
                 end
-                if first_event then
+                -- The pause confirmation's buttons are the window list's,
+                -- said by focus.lua once the window is read; asking here
+                -- named the pause menu behind it ("MAIN MENU", 2026-10-14).
+                if first_event and not p:find("WBP_PauseMenu_Confirms_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
                     local okl, label = pcall(function() return require("focus").current_label() end)
                     if okl and label and label ~= "" then speech.say(label, false) end
                 end

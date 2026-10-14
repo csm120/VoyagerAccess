@@ -415,7 +415,8 @@ local ROWS = { HorizontalBox = true, UniformGridPanel = true, WrapBox = true }
 -- starts on Close, Confirm or Continue when there is one, else the first,
 -- and is read once when the window opens. Tutorials close on Enter by
 -- themselves and are left alone.
-local PREFERRED = { "CloseButton", "ConfirmButton", "ContinueButton", "AcceptButton" }
+-- AcceptButton_1: the Q Trials warning's ACCEPT (ABORT is CloseButton_1).
+local PREFERRED = { "CloseButton", "ConfirmButton", "ContinueButton", "AcceptButton", "AcceptButton_1" }
 local virtual = nil   -- { window = path, buttons = { paths }, index = n }
 
 local function window_buttons(wpath)
@@ -494,22 +495,55 @@ restore_focus = function()
     if restore_wait > 0 then return false end
     restore_wait = 10
     local ctx = require("help").context()
-    if ctx == "ship" or ctx == "system" or ctx == "dialogue" or ctx == "cutscene" then return false end
+    if ctx == "ship" or ctx == "system" or ctx == "dialogue" or ctx == "cutscene" or ctx == "story" then return false end
     local b = resolve(last_real)
     if not (b and require("screen").shown(b)) then
         last_real = nil
         return false
+    end
+    -- Not behind an open window: the Q Trials warning (focusless buttons)
+    -- had focus put back on NEW Q TRIAL under it, where Enter would press
+    -- it again (2026-10-14). The window's button list takes over instead.
+    for _, wp in ipairs(require("popups").open_windows()) do
+        if last_real:sub(1, #wp + 1) ~= wp .. "." and #window_buttons(wp) > 0 then return false end
     end
     print("[VoyagerAccess] focus: restoring " .. last_real:match("([^%.]+)$") .. "\n")
     b:SetFocus()
     return true
 end
 
+local PAUSE_CONFIRM = "WBP_PauseMenu_Confirms_C"
+local function pause_confirm_open()
+    for _, w in ipairs(FindAllOf(PAUSE_CONFIRM) or {}) do
+        if w:IsValid() and live(w) and require("screen").shown(w) then return true end
+    end
+    return false
+end
+
+-- Windows whose buttons never take keyboard focus: the pause menu's
+-- confirmation, and the Q Trials warning (while its Warning page shows).
+-- Returns the open one's path, or nil.
+local function focusless_window()
+    for _, w in ipairs(FindAllOf(PAUSE_CONFIRM) or {}) do
+        if w:IsValid() and live(w) and require("screen").shown(w) then return path_of(w) end
+    end
+    for _, w in ipairs(FindAllOf("WBP_Sandbox_Setup_C") or {}) do
+        if w:IsValid() and live(w) and require("screen").shown(w) then
+            local warn = w.Warning
+            if warn and warn:IsValid() and require("screen").shown(warn) then return path_of(w) end
+        end
+    end
+    return nil
+end
+M.focusless_window = focusless_window
+
 local function track_unfocused_window()
     -- A dialogue takes Enter (continue) and focus: after Life Support came
     -- back on, its message took focus from the room and this list took
     -- Enter from the message (2026-10-11).
-    if require("dialogue").active() then
+    -- Except the pause menu's confirmation ("Exit to Main Menu"), which sits
+    -- over the dialogue and whose buttons never take focus (2026-10-14).
+    if require("dialogue").active() and not pause_confirm_open() then
         virtual = nil
         return
     end
@@ -523,7 +557,8 @@ local function track_unfocused_window()
     local windows = require("popups").open_windows()
     local modal = nil
     for _, p in ipairs(windows) do
-        if p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true) then modal = p end
+        if p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true)
+            or p:find(PAUSE_CONFIRM, 1, true) then modal = p end
     end
     if modal then windows = { modal } end
     if virtual then
@@ -567,12 +602,16 @@ local function track_unfocused_window()
             if found then index = found break end
         end
         virtual = { window = first, buttons = buttons, index = index }
-        say_virtual()
+        -- The pause menu's confirmation, not yet read, says its first button
+        -- itself after its message (popups.lua); saying it here as well put
+        -- "BACK, 1 of 2" before "Exit to Main Menu" (2026-10-14).
+        local says_own = first:find(PAUSE_CONFIRM, 1, true) or first:find("WBP_Sandbox_Setup_C", 1, true)
+        if not says_own or require("popups").was_announced(first) then say_virtual() end
     end
 end
 
 function M.virtual_active()
-    if virtual and require("dialogue").active() then virtual = nil end
+    if virtual and require("dialogue").active() and not virtual.window:find(PAUSE_CONFIRM, 1, true) then virtual = nil end
     return virtual ~= nil
 end
 
@@ -610,6 +649,8 @@ local function wire_rows(path)
     -- The top of the button's real parent chain, not of its name: the away
     -- team hero buttons are named as top-level widgets but sit in a panel
     -- inside the loadout ("1 of 1" in the log, 2026-10-11).
+    -- The difficulty window wires its own list (difficulty.lua).
+    if require("difficulty").handles(path) then return end
     local root = resolve(path)
     if not root then return end
     for _ = 1, 64 do
@@ -669,6 +710,9 @@ label_for = function(b, path)
     local cls = b:GetClass():GetFName():ToString()
     if work then
         label = work
+    elseif require("difficulty").handles(path) then
+        -- Says ", selected" itself, on presets only (difficulty.lua).
+        return require("difficulty").label(b, path)
     elseif cls == "WBP_IncomingCall_List_Button_C" then
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
@@ -759,6 +803,17 @@ local function poll()
     end
     crumb.at("focus: scan buttons")
     local b = focused_button()
+    -- Focus left behind a window whose own buttons cannot take it: the
+    -- arrows moved the Q Trial profiles under the warning (2026-10-14).
+    -- Park it, so the window's button list takes the keys.
+    if b then
+        local fw = focusless_window()
+        local bp = fw and path_of(b)
+        if bp and bp:sub(1, #fw + 1) ~= fw .. "." then
+            M.park_focus()
+            b = nil
+        end
+    end
     -- In battle the hidden hero setup's slot kept keyboard focus, so the
     -- order wheel's button list never came up (2026-10-14).
     if b and require("combat").active() and not require("screen").shown(b) then b = nil end
@@ -864,9 +919,26 @@ end
 -- Main-menu panels open on mouse hover or gamepad focus, not keyboard focus
 -- (proven 2026-10-10), and the click handlers only move focus into an
 -- already-open panel. So Enter opens the panel first. Values are the
--- ESTVMainMenuContentPanelItems index; 1 = settings and 2 = save panel are
--- proven, 0 is untested (a crash followed calling it).
-local SETTINGS_PANEL, SAVE_PANEL = 1, 2
+-- ESTVMainMenuContentPanelItems index, looked up by name: the full game
+-- numbers them differently (Settings 1, DLC 2, CampaignProfiles 3,
+-- CampaignSaves 4, SandboxProfiles 5, SandboxSaves 6, 2026-10-14), so the
+-- demo's save panel number opened the DLC panel there. The fallbacks are the
+-- demo's: 1 = settings and 2 = save panel are proven, 0 is untested (a crash
+-- followed calling it).
+local panel_ids = nil
+local function panel(name, fallback)
+    if not panel_ids then
+        panel_ids = {}
+        local e = StaticFindObject("/Script/STVoyager.ESTVMainMenuContentPanelItems")
+        if e and e:IsValid() then
+            e:ForEachName(function(n, v)
+                local s = n:ToString()
+                panel_ids[s:match("::(.+)$") or s] = v
+            end)
+        end
+    end
+    return panel_ids[name] or fallback
+end
 
 -- A profile's hover points the save panel at that profile and fills it in.
 -- The native Setup is not callable from Lua, but setting ProfileIndex and
@@ -879,7 +951,22 @@ local function point_save_panel_at(menu, b)
     if not (w and w:IsValid()) then return false end
     w.ProfileIndex = b.ProfileIndex
     w.LeftNavigationTarget = b
-    menu:ShowContentPanel(SAVE_PANEL)
+    -- The full game has Campaign and Q Trials profiles, each with its own
+    -- saves panel; a profile under SandboxProfileButtonParent is Q Trials.
+    local sandbox = false
+    pcall(function()
+        local box = menu.SandboxProfileButtonParent
+        sandbox = box and box:IsValid() and path_of(b:GetParent()) == path_of(box)
+    end)
+    -- The one save window serves both; without bIsSandbox it offered NEW
+    -- CAMPAIGN for a Q Trial profile (2026-10-14). Demo: no such field.
+    pcall(function() w.bIsSandbox = sandbox and true or false end)
+    -- The demo has one save panel, SectorSave (2).
+    if sandbox then
+        menu:ShowContentPanel(panel("SandboxSaves", 2))
+    else
+        menu:ShowContentPanel(panel("CampaignSaves") or panel("SectorSave", 2))
+    end
     local manager
     for _, m in ipairs(FindAllOf("STVSaveGameManager") or {}) do
         if live(m) then manager = m end
@@ -895,8 +982,15 @@ local function open_panel_for(b)
     if not (menu and menu:IsValid() and menu:GetClass():GetFName():ToString() == "WBP_MainMenu_C") then
         return nil
     end
-    if b:GetFName():ToString() == "SettingsButton" then
-        menu:ShowContentPanel(SETTINGS_PANEL)
+    local name = b:GetFName():ToString()
+    if name == "SettingsButton" then
+        menu:ShowContentPanel(panel("Settings", 1))
+        return menu
+    end
+    -- Full game only: CAMPAIGN and Q TRIALS open their three profiles; the
+    -- mod's Enter only selected CAMPAIGN and nothing opened (2026-10-14).
+    if (name == "CampaignButton" and panel("CampaignProfiles")) or (name == "SandboxButton" and panel("SandboxProfiles")) then
+        menu:ShowContentPanel(panel(name == "CampaignButton" and "CampaignProfiles" or "SandboxProfiles"))
         return menu
     end
     if b:GetClass():GetFName():ToString() == "WBP_Button_SaveProfile_C" then
@@ -966,7 +1060,12 @@ local function activate()
     end
     local focused = resolve(current)
     local on_screen = focused ~= nil and require("screen").shown(focused)
-    if dialogue.active() and not (on_screen and dialogue.contains(current)) then
+    -- The pause menu (and the Audio and Gamma windows it opens) sits over
+    -- the dialogue: Enter on its MAIN MENU continued the dialogue instead
+    -- (2026-10-14, full game).
+    local over_dialogue = on_screen and (current:find("WBP_PauseMenu_C", 1, true)
+        or current:find("WBP_SettingsWindow_C", 1, true) or current:find("WBP_GammaCorrection_C", 1, true))
+    if dialogue.active() and not over_dialogue and not (on_screen and dialogue.contains(current)) then
         dialogue.continue()
         return
     end
@@ -1048,6 +1147,22 @@ local function activate()
     else
         local before = label_for(b, current)
         local path = current
+        -- A hold button (Custom difficulty's Start Game, bRequiresHold)
+        -- ignores a click: hold it, as dialogue choices and Wait One Cycle
+        -- are held.
+        local okh, hold = pcall(function() return b.bRequiresHold end)
+        if okh and hold then
+            speech.say("Holding", true)
+            b:HandleButtonPressed()
+            ExecuteInGameThreadWithDelay(2500, function()
+                pcall(function()
+                    local nb = resolve(path)
+                    if nb then nb:HandleButtonReleased() end
+                    print("[VoyagerAccess] enter: released " .. path .. "\n")
+                end)
+            end)
+            return
+        end
         click(b)
         -- Enter on an away team slot opens its hero picker, but the game
         -- also takes that Enter as "Start away mission" and puts up "You
@@ -1168,6 +1283,7 @@ end
 -- ChangeValueFromInput and speaks the new value.
 local function adjust(left)
     crumb.at("key: left/right")
+    if require("difficulty").adjust(current, left) then return end
     local b = resolve(current)
     if not (b and is_setting(b)) or is_heading(b) then return end
     b:ChangeValueFromInput(left)
@@ -1367,6 +1483,7 @@ function M.install()
         if away.mission_active() then return away.mission_edge(last) end
         if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
+        if require("difficulty").edge(current, last) then return end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end
             return system.edge(last)

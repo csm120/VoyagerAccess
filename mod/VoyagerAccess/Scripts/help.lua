@@ -11,6 +11,7 @@ local M = {}
 -- F1 said too much; the general keys came after every screen's own).
 local HELP = {
     cutscene = "Shift+Enter skips the cutscene.",
+    story = "The story is read a line at a time. Shift+Enter skips it. R repeats the last line.",
     dialogue = "Enter continues. Shift+Enter skips to the choices. R repeats the last line. "
         .. "On choices, Up and Down move and Enter picks one.",
     ship = "Up and Down change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
@@ -35,6 +36,9 @@ local HELP = {
 function M.context()
     local dialogue = require("dialogue")
     if dialogue.cutscene_playing() then return "cutscene" end
+    -- Narration over a scene: the map behind it was announced as if it
+    -- were in front (2026-10-14).
+    if require("story").active() then return "story" end
     if dialogue.active() then return "dialogue" end
     if require("combat").active() then return "combat" end
     -- Event and room windows (2026-10-11): Escape closing a room is the
@@ -63,7 +67,7 @@ end
 -- restarting you do not know where you are). Not Shift+Up: the game also
 -- gets the arrow and would move focus. L is unbound in every context
 -- (the game's own key bindings).
-local PLACES = { cutscene = "Cutscene", dialogue = "Dialogue", ship = "Ship view", system = "System map",
+local PLACES = { cutscene = "Cutscene", story = "Story", dialogue = "Dialogue", ship = "Ship view", system = "System map",
     room = "Room window", event = "Point of interest", settings = "Settings", menu = "Menu", none = "Game",
     combat = "Combat" }
 
@@ -89,7 +93,7 @@ function M.say_where()
             parts[2] = require("ship").where() or "No room selected"
         elseif ctx == "system" then
             parts[2] = require("system").where() or "Nothing selected"
-        elseif ctx == "dialogue" or ctx == "cutscene" then
+        elseif ctx == "dialogue" or ctx == "cutscene" or ctx == "story" then
             parts[2] = nil
         elseif ctx == "combat" then
             -- An open order wheel first, then the ships.
@@ -126,7 +130,22 @@ local room_was_open = false
 -- screens do not make it speak twice.
 local stable_view, candidate, candidate_polls = nil, nil, 0
 
+-- After a loading screen, wait before saying where you are: a new campaign's
+-- narration starts about 3 s after the load, and "System map. Nothing
+-- selected" was said first (2026-10-14).
+local LOAD_SETTLE = 5
+local last_loading = -100
+
 local function view_poll()
+    for _, w in ipairs(FindAllOf("WBP_Loading_Screen_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+            last_loading = os.clock()
+        end
+    end
+    if os.clock() - last_loading < LOAD_SETTLE then
+        candidate, candidate_polls = nil, 0
+        return
+    end
     local ctx = M.context()
     local v = (ctx == "ship" or ctx == "system") and ctx or "other"
     if v ~= candidate then

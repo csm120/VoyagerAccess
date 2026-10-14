@@ -2,6 +2,23 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.3
+
+You can now start a campaign in the full game, choose its difficulty, and set up a Custom game.
+
+- Fixed: in the full game, Enter on CAMPAIGN or Q TRIALS did nothing, so a new game could not be started from the keyboard. Enter now opens the three profiles, and Enter on a profile takes you to NEW CAMPAIGN (or NEW Q TRIAL).
+- New: the difficulty window is read as a list. Each mode says its name, where it is in the list, its description and its points, for example "Survival, 3 of 4. The authentic Delta Quadrant experience... Resources are limited. Combat is challenging." Enter on a mode starts the game.
+- New: Custom Difficulty Settings is one list too: the Adventure, Survival and Years of Hell presets, then every setting with its section, value and description ("Saving. Challenge Mode, Disabled, 4 of 19. Disables manual saving..."), then Start Game. Left and Right change a setting and say the new value. Home and End go to the top and bottom. Escape goes back to the modes.
+- New: buttons the game wants held down, like Custom's Start Game, are held for you when you press Enter. You hear "Holding".
+- New: the loading screen's text is read ("You are the Captain of the Federation starship U.S.S. Voyager..."). This works in the demo too.
+- New: the full game's opening narration is read a line at a time. Shift+Enter skips it, R repeats the last line, and F1 says so. The System Map is no longer announced over the top of it.
+- Fixed: in the pause menu during a conversation, Enter on a button (MAIN MENU, for example) moved the conversation on instead of pressing the button.
+- New: "Exit to Main Menu. Are you sure? You will lose all progress since the game was last saved" is now read, with BACK and ACCEPT as a list. BACK comes first, so pressing Enter twice by accident does not throw away your progress.
+- New: Q Trials has a start. Its warning is read, with ABORT and ACCEPT as a list. The Q Trials setup screen after it is not read yet; Voyager Access says so, and Escape goes back. Reading that screen is the next job.
+- Fixed: after a window like that warning opened, focus could be put back on the main menu behind it, where the arrows and Enter worked on buttons you could not see.
+
+## Wednesday October 14th 2026
+
 Version 0.3.2
 
 Voyager Access now works with the full game, not just the demo.
