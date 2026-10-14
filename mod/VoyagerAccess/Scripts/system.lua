@@ -30,8 +30,51 @@ local function path_of(o)
     return o:GetFullName():match("^%S+%s+(.+)$")
 end
 
+-- The Sector Map's star systems have no names on screen; a world-space
+-- widget per system (WBP_SolarSystemWorldSpaceWidget, TargetActor) shows
+-- Voyager's icon over the current system and the main mission's badge
+-- over the quest's (read 2026-10-14). Those are what tell them apart.
+local function system_marks(actor)
+    local marks = {}
+    pcall(function()
+        local apath = actor:GetFullName()
+        -- Points in a system have the same kind of widget
+        -- (WBP_PoiEventWidget): Ocampa's shows the main mission icon as a
+        -- dynamic material, MID_MI_UI_MainMission_... (2026-10-14).
+        local widgets = {}
+        for _, cls in ipairs({ "WBP_SolarSystemWorldSpaceWidget_C", "WBP_PoiEventWidget_C" }) do
+            for _, w in ipairs(FindAllOf(cls) or {}) do widgets[#widgets + 1] = w end
+        end
+        for _, w in ipairs(widgets) do
+            if w:IsValid() and w.TargetActor:IsValid() and w.TargetActor:GetFullName() == apath then
+                local wp = path_of(w) .. "."
+                for _, x in ipairs(FindAllOf("Image") or {}) do
+                    local xp = x:IsValid() and path_of(x)
+                    if xp and xp:sub(1, #wp) == wp and require("screen").shown(x) then
+                        -- Checked valid before it is read: an unchecked
+                        -- brush read crashed the game (2026-10-11, and a
+                        -- probe stopped the mod again on 2026-10-14).
+                        local ok, r = pcall(function()
+                            local ro = x.Brush.ResourceObject
+                            if not (ro and ro:IsValid()) then return nil end
+                            return ro:GetFName():ToString()
+                        end)
+                        if ok and r == "MI_UI_Voyager_Icon" then marks[#marks + 1] = "Voyager is here" end
+                        if ok and r and r:find("MainMission", 1, true) then marks[#marks + 1] = "main mission" end
+                    end
+                end
+            end
+        end
+    end)
+    return marks
+end
+
 local function name_of(actor)
     local cls = actor:GetClass():GetFName():ToString()
+    if cls == "BP_STVSolarSystem_C" then
+        local marks = system_marks(actor)
+        return "Star system" .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
+    end
     if NAMES[cls] then return NAMES[cls] end
     local class = cls:match("^BP_STVPlanet_Class(%w+)_C$")
     if class then return "Class " .. class .. " planet" end
@@ -78,6 +121,8 @@ local function voyager()
 end
 
 -- Points in the current system as { poi, actor, path, dist }, nearest first.
+local order = nil   -- { paths, used }: the list order the player is browsing
+
 local function points()
     local ship = voyager()
     local from = ship and ship:K2_GetActorLocation()
@@ -87,7 +132,10 @@ local function points()
             local a = c:GetOwner()
             if a and a:IsValid() and not a.bHidden then
                 local cls = a:GetClass():GetFName():ToString()
-                if cls ~= "BP_SectorVoyager_C" and cls ~= "BP_STVSolarSystem_C" then
+                -- The Sector Map lists star systems, the System Map the
+                -- rest (2026-10-14).
+                local want = (cls == "BP_STVSolarSystem_C") == M.sector()
+                if cls ~= "BP_SectorVoyager_C" and want then
                     local loc = a:K2_GetActorLocation()
                     local d = from and math.sqrt((loc.X - from.X) ^ 2 + (loc.Y - from.Y) ^ 2) or 0
                     list[#list + 1] = { poi = c, actor = a, path = path_of(a), dist = d }
@@ -96,23 +144,54 @@ local function points()
         end
     end
     table.sort(list, function(a, b) return a.dist < b.dist end)
+    -- Nearest first, but frozen while the player is moving through it: two
+    -- points at about the same distance swapped as the ship drifted, so Up
+    -- from Debris field reached Class D planet, not the Class E planet just
+    -- heard, and the course was set for the wrong one (2026-10-14). The
+    -- order is kept for 15 s after the last use and while the same points
+    -- are listed.
+    local now = os.time()
+    if order and now - order.used < 15 and #order.paths == #list then
+        local rank = {}
+        for i, p in ipairs(order.paths) do rank[p] = i end
+        local same = true
+        for _, p in ipairs(list) do if not rank[p.path] then same = false end end
+        if same then
+            table.sort(list, function(a, b) return rank[a.path] < rank[b.path] end)
+            order.used = now
+            return list
+        end
+    end
+    local paths = {}
+    for i, p in ipairs(list) do paths[i] = p.path end
+    order = { paths = paths, used = now }
     return list
 end
 
-local MAP_CONTEXT = nil
-function M.active()
+local CONTEXTS = {}   -- name -> InputMappingContext
+local function context_active(name)
     local sub = nil
     for _, s in ipairs(FindAllOf("EnhancedInputLocalPlayerSubsystem") or {}) do
         if s:IsValid() and path_of(s):find("^/Engine/Transient%.") then sub = s end
     end
     if not sub then return false end
-    if not (MAP_CONTEXT and MAP_CONTEXT:IsValid()) then
-        MAP_CONTEXT = nil
+    if not (CONTEXTS[name] and CONTEXTS[name]:IsValid()) then
+        CONTEXTS[name] = nil
         for _, ctx in ipairs(FindAllOf("InputMappingContext") or {}) do
-            if ctx:GetFName():ToString() == "IMC_System_Map" then MAP_CONTEXT = ctx end
+            if ctx:GetFName():ToString() == name then CONTEXTS[name] = ctx end
         end
     end
-    return MAP_CONTEXT ~= nil and sub:HasMappingContext(MAP_CONTEXT, {})
+    return CONTEXTS[name] ~= nil and sub:HasMappingContext(CONTEXTS[name], {})
+end
+
+-- The Sector Map (IMC_Sector_Map) works like the System Map with star
+-- systems for points (2026-10-14: it said nothing at all).
+function M.sector()
+    return context_active("IMC_Sector_Map")
+end
+
+function M.active()
+    return context_active("IMC_System_Map") or M.sector()
 end
 
 local function pawn()
@@ -136,7 +215,12 @@ local function select(list, i, prefix)
     menu = nil
     local p = list[i]
     selected = p.path
-    local text = string.format("%s, %s, %d of %d", name_of(p.actor), status(p), i, #list)
+    local name = name_of(p.actor)
+    if p.actor:GetClass():GetFName():ToString() ~= "BP_STVSolarSystem_C" then
+        local marks = system_marks(p.actor)
+        if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
+    end
+    local text = string.format("%s, %s, %d of %d", name, status(p), i, #list)
     if prefix then text = prefix .. ": " .. text end
     print("[VoyagerAccess] system: " .. text .. "\n")
     speech.say(text, true)
@@ -213,28 +297,70 @@ local function target_distance(target)
     return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2)
 end
 
+-- The trip under way, for L: { name, start_d, d, still }. A trip took
+-- several minutes in the VM (2026-10-14) and the watch gave up after five
+-- without a word, so a long trip and a stalled game sounded the same
+-- (Casey asked how to tell them apart). It now says "Under way", "Halfway
+-- to", and keeps watching for up to 30 minutes; L reports the progress and
+-- says when the ship is not moving.
+local travel = nil
+
 local function watch_arrival(name, target, start_d)
     watch_id = watch_id + 1
     local mine = watch_id
-    local last, still, left = nil, 0, 300
+    local last, still, left, halfway = nil, 0, 1800, false
+    travel = { name = name, start_d = start_d, d = start_d, still = 0 }
     local function tick()
         if mine ~= watch_id then return end
+        -- An event at the destination opened before the ship stopped, and
+        -- "Halfway" and "Arrived" were then said over it (2026-10-14). The
+        -- event says where you are; stop watching quietly.
+        local oke, event_open = pcall(function()
+            for _, p in ipairs(require("popups").open_windows()) do
+                if p:find("WBP_POIMultipleChoice_C", 1, true) then return true end
+            end
+            return false
+        end)
+        if oke and event_open then
+            travel = nil
+            print("[VoyagerAccess] course: event opened at " .. name .. "\n")
+            return
+        end
         local ok, d = pcall(target_distance, target)
-        if not (ok and d) then return end
+        if not (ok and d) then travel = nil return end
         if last and math.abs(d - last) <= 5 then still = still + 1 else still = 0 end
         last = d
+        travel.d, travel.still = d, still
         if still >= 2 and (not start_d or d <= start_d * 0.9) then
+            travel = nil
             print("[VoyagerAccess] course: arrived at " .. name .. "\n")
             speech.say("Arrived at " .. name, false)
             return
         end
+        if start_d and start_d > 0 and not halfway and d <= start_d / 2 then
+            halfway = true
+            speech.say("Halfway to " .. name, false)
+        end
         left = left - 1
-        if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) end
+        if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
     end
     ExecuteInGameThreadWithDelay(1000, tick)
 end
 
-local function verify_course(name, target)
+-- For L: "Traveling to Class E planet, 40 percent of the way", or nil.
+function M.travel_status()
+    if not travel then return nil end
+    local text = "Traveling to " .. travel.name
+    if travel.start_d and travel.start_d > 0 and travel.d then
+        local pct = math.floor((1 - travel.d / travel.start_d) * 100 + 0.5)
+        text = text .. string.format(", %d percent of the way", math.max(0, math.min(100, pct)))
+    end
+    if travel.still >= 5 then text = text .. ", not moving" end
+    return text
+end
+
+local fire_course   -- defined after run(); verify_course retries through it
+local function verify_course(name, target, attempt)
     local ship = voyager()
     local start = ship and ship:K2_GetActorLocation()
     if not start then return end
@@ -250,6 +376,24 @@ local function verify_course(name, target)
     -- Voyager flew to Class Y.)
     local function check(tries)
         local ok, done = pcall(function()
+            -- Already there: Ocampa was 900 away and its dialogue opened at
+            -- once, and the mod said the course was not set and set it
+            -- again during the dialogue (2026-10-14). A dialogue or an
+            -- event opening means the trip is over.
+            if require("dialogue").active() then return "arrived" end
+            for _, p in ipairs(require("popups").open_windows()) do
+                if p:find("WBP_POIMultipleChoice_C", 1, true) then return "arrived" end
+            end
+            -- The game's own travel target, when it can be read: a getting-
+            -- closer test alone said "under way" while the planet's orbit
+            -- brought it nearer and no course was set (2026-10-14).
+            local q = pawn()
+            local t = q and q.PoiSelectedForTravel
+            local okt, owner = pcall(function()
+                if not (t and t:IsValid()) then return "" end
+                return path_of(t:GetOwner())
+            end)
+            if okt then return owner == target end
             if start_d then
                 local d = target_distance(target)
                 return d ~= nil and d < start_d - 1
@@ -258,8 +402,13 @@ local function verify_course(name, target)
             local at = v and v:K2_GetActorLocation()
             return at ~= nil and ((at.X - x0) ^ 2 + (at.Y - y0) ^ 2) > 1
         end)
+        if ok and done == "arrived" then
+            print("[VoyagerAccess] course: at " .. name .. " (dialogue or event)\n")
+            return
+        end
         if ok and done then
             print("[VoyagerAccess] course: under way\n")
+            speech.say("Under way to " .. name, false)
             watch_arrival(name, target, start_d)
             return
         end
@@ -268,8 +417,19 @@ local function verify_course(name, target)
             return
         end
         local q = pawn()
-        print(string.format("[VoyagerAccess] course: not set (selected=%s travel=%s)\n",
-            short(q and q.SelectedActor), short(q and q.PoiSelectedForTravel)))
+        print(string.format("[VoyagerAccess] course: not set (selected=%s travel=%s, attempt %s)\n",
+            short(q and q.SelectedActor), short(q and q.PoiSelectedForTravel), tostring(attempt)))
+        -- Within arrival range (900, seen at Ocampa and at a Class Y planet
+        -- after its event): the game sets no course because Voyager is
+        -- there; "was not set" sent Casey round again (2026-10-14).
+        if start_d and start_d <= 1000 then
+            speech.say("Voyager is already at " .. name, false)
+            return
+        end
+        if attempt == 1 then
+            fire_course(name, target, 2)
+            return
+        end
         speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
     end
     ExecuteInGameThreadWithDelay(2000, function() check(3) end)
@@ -306,11 +466,31 @@ local function run(action, p)
         end)
     else
         speech.say("Setting course for " .. name, true)
-        pw:SetFocusPoint(p.actor)
-        pw:OnSetCourseActionStarted({})
-        pw:OnSetCourseActionTriggered({})
-        verify_course(name, p.path)
+        fire_course(name, p.path, 1)
     end
+end
+
+-- Set course takes its target from under the mouse cursor, not from the
+-- camera: with the cursor in a corner it never set a course, and with it in
+-- the middle (where SetFocusPoint puts the point) it did (2026-10-14, the
+-- VM). The helper centres the cursor. The camera glides to the point, so
+-- the course is fired after 900 ms (300 ms failed once for the Shipwreck),
+-- and a course that did not take is tried once more before the player is
+-- told.
+fire_course = function(name, path, attempt)
+    local q0 = pawn()
+    local actor = StaticFindObject(path)
+    if q0 and actor and actor:IsValid() then pcall(function() q0:SetFocusPoint(actor) end) end
+    speech.center_mouse()
+    ExecuteInGameThreadWithDelay(900, function()
+        pcall(function()
+            local q = pawn()
+            if not q then return end
+            q:OnSetCourseActionStarted({})
+            q:OnSetCourseActionTriggered({})
+            verify_course(name, path, attempt)
+        end)
+    end)
 end
 
 function M.enter()
@@ -336,7 +516,12 @@ function M.where()
     local i = index_of_selected(list)
     if not i then return nil end
     local p = list[i]
-    local text = string.format("%s, %s, %d of %d", name_of(p.actor), status(p), i, #list)
+    local name = name_of(p.actor)
+    if p.actor:GetClass():GetFName():ToString() ~= "BP_STVSolarSystem_C" then
+        local marks = system_marks(p.actor)
+        if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
+    end
+    local text = string.format("%s, %s, %d of %d", name, status(p), i, #list)
     if menu then text = text .. ". Action list open: " .. ACTIONS[menu] end
     return text
 end

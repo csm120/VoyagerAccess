@@ -24,6 +24,9 @@ local HELP = {
     settings = "Up and Down move between settings. Left and Right change the value. "
         .. "Home and End go to the first and last. Backspace goes back.",
     menu = "Up and Down move. Home and End go to the first and last. Enter selects. Backspace goes back.",
+    combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
+        .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
+        .. "L reads both ships. O reads the combat goal.",
     none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
         .. "L says where you are. R repeats the last line. Ctrl+F12 lists what is new in Voyager Access.",
 }
@@ -33,6 +36,7 @@ function M.context()
     local dialogue = require("dialogue")
     if dialogue.cutscene_playing() then return "cutscene" end
     if dialogue.active() then return "dialogue" end
+    if require("combat").active() then return "combat" end
     -- Event and room windows (2026-10-11): Escape closing a room is the
     -- game's own, tried with a real key press.
     local screen = require("screen")
@@ -51,7 +55,7 @@ end
 
 function M.say_help()
     local ctx = require("awaymission").mission_active() and "mission" or M.context()
-    speech.say(HELP[ctx] or HELP.none, true)
+    speech.say((HELP[ctx] or HELP.none) .. " Control F1 lists every key.", true)
 end
 
 -- L: where am I. The kind of screen and what is selected on it, read the
@@ -60,7 +64,8 @@ end
 -- gets the arrow and would move focus. L is unbound in every context
 -- (the game's own key bindings).
 local PLACES = { cutscene = "Cutscene", dialogue = "Dialogue", ship = "Ship view", system = "System map",
-    room = "Room window", event = "Point of interest", settings = "Settings", menu = "Menu", none = "Game" }
+    room = "Room window", event = "Point of interest", settings = "Settings", menu = "Menu", none = "Game",
+    combat = "Combat" }
 
 function M.say_where()
     local away = require("awaymission")
@@ -71,6 +76,7 @@ function M.say_where()
     else
         local ctx = M.context()
         parts[1] = PLACES[ctx] or "Game"
+        if ctx == "system" and require("system").sector() then parts[1] = "Sector map" end
         if ctx == "room" then
             for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
                 if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
@@ -80,11 +86,16 @@ function M.say_where()
             end
             parts[2] = require("focus").current_label()
         elseif ctx == "ship" then
-            parts[2] = require("ship").where() or "no room selected"
+            parts[2] = require("ship").where() or "No room selected"
         elseif ctx == "system" then
-            parts[2] = require("system").where() or "nothing selected"
+            parts[2] = require("system").where() or "Nothing selected"
         elseif ctx == "dialogue" or ctx == "cutscene" then
             parts[2] = nil
+        elseif ctx == "combat" then
+            -- An open order wheel first, then the ships.
+            local label = require("focus").current_label()
+            if label and label ~= "" then parts[2] = label end
+            parts[#parts + 1] = require("combat").status()
         else
             parts[2] = require("focus").current_label()
         end
@@ -93,6 +104,9 @@ function M.say_where()
     for _, p in ipairs(parts) do
         if p and p ~= "" then out[#out + 1] = (p:gsub("%.%s*$", "")) end
     end
+    -- A trip under way, wherever L is pressed (Casey, 2026-10-14).
+    local trip = require("system").travel_status()
+    if trip then out[#out + 1] = trip end
     local text = table.concat(out, ". ") .. "."
     print("[VoyagerAccess] where: " .. text .. "\n")
     speech.say(text, true)
@@ -124,9 +138,10 @@ local function view_poll()
     stable_view = v
     if v == "other" then return end
     local here
-    if v == "ship" then here = require("ship").where() or "no room selected"
-    else here = require("system").where() or "nothing selected" end
-    local text = (v == "ship" and "Ship view" or "System map") .. ". " .. here
+    if v == "ship" then here = require("ship").where() or "No room selected"
+    else here = require("system").where() or "Nothing selected" end
+    local map = require("system").sector() and "Sector map" or "System map"
+    local text = (v == "ship" and "Ship view" or map) .. ". " .. here
     print("[VoyagerAccess] view: " .. text .. "\n")
     speech.say(text, true)
 end

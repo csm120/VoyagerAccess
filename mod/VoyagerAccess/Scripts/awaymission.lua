@@ -55,7 +55,9 @@ end
 local function plaque_text(plaque)
     if not (plaque and plaque:IsValid() and screen.shown(plaque)) then return nil end
     local name = plain(text_of(plaque.HeroNameText))
-    if name == "" then return nil end
+    -- An empty combat slot's plaque counts as shown with its placeholder
+    -- "#Hero Name" (2026-10-14).
+    if name == "" or name:sub(1, 1) == "#" then return nil end
     local head = name
     local sheet = plaque.HeroStatSheet
     if sheet and sheet:IsValid() then
@@ -67,6 +69,12 @@ local function plaque_text(plaque)
     local parts = { head }
     local skills = require("rooms").skills_of(sheet)
     if skills ~= "" then parts[#parts + 1] = skills end
+    -- A battle's hero list shows each hero's combat ability (AbilityName,
+    -- "Maquis Maneuver"), read as "Ability, Chakotay, Lv. 1, ..." before.
+    local ability = sheet and sheet:IsValid() and plain(text_of(sheet.AbilityName)) or ""
+    -- In the battle list it counts as hidden although it is on screen.
+    local battle = path_of(plaque):find("CombatHeroSelectionButton", 1, true) ~= nil
+    if ability ~= "" and (battle or screen.shown(sheet.AbilityName)) then parts[#parts + 1] = "Ability: " .. ability end
     return sentences(parts)
 end
 
@@ -77,7 +85,75 @@ end
 -- reached; its slots use the same labels, not yet heard in a battle.
 local LOADOUTS = { WBP_AwayMissionLoadout_C = "Away team slot", WBP_CombatHeroLoadout_C = "Combat slot" }
 
+-- In a battle the loadout is a widget inside the combat window, named
+-- HeroLoadout, so its class is not in the path (2026-10-14: the slots
+-- read only "Select hero").
+local COMBAT_LOADOUT = "^(.-WBP_CombatMainWidget_C_%d+%.WidgetTree_%d+%.HeroLoadout)%."
+
+-- The battle's hero setup while it is on screen, or nil.
+function M.combat_loadout()
+    for _, w in ipairs(FindAllOf("WBP_CombatMainWidget_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") then
+            local ok, L = pcall(function() return w.HeroLoadout end)
+            if ok and L and L:IsValid() and screen.shown(L) then return L end
+        end
+    end
+    return nil
+end
+
+-- "Prepare for combat. U.S.S. Voyager, combat power 77, against Val Jean,
+-- combat power 51": the two ship panels (WBP_UI_Ship_Panel: ShipName,
+-- Combat_Power), the player's first, then up to how many heroes.
+function M.combat_prep_text(L)
+    local prefix = path_of(L) .. "."
+    local ships = {}
+    for _, p in ipairs(FindAllOf("WBP_UI_Ship_Panel_C") or {}) do
+        local pp = p:IsValid() and path_of(p)
+        if pp and pp:sub(1, #prefix) == prefix and screen.shown(p) then
+            local name = plain(text_of(p.ShipName))
+            local power = plain(text_of(p.Combat_Power))
+            local idx = 0
+            pcall(function() idx = p:GetParent():GetChildIndex(p) end)
+            if name ~= "" then
+                ships[#ships + 1] = { idx = idx, text = name .. (power ~= "" and (", combat power " .. power) or "") }
+            end
+        end
+    end
+    table.sort(ships, function(a, b) return a.idx < b.idx end)
+    local parts = { "Prepare for combat" }
+    if #ships >= 2 then
+        parts[#parts + 1] = ships[1].text .. ", against " .. ships[2].text
+    elseif ships[1] then
+        parts[#parts + 1] = ships[1].text
+    end
+    local count = 0
+    pcall(function() L.HeroPickers:ForEach(function() count = count + 1 end) end)
+    if count > 0 then parts[#parts + 1] = "Choose up to " .. count .. " heroes" end
+    return sentences(parts)
+end
+
+local combat_prep_said = nil
+
+local function combat_prep_poll()
+    local L = M.combat_loadout()
+    if not L then combat_prep_said = nil return end
+    local key = path_of(L)
+    if combat_prep_said == key then return end
+    combat_prep_said = key
+    local text = M.combat_prep_text(L)
+    print("[VoyagerAccess] combat prep: " .. text .. "\n")
+    require("speech").say_long(text, true)
+    local okl, label = pcall(function() return require("focus").current_label() end)
+    if okl and label and label ~= "" then require("speech").say(label, false) end
+    require("dialogue").remember(text)
+end
+
 local function loadout_of(path)
+    local cp = path:match(COMBAT_LOADOUT)
+    if cp then
+        local L = StaticFindObject(cp)
+        if L and L:IsValid() then return L, "Combat slot" end
+    end
     for cls, name in pairs(LOADOUTS) do
         local lp = path:match("^(.-" .. cls .. "_%d+)")
         if lp then
@@ -90,7 +166,8 @@ end
 
 function M.is_slot(path)
     return path ~= nil and path:find("%.OpenSelectionButton$") ~= nil
-        and (path:find("WBP_AwayMissionLoadout_C_%d+") ~= nil or path:find("WBP_CombatHeroLoadout_C_%d+") ~= nil)
+        and (path:find("WBP_AwayMissionLoadout_C_%d+") ~= nil or path:find("WBP_CombatHeroLoadout_C_%d+") ~= nil
+            or path:match(COMBAT_LOADOUT) ~= nil)
 end
 
 function M.slot_label(path)
@@ -111,19 +188,71 @@ function M.slot_label(path)
 end
 
 -- A hero in the list a slot opens.
--- WBP_SelectionButtonCombat is the combat list's button (native
--- STVCombatHeroSelectionButton); assumed to have a HeroPlaque like the away
--- team's, not yet seen.
+-- The battle's list is WBP_CombatHeroSelectionButton (seen 2026-10-14 in
+-- the Val Jean test fight): a HeroPlaque with HeroNameText and a stat
+-- sheet with RankText and AbilityName. WBP_SelectionButtonCombat was the
+-- earlier guess from the class list.
 function M.is_hero_button(path)
     return path ~= nil and (path:find("WBP_AwayMissionHeroSelectionButton_C_%d+$") ~= nil
-        or path:find("WBP_SelectionButtonCombat_C_%d+$") ~= nil)
+        or path:find("WBP_SelectionButtonCombat_C_%d+$") ~= nil
+        or path:find("WBP_CombatHeroSelectionButton_C_%d+$") ~= nil)
+end
+
+-- Every hero button of the away team and battle lists (shown or not).
+function M.hero_buttons()
+    local out = {}
+    for _, cls in ipairs({ "WBP_AwayMissionHeroSelectionButton_C", "WBP_SelectionButtonCombat_C",
+        "WBP_CombatHeroSelectionButton_C" }) do
+        for _, h in ipairs(FindAllOf(cls) or {}) do out[#out + 1] = h end
+    end
+    return out
 end
 
 function M.hero_label(path)
     local b = StaticFindObject(path)
     if not (b and b:IsValid()) then return nil end
     local ok, plaque = pcall(function() return b.HeroPlaque end)
-    return ok and plaque_text(plaque) or nil
+    local text = ok and plaque_text(plaque) or nil
+    if not text then return nil end
+    -- Its place in the list, and whether a slot already has this hero
+    -- (Kes was offered with no word that she was on the team, 2026-10-14).
+    local cls = path:match("([%w_]+)_C_%d+$") .. "_C"
+    local shown = {}
+    for _, o in ipairs(FindAllOf(cls) or {}) do
+        if o:IsValid() and path_of(o):find("^/Engine/Transient%.") and screen.shown(o) then
+            local slot = o.Slot
+            local row, col = 0, 0
+            pcall(function() row, col = slot.Row or 0, slot.Column or 0 end)
+            -- Outside a grid the slot has no Row: UE4SS gave back an object.
+            if type(row) ~= "number" then row = 0 end
+            if type(col) ~= "number" then col = 0 end
+            local idx = 0
+            pcall(function() idx = o:GetParent():GetChildIndex(o) end)
+            shown[#shown + 1] = { p = path_of(o), key = row * 1000 + col * 100 + idx }
+        end
+    end
+    table.sort(shown, function(x, y) return x.key < y.key end)
+    local index = nil
+    for i, s in ipairs(shown) do if s.p == path then index = i end end
+    local name = plain(text_of(plaque.HeroNameText))
+    local L = loadout_of(path) or M.combat_loadout() or loadout()
+    local on_team = false
+    if L and name ~= "" then
+        pcall(function()
+            L.HeroPickers:ForEach(function(_, e)
+                local p = e:get()
+                if p:IsValid() and plain(text_of(p.HeroPlaque and p.HeroPlaque.HeroNameText)) == name
+                    and screen.shown(p.HeroPlaque) then
+                    on_team = true
+                end
+            end)
+        end)
+    end
+    if on_team then text = text:gsub("^([^,%.]+)", "%1, on the team", 1) end
+    local oke, enabled = pcall(function() return b:GetIsEnabled() end)
+    if oke and enabled == false then text = text:gsub("^([^,%.]+)", "%1, unavailable", 1) end
+    if index then text = text:gsub("%.$", "") .. string.format(", %d of %d.", index, #shown) end
+    return text
 end
 
 -- Read when the team selection opens: the mission, how many heroes it
@@ -294,11 +423,93 @@ local function is_active(c)
     return plain(text_of(cb and cb.Name_TextBlock)):lower() == "confirm"
 end
 
+-- Names of the fatigued heroes in the away mission window at path: its
+-- HeroStatus_Choices plaques show "Fatigued" in the same hero order as
+-- HeroStatus.
+local function fatigued(window)
+    local names = hero_names()
+    local tired = {}
+    if not window then
+        -- A choice's path does not run through the window: find it.
+        for _, w in ipairs(FindAllOf("WBP_Dialogue_Window_AwayMission_C") or {}) do
+            if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then window = path_of(w) end
+        end
+    end
+    if not window then return tired end
+    local plaques = {}
+    for _, h in ipairs(FindAllOf("STVAwayMissionHeroSelectionPlaque") or {}) do
+        local hp = h:IsValid() and path_of(h)
+        if hp and hp:find(window .. ".", 1, true) == 1 and hp:find("HeroStatus_Choices%.") and screen.shown(h) then
+            plaques[#plaques + 1] = h
+        end
+    end
+    table.sort(plaques, function(a, b)
+        local ta, tb = path_of(a):find("PlaqueWidgetTemplate$") ~= nil, path_of(b):find("PlaqueWidgetTemplate$") ~= nil
+        if ta ~= tb then return ta end
+        return path_of(a) < path_of(b)
+    end)
+    for i, h in ipairs(plaques) do
+        local hp = path_of(h) .. "."
+        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
+            local tp = t:IsValid() and path_of(t)
+            if tp and tp:sub(1, #hp) == hp and screen.shown(t) and plain(text_of(t)) == "Fatigued" then
+                tired[#tired + 1] = names[i] or ("Hero " .. i)
+            end
+        end
+    end
+    return tired
+end
+
+-- "15 science points" from a choice's reward widgets
+-- (WBP_ResourceReward_AwayMissionChoice: the same amount text and icon as
+-- the results' rewards). A sighted player sees "+15" with an icon beside
+-- each choice; it was not read (2026-10-14).
+local function choice_rewards(choice_path, cls)
+    local out = {}
+    for _, w in ipairs(FindAllOf(cls or "WBP_ResourceReward_AwayMissionChoice_C") or {}) do
+        local wp = w:IsValid() and path_of(w)
+        if wp and (choice_path == "" or wp:sub(1, #choice_path + 1) == choice_path .. ".") and screen.shown(w) then
+            local amount = ""
+            pcall(function() amount = plain(text_of(w.ResourceAmountTextBlock)):gsub("^%+", "") end)
+            -- The mission summary's reward names it ResourceAmount.
+            if amount == "" then pcall(function() amount = plain(text_of(w.ResourceAmount)):gsub("^%+", "") end) end
+            local res = "resources"
+            pcall(function()
+                local ro = w.ResourceImage.Brush.ResourceObject
+                if ro and ro:IsValid() then res = ro:GetFName():ToString():match("^MI_UI_(%a+)") or res end
+            end)
+            res = res:gsub("(%l)(%u)", "%1 %2"):lower()
+            if amount ~= "" then out[#out + 1] = amount .. " " .. res end
+        end
+    end
+    return table.concat(out, ", ")
+end
+
 local function item_label(it)
     local c = StaticFindObject(it.choice)
     if not (c and c:IsValid()) then return nil end
     if it.kind == "choice" then
         local label = require("dialogue").away_choice_label(c) or "Choice"
+        local ok, reward = pcall(choice_rewards, it.choice)
+        if ok and reward ~= "" then label = label:gsub("%.?%s*$", "") .. ". Reward: " .. reward .. "." end
+        -- Danger: three WBP_AwayyMission_RiskIndicator per choice, each
+        -- showing its Risk image or its noRisk image; the Risk ones lit are
+        -- the danger level. Read 2026-10-14 when the game's tutorial said
+        -- failing a dangerous approach can injure or kill (the old note
+        -- that risk could not be read looked only at the indicators'
+        -- own visibility).
+        local level = 0
+        pcall(function()
+            local prefix = it.choice .. "."
+            for _, x in ipairs(FindAllOf("Image") or {}) do
+                local xp = x:IsValid() and path_of(x)
+                if xp and xp:sub(1, #prefix) == prefix and xp:find("riskLvl_%d") and xp:match("%.Risk$")
+                    and screen.shown(x) then
+                    level = level + 1
+                end
+            end
+        end)
+        if level > 0 then label = label:gsub("%.?%s*$", "") .. ". Danger level " .. level .. " of 3." end
         return string.format("Choice %d of %d: %s", it.n, it.of, label)
     elseif it.kind == "hero" then
         local h = StaticFindObject(it.hero)
@@ -307,6 +518,15 @@ local function item_label(it)
         local value = plain(text_of(h.WBP_HeroAbilityIcon and h.WBP_HeroAbilityIcon.AttributeValue))
         local text = it.name .. ", " .. ((value == "" or value == "-") and ("no " .. skill)
             or (skill .. " " .. value .. (needed ~= "" and (" of " .. needed .. " needed") or "")))
+        -- "Engineering 21 of 15 needed" read as a shortfall (2026-10-14).
+        local v, n = tonumber(value), tonumber(needed)
+        if v and n and v >= n then text = it.name .. ", " .. skill .. " " .. value .. ", " .. needed .. " needed, enough" end
+        -- Tired heroes show "Fatigued" over their portrait and lower
+        -- values; say it with the hero (2026-10-14).
+        local okf, tired = pcall(fatigued, it.choice:match("^(.-WBP_Dialogue_Window_AwayMission_C_%d+)"))
+        if okf then
+            for _, n in ipairs(tired) do if n == it.name then text = text .. ", fatigued" end end
+        end
         local sel = h.SelectedStateWidget
         if is_active(c) and sel and sel:IsValid() and screen.shown(sel) then text = text .. ", selected" end
         return text .. "."
@@ -443,7 +663,9 @@ local function result_poll()
                 local parts = {}
                 if outcome ~= "" then parts[#parts + 1] = outcome end
                 local have, need = plain(text_of(r.HeroValueText)), plain(text_of(r.RequiredValueText))
-                if have:match("^%d+$") and need:match("^%d+$") then parts[#parts + 1] = have .. " of " .. need end
+                -- "42 of 25" read as a fraction (2026-10-14); worded like
+                -- the hero lines ("Engineering 42, 25 needed").
+                if have:match("^%d+$") and need:match("^%d+$") then parts[#parts + 1] = "Skill " .. have .. ", " .. need .. " needed" end
                 parts[#parts + 1] = story
                 -- Rewards: WBP_ResourceReward_AwayMissionChallengeResult,
                 -- amount text and an icon naming the resource
@@ -467,37 +689,36 @@ local function result_poll()
                 if #rewards > 0 then parts[#parts + 1] = "Reward: " .. table.concat(rewards, ", ") end
                 -- Fatigue: the window's HeroStatus_Choices plaques show
                 -- "Fatigued" in the same hero order as HeroStatus.
-                local names = hero_names()
-                local tired = {}
-                local window = rp:match("^(.-WBP_Dialogue_Window_AwayMission_C_%d+)")
-                if window then
-                    local plaques = {}
-                    for _, h in ipairs(FindAllOf("STVAwayMissionHeroSelectionPlaque") or {}) do
-                        local hp = h:IsValid() and path_of(h)
-                        if hp and hp:find(window .. ".", 1, true) == 1 and hp:find("HeroStatus_Choices%.") and screen.shown(h) then
-                            plaques[#plaques + 1] = h
-                        end
-                    end
-                    table.sort(plaques, function(a, b)
-                        local ta, tb = path_of(a):find("PlaqueWidgetTemplate$") ~= nil, path_of(b):find("PlaqueWidgetTemplate$") ~= nil
-                        if ta ~= tb then return ta end
-                        return path_of(a) < path_of(b)
-                    end)
-                    for i, h in ipairs(plaques) do
-                        local hp = path_of(h) .. "."
-                        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-                            local tp = t:IsValid() and path_of(t)
-                            if tp and tp:sub(1, #hp) == hp and screen.shown(t) and plain(text_of(t)) == "Fatigued" then
-                                tired[#tired + 1] = names[i] or ("Hero " .. i)
-                            end
-                        end
-                    end
-                end
+                local tired = fatigued(rp:match("^(.-WBP_Dialogue_Window_AwayMission_C_%d+)"))
                 if #tired > 0 then parts[#parts + 1] = table.concat(tired, " and ") .. (#tired == 1 and " is" or " are") .. " fatigued" end
                 local text = sentences(parts)
                 print("[VoyagerAccess] mission result: " .. text .. "\n")
                 require("speech").say_long(text)
                 require("dialogue").remember(text)
+                -- "+150" deuterium showed on screen but was not in the
+                -- result that was read (2026-10-14): the reward can appear
+                -- after the text. Look again, anywhere on screen.
+                -- Once a second for up to 15: the reward shows after the story
+                -- text has typed out, 6 s was too short for a long one.
+                if #rewards == 0 then
+                    local function look(tries)
+                        local done = false
+                        pcall(function()
+                            local late = choice_rewards(rp, "WBP_ResourceReward_AwayMissionChallengeResult_C")
+                            if late == "" then late = choice_rewards("", "WBP_ResourceReward_AwayMissionChallengeResult_C") end
+                            if late ~= "" then
+                                done = true
+                                print("[VoyagerAccess] mission result reward: " .. late .. "\n")
+                                require("speech").say("Reward: " .. late, false)
+                                require("dialogue").remember(text .. " Reward: " .. late .. ".")
+                            end
+                        end)
+                        if not done and tries > 1 then
+                            ExecuteInGameThreadWithDelay(1000, function() look(tries - 1) end)
+                        end
+                    end
+                    ExecuteInGameThreadWithDelay(1000, function() look(15) end)
+                end
             end
             return
         end
@@ -530,6 +751,11 @@ function M.outcome_text(path)
         local d, v = plain(text_of(r.DescriptionText)), plain(text_of(r.ValueText))
         if d ~= "" then exp[#exp + 1] = d .. (v ~= "" and (" " .. v) or "") end
     end
+    -- The REWARDS box above the experience (350 deuterium), not read before
+    -- (2026-10-14).
+    -- It sits beside the outcome widget, in the same widget tree.
+    local okr, reward = pcall(choice_rewards, path:match("^(.*)%.[^%.]+$") or path, "WBP_AwayMission_Consequences_ResourceReward_C")
+    if okr and reward ~= "" then parts[#parts + 1] = "Rewards: " .. reward end
     if #exp > 0 then parts[#parts + 1] = "Experience: " .. table.concat(exp, ", ") end
     local heroes = under("WBP_AwayMissionHeroOutcome_C")
     table.sort(heroes, function(a, b) return path_of(a) < path_of(b) end)
@@ -547,6 +773,7 @@ end
 -- When a new set of choices comes up, read the first one.
 function M.mission_poll()
     result_poll()
+    pcall(combat_prep_poll)
     if not M.mission_active() then
         mission_sig = nil
         return

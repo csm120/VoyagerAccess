@@ -19,7 +19,9 @@ follows them.
    Down are hard to find on laptops).
 4. Enter does the selected thing. Where a thing has more than one action,
    Enter opens a short list of its actions instead.
-5. Backspace goes back, or closes a list the mod opened.
+5. Backspace goes back, or closes a list the mod opened. Escape also closes
+   a list the mod opened, and does the game's own Escape as well (the game
+   receives every key).
 6. F1 says the keys for the current screen. No "Press F1 for help" hint is
    spoken on screens (Casey, 2026-10-11: it repeated on every screen).
 7. O reads the current objective; C reads the resources (cargo); R repeats the
@@ -36,7 +38,7 @@ follows them.
 ## Keys in use
 
 1. Everywhere: F1 help, O objective, C resources, energy and morale, V ship view or System Map, N navigation list,
-   L where am I, R repeat, Ctrl+F12 what's new (a list, like C). Backtick (the key left of 1) copies a report for
+   L where am I, R repeat, Ctrl+F12 what's new (a list, like C), Ctrl+F1 every key (a list, grouped by screen; hotkeys.lua keeps it in step with this file). Backtick (the key left of 1) copies a report for
    troubleshooting to the clipboard (the helper's job, like F12). F12 belongs to the helper, not the mod: after an
    update is offered it restarts the game to install it; otherwise it checks for an update
    now and says what it found (a found update is offered, never installed
@@ -48,6 +50,32 @@ follows them.
 5. Ship view: Up and Down (or Page Up and Page Down) change deck, Left and
    Right move along it, Home and End go to the ends of the deck, Enter opens
    a room. In a room window: Up and Down through its buttons, Left and Right
-   switch tabs, Escape closes it (the game's own Escape).
+   switch tabs, Escape closes it (the game's own Escape). Rooms say their
+   place on the deck ("3 of 6"). J lists the ship's rooms (not ruined rooms
+   or turbolifts) with deck and state; Up, Down, Home, End, Enter selects
+   the room, Backspace or J closes the list (J is unbound in
+   IMC_ShipManagement). A ruined room opens an action ring (radial menu):
+   its centre is read, Up and Down move through its segments, Enter does
+   the focused one, Escape closes it. Empty building space opens the
+   construction ring; a room in it says how many spaces wide it is and
+   whether it fits here, and Enter builds it at the selected space.
 6. System map: Up and Down through the points of interest, Home and End,
-   Enter opens the action list (Scan, Set course).
+   Enter opens the action list (Scan, Set course). The list keeps its order
+   while you move through it (it re-sorts nearest first after 15 seconds
+   without a move). Set course says "Under way to", "Halfway to" and
+   "Arrived at"; L adds the trip's progress and says "not moving" if the
+   ship has stopped short.
+7. Main menu Credits: a list, one heading with its names per item; Escape
+   closes it.
+8. Tech tree (Science Laboratory, Research): a list of the five tiers, then
+   the current category's technologies in tier order, each with its state.
+   Up, Down, Home, End move; Left and Right switch category; Enter opens the
+   item's panel, which is read (costs, description, and whether Enter begins
+   the research); Escape closes the panel, then the tree.
+9. Combat: the game's own keys work (Space pauses and resumes, 1 to 3 use
+   the heroes' abilities, Tab changes target, Shift fires a torpedo, Left
+   and Right pick a system and Up and Down move energy to it). Enter opens
+   Orders; the order wheel is a list (Up, Down, Enter; Back is last). L
+   reads both ships, the enemies, the order, torpedoes, abilities and the
+   goal; O reads the goal. Target changes, abilities turning active or
+   ready, and pauses are spoken as they happen.

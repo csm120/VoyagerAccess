@@ -23,6 +23,10 @@ local DECK_HEIGHT = 400
 -- room windows as they are seen.
 local NAMES = {
     RuinedRoom = "Ruined room",
+    -- A cleared room: read "None, on" (2026-10-14).
+    None = "Empty building space",
+    -- The game calls it Emergency Quarters (2026-10-14).
+    EnlistedQuarter = "Emergency quarters",
     TurboShaft = "Turbolift",
     TacticalScannerAndSensorArray = "Tactical scanner and sensor array",
     -- The quest's "Stellar Cartography": powering this room completed it.
@@ -102,11 +106,22 @@ local STATE_PARTS = {
 -- Ruined rooms and turbolifts are not rooms you power. Life support is:
 -- each deck has one, and it shows Offline_State when switched off (read
 -- 2026-10-11). "on" and "off" match the power button (Casey, 2026-10-11).
-local NO_POWER = { RuinedRoom = true, TurboShaft = true }
+local NO_POWER = { RuinedRoom = true, TurboShaft = true, None = true }
 
 local function room_state(h, raw)
     local w = h.RoomHullWidget
     if not (w and w:IsValid()) then return "" end
+    -- Work in progress ("Repairing, 3 cycles", "Building", "Removing"): a
+    -- room under repair was read "on" (2026-10-14). IsVisible is true on
+    -- every room's template text; only screen.shown tells the real ones.
+    local ok, busy = pcall(function()
+        if not require("screen").shown(w.StateText) then return nil end
+        local st = w.StateText:GetText():ToString()
+        local cy = w.CycleText:GetText():ToString()
+        if st == "" then return nil end
+        return st:lower() .. (cy ~= "" and (", " .. cy:lower()) or "")
+    end)
+    if ok and busy then return busy end
     for _, part in ipairs(STATE_PARTS) do
         local x = w[part[1]]
         if x and x:IsValid() and x:IsVisible() then return part[2] end
@@ -158,6 +173,17 @@ local function select(r, with_deck, prefix)
     selected = { deck = r.deck, y = r.y }
     save_selected()
     local text = describe(r, with_deck)
+    -- Decks of identical "Ruined room"s gave no sign of moving or of the
+    -- deck's end (2026-10-14), so say the room's place on its deck.
+    local n, count, best = 0, 0, math.huge
+    for _, o in ipairs(rooms()) do
+        if o.deck == r.deck then
+            count = count + 1
+            local d = math.abs(o.y - r.y)
+            if d < best then n, best = count, d end
+        end
+    end
+    if count > 1 and n > 0 then text = string.format("%s, %d of %d", text, n, count) end
     if prefix then text = prefix .. ": " .. text end
     print("[VoyagerAccess] ship: " .. text .. "\n")
     speech.say(text, true)
@@ -216,6 +242,81 @@ function M.deck(dir)
         if r.deck == want and math.abs(r.y - here.y) < best_d then target, best_d = r, math.abs(r.y - here.y) end
     end
     select(target, true)
+end
+
+-- J: the ship's rooms as a list (Casey, 2026-10-14: what a sighted player
+-- sees at a glance gets a key). Ruined rooms and turbolifts are left out,
+-- since a deck of "Ruined room"s hid Stellar Cartography. Up and Down move,
+-- Home and End go to the ends, Enter selects the room in the ship view
+-- (Enter again opens it), Backspace or J closes.
+local jump = nil   -- { items = { {deck, y, text} }, index }
+
+function M.list_open() return jump ~= nil end
+
+local function say_jump()
+    local it = jump.items[jump.index]
+    speech.say(string.format("%s, %d of %d", it.text, jump.index, #jump.items), true)
+end
+
+function M.list_toggle()
+    if jump then
+        jump = nil
+        speech.say("Closed", true)
+        return
+    end
+    local items = {}
+    for _, r in ipairs(rooms()) do
+        local raw = raw_name(r.hull:GetRoomType())
+        -- Empty building space is listed: it is where rooms are built.
+        if raw ~= "RuinedRoom" and raw ~= "TurboShaft" then
+            items[#items + 1] = { deck = r.deck, y = r.y, text = describe(r, true) }
+        end
+    end
+    if #items == 0 then
+        speech.say("No rooms", true)
+        return
+    end
+    local index = 1
+    if selected then
+        for i, it in ipairs(items) do
+            if it.deck == selected.deck and math.abs(it.y - selected.y) < 1 then index = i end
+        end
+    end
+    jump = { items = items, index = index }
+    require("focus").park_focus()
+    say_jump()
+end
+
+function M.list_step(dir)
+    if jump.items[jump.index + dir] then jump.index = jump.index + dir end
+    say_jump()
+end
+
+function M.list_edge(last)
+    jump.index = last and #jump.items or 1
+    say_jump()
+end
+
+function M.list_close()
+    if not jump then return false end
+    jump = nil
+    speech.say("Closed", true)
+    return true
+end
+
+function M.list_enter()
+    local it = jump.items[jump.index]
+    jump = nil
+    for _, r in ipairs(rooms()) do
+        if r.deck == it.deck and math.abs(r.y - it.y) < 1 then return select(r, true) end
+    end
+end
+
+-- The selected room's hull actor, or nil (construction.lua builds there).
+function M.selected_hull()
+    local list = rooms()
+    local i = index_of_selected(list)
+    return i and list[i].hull or nil
 end
 
 -- For L (where am I): the selected room with its deck, or nil.

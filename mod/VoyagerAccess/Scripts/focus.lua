@@ -13,6 +13,7 @@ local INTERVAL_MS = 100
 -- a garbage pointer (symbolized crash, 2026-10-10 21:55). Keep paths and
 -- look them up again with resolve() each time.
 local current = nil          -- path of the focused button
+local ticks, focus_tick = 0, -100   -- focus polls so far, and the poll choices appeared
 -- Paths of buttons Enter was pressed on, oldest first; Backspace returns to them.
 local back_stack = {}
 local pending_click = nil    -- { button = path, menu = path, polls = n }
@@ -65,12 +66,17 @@ M.live = live
 local function focused_button()
     local buttons = FindAllOf("CommonButtonBase")
     if not buttons then return nil end
+    -- The innermost one: the incoming call list sits inside the Incoming
+    -- Calls button, both had focused descendants, and the outer, unlabeled
+    -- one was taken, so the call was never read (2026-10-14).
+    local best, best_len = nil, -1
     for _, b in ipairs(buttons) do
         if b:IsValid() and live(b) and (b:HasKeyboardFocus() or b:HasFocusedDescendants()) then
-            return b
+            local len = #path_of(b)
+            if len > best_len then best, best_len = b, len end
         end
     end
-    return nil
+    return best
 end
 
 -- Settings rows (STVUserSettingWidget): the value is not in their text when
@@ -97,7 +103,10 @@ local function setting_value(b)
     if carousel and carousel:IsValid() and carousel:IsVisible() then
         return b:GetCarouselEntryFromValue(v):ToString()
     end
-    return string.format("%d percent", math.floor(b:GetSliderPercentageFromValue(v) * 100 + 0.5))
+    -- Clamped: Severity (Accessibility) starts at a stored 10 on a 0 to 1
+    -- slider, drawn full, and was spoken as 1000 percent (2026-10-14).
+    local pct = math.floor(b:GetSliderPercentageFromValue(v) * 100 + 0.5)
+    return string.format("%d percent", math.max(0, math.min(100, pct)))
 end
 
 local function with_value(label, b)
@@ -160,11 +169,173 @@ local function focus_first_run_screen()
             local confirm = w.CloseButton
             if confirm and confirm:IsValid() then
                 confirm:SetFocus()
-                return confirm
+                -- After the game window loses the foreground the gamma
+                -- window keeps keyboard focus itself and SetFocus does
+                -- nothing; claiming CONFIRM anyway left the arrows silent
+                -- (2026-10-14, VM, real alt-tab). Return nothing so the
+                -- window button list takes over.
+                if confirm:HasKeyboardFocus() or confirm:HasFocusedDescendants() then
+                    return confirm
+                end
+                return nil
             end
         end
     end
     return nil
+end
+
+-- Radial menus (WBP_RadialMenu, a ship room's action ring: Clear debris on a
+-- ruined room) open with nothing focused and the mod said nothing
+-- (2026-10-14). Focus the first segment and give the segments Up and Down
+-- in ring order; Enter clicks the focused one as usual.
+local RADIAL_NAMES = { DestroyRuin = "Clear debris" }
+local function focus_radial()
+    local menu = nil
+    for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+        if w:IsValid() and live(w) and require("screen").shown(w) then menu = w end
+    end
+    if not menu then return nil end
+    local list = {}
+    for _, it in ipairs(M.ring_buttons(path_of(menu))) do list[#list + 1] = it.b end
+    if #list == 0 then return nil end
+    for i = 1, #list do
+        pcall(function()
+            if list[i - 1] then list[i]:SetNavigationRuleExplicit(2, list[i - 1]) else list[i]:SetNavigationRuleBase(2, 3) end
+            if list[i + 1] then list[i]:SetNavigationRuleExplicit(3, list[i + 1]) else list[i]:SetNavigationRuleBase(3, 3) end
+        end)
+    end
+    list[1]:SetFocus()
+    if list[1]:HasKeyboardFocus() or list[1]:HasFocusedDescendants() then return list[1] end
+    return nil
+end
+
+-- The ring's segments in their visual order, clockwise from the top
+-- (RenderTransform.Angle 0, 60, 120...); path order was arbitrary.
+local function ring_buttons(menu)
+    local list = {}
+    for _, o in ipairs(FindAllOf("WBP_RadialButton_C") or {}) do
+        local p = o:IsValid() and path_of(o)
+        if p and p:sub(1, #menu + 1) == menu .. "." and require("screen").shown(o) then
+            local ok, a = pcall(function() return o.RenderTransform.Angle end)
+            list[#list + 1] = { b = o, path = p, angle = (ok and type(a) == "number") and a or 0 }
+        end
+    end
+    table.sort(list, function(x, y)
+        if x.angle ~= y.angle then return x.angle < y.angle end
+        return x.path < y.path
+    end)
+    return list
+end
+
+M.ring_buttons = ring_buttons
+
+-- A segment's name from its command asset, for when its details cannot be
+-- read. "OpenMenu_RoomCategory_BorgTechnology" was read "Open menu_room
+-- category_borg technology" (2026-10-14): a category is named alone.
+function M.radial_label(b)
+    local ok, name = pcall(function() return b.Command:GetFName():ToString() end)
+    if not ok or not name then return nil end
+    local key = name:gsub("^DA_Command_", "")
+    local function words(s)
+        return (s:gsub("_", " "):gsub("(%l)(%u)", "%1 %2"):gsub("%s+", " "):lower():gsub("^%l", string.upper))
+    end
+    local category = key:match("^OpenMenu_RoomCategory_(.+)$") or key:match("^OpenMenu_(.+)$")
+    key = key:gsub("^ConstructRoom_", "")
+    local label = RADIAL_NAMES[key] or (category and words(category)) or words(key)
+    local locked = false
+    pcall(function() locked = require("screen").shown(b.LockImage) end)
+    if locked then label = label .. ", locked" end
+    return label
+end
+
+-- "n of m" for a segment.
+local function ring_place(b)
+    local menu = path_of(b):match("^(.-WBP_RadialMenu_C_%d+)%.")
+    if not menu then return "" end
+    local list = ring_buttons(menu)
+    for i, it in ipairs(list) do
+        if it.path == path_of(b) then return string.format("%d of %d", i, #list) end
+    end
+    return ""
+end
+
+-- What the ring's centre shows while a segment is hovered: a build menu's
+-- WBP_RadialMenuCenter_BuildRoom has the room's name, a missing-resources
+-- warning, its description, operation and construction costs. That only
+-- appears on mouse hover (2026-10-14), so the mod hovers the focused one.
+local function radial_details(menu)
+    local by, order = {}, {}
+    local center = nil
+    for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+        for _, t in ipairs(FindAllOf(cls) or {}) do
+            local tp = t:IsValid() and path_of(t)
+            -- The centre is not inside the ring's path; any shown one counts.
+            if tp and tp:find("^/Engine/Transient%.") and tp:find("WBP_RadialMenuCenter_", 1, true)
+                and require("screen").shown(t) then
+                local name = tp:match("([^%.]+)$")
+                center = center or tp:match("^(.-WBP_RadialMenuCenter_[%w_]-_C_%d+)%.")
+                local ok, s = pcall(function() return t:GetText():ToString() end)
+                s = (ok and s) and s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "") or ""
+                if s ~= "" and not by[name] then by[name] = s; order[#order + 1] = name end
+            end
+        end
+    end
+    if not by.CenterText then
+        local parts = {}
+        for _, n in ipairs(order) do parts[#parts + 1] = by[n] end
+        return #parts > 0 and table.concat(parts, ". ") or nil
+    end
+    local parts = { by.CenterText }
+    if by.ErrorText then parts[#parts + 1] = by.ErrorText end
+    if by.RoomDescriptionText then parts[#parts + 1] = by.RoomDescriptionText end
+    local op = {}
+    if by.EnergyValue then op[#op + 1] = "energy " .. by.EnergyValue end
+    if by.CrewValue then op[#op + 1] = "crew " .. by.CrewValue end
+    if #op > 0 then parts[#parts + 1] = (by.OperationText or "Operation") .. ": " .. table.concat(op, ", ") end
+    local build = {}
+    local okc, costs = pcall(function() return center and require("rooms").costs_under(center) or "" end)
+    if okc and costs ~= "" then build[#build + 1] = costs end
+    if by.WorkteamsValue then build[#build + 1] = by.WorkteamsValue .. (by.WorkteamsValue == "1" and " work team" or " work teams") end
+    if by.CyclesValue then build[#build + 1] = by.CyclesValue .. (by.CyclesValue == "1" and " cycle" or " cycles") end
+    if #build > 0 then parts[#parts + 1] = (by.BuildText or "Construction") .. ": " .. table.concat(build, ", ") end
+    for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
+    return table.concat(parts, ". ")
+end
+
+local radial_said = {}   -- segment path -> what was said, for L and R
+
+-- Focus reached a segment: hover it with the mouse (through the helper),
+-- then say the centre's details and its place in the ring; with no
+-- details (no helper, or a centre without them), the command's name.
+function M.radial_focus(b, path)
+    local menu = path:match("^(.-WBP_RadialMenu_C_%d+)%.")
+    pcall(function()
+        local pos = b.Slot:GetPosition()
+        local r = math.max(math.sqrt(pos.X * pos.X + pos.Y * pos.Y), 1)
+        speech.ring_mouse(pos.X / r, pos.Y / r)
+    end)
+    ExecuteInGameThreadWithDelay(450, function()
+        pcall(function()
+            if current ~= path then return end
+            local nb = resolve(path)
+            if not nb then return end
+            local text = menu and radial_details(menu) or nil
+            if not text or text == "" then text = M.radial_label(nb) or "Button" end
+            -- A room to build: its width and whether it fits at the selected
+            -- space (construction.lua).
+            local okf, fit = pcall(require("construction").fit_text, nb)
+            if okf and fit then text = text:gsub("%.%s*$", "") .. ". " .. fit end
+            local place = ring_place(nb)
+            if place ~= "" then text = text .. ". " .. place end
+            radial_said[path] = text
+            print("[VoyagerAccess] radial: " .. text .. "\n")
+            speech.say(text, true)
+        end)
+    end)
+end
+
+function M.radial_said(path)
+    return radial_said[path]
 end
 
 -- Up and Down move through every screen, whatever its layout (Casey,
@@ -264,6 +435,15 @@ local function window_buttons(wpath)
             if ok and label and label ~= "" then paths[#paths + 1] = p end
         end
     end
+    -- A combat order wheel's Back came first ("Back, 1 of 6", 2026-10-14):
+    -- it goes last.
+    for i, p in ipairs(paths) do
+        if p:find("%.BackButton$") and i < #paths then
+            table.remove(paths, i)
+            paths[#paths + 1] = p
+            break
+        end
+    end
     return paths
 end
 
@@ -292,7 +472,8 @@ local restore_wait = 0
 -- (2026-10-11). Opening a list parks the game's focus on the viewport;
 -- closing it lets restore_focus put it back.
 local function mod_list_open()
-    return require("whatsnew").open() or require("resources").list_open()
+    return require("whatsnew").open() or require("hotkeys").open() or require("resources").list_open() or require("credits").open()
+        or require("ship").list_open() or require("techtree").open()
 end
 
 function M.park_focus()
@@ -330,28 +511,57 @@ local function track_unfocused_window()
     track_wait = track_wait - 1
     if track_wait > 0 then return end
     track_wait = 3
+    -- A confirmation inside a window goes first, alone: the away team's
+    -- start warning's Return and Continue were mixed into a list of ten
+    -- with the slots and heroes behind it (2026-10-14).
+    local windows = require("popups").open_windows()
+    local modal = nil
+    for _, p in ipairs(windows) do
+        if p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true) then modal = p end
+    end
+    if modal then windows = { modal } end
     if virtual then
         local w = resolve(virtual.window)
-        if w and require("screen").shown(w) then return end
+        -- A combat order wheel swaps its buttons in place (Offensive
+        -- Actions opened the enemy's subsystems, and the list kept the old
+        -- buttons, 2026-10-14): rebuild when a listed button has gone.
+        local all_there = true
+        for _, bp in ipairs(virtual.buttons) do
+            local vb = resolve(bp)
+            if not (vb and require("screen").shown(vb)) then all_there = false break end
+        end
+        if all_there and w and require("screen").shown(w) and (not modal or virtual.window == modal) then return end
         virtual = nil
     end
-    for _, wpath in ipairs(require("popups").open_windows()) do
+    -- Windows the mod can give real focus to do not need the list.
+    local okw, focused = pcall(function() return require("rooms").prepare_workteams() end)
+    if okw and focused then return end
+    -- The buttons of every open window together: the Research Report's
+    -- rewards are a second window, and taking only the first window with
+    -- buttons left Close Report and Enter Ship out of reach (2026-10-14).
+    local buttons, first, seen = {}, nil, {}
+    for _, wpath in ipairs(windows) do
         if not wpath:find("Tutorial", 1, true) then
-            local buttons = window_buttons(wpath)
-            if #buttons > 0 then
-                local index = 1
-                for _, want in ipairs(PREFERRED) do
-                    local found = nil
-                    for i, bp in ipairs(buttons) do
-                        if not found and bp:match("([^%.]+)$") == want then found = i end
-                    end
-                    if found then index = found break end
+            for _, bp in ipairs(window_buttons(wpath)) do
+                if not seen[bp] then
+                    seen[bp] = true
+                    buttons[#buttons + 1] = bp
+                    first = first or wpath
                 end
-                virtual = { window = wpath, buttons = buttons, index = index }
-                say_virtual()
-                return
             end
         end
+    end
+    if #buttons > 0 then
+        local index = 1
+        for _, want in ipairs(PREFERRED) do
+            local found = nil
+            for i, bp in ipairs(buttons) do
+                if not found and bp:match("([^%.]+)$") == want then found = i end
+            end
+            if found then index = found break end
+        end
+        virtual = { window = first, buttons = buttons, index = index }
+        say_virtual()
     end
 end
 
@@ -378,6 +588,13 @@ function M.virtual_enter()
     if not b then return end
     print("[VoyagerAccess] enter: window button " .. virtual.buttons[virtual.index] .. "\n")
     click(b)
+    -- DARKER and BRIGHTER only move a bar; the bar's own widgets do not
+    -- hold the value, the engine's display gamma does (2026-10-14).
+    local name = virtual.buttons[virtual.index]:match("([^%.]+)$")
+    if name == "GammaUpButton" or name == "GammaDownButton" then
+        local ok, g = pcall(function() return FindFirstOf("GameEngine").DisplayGamma end)
+        if ok and type(g) == "number" then speech.say(string.format("Gamma %.1f", g), true) end
+    end
 end
 
 local function wire_rows(path)
@@ -394,8 +611,15 @@ local function wire_rows(path)
         if not up then break end
         root = up
     end
+    local all = {}
+    buttons_in(root, all, 0)
+    -- The warp core tiers move by the mod's own Up and Down (warpcore.lua);
+    -- wired here as well, one key moved twice (Gray Mode to Tier 2,
+    -- 2026-10-14).
     local list = {}
-    buttons_in(root, list, 0)
+    for _, b in ipairs(all) do
+        if not require("warpcore").handles(path_of(b)) then list[#list + 1] = b end
+    end
     local names = {}
     for i, b in ipairs(list) do names[i] = path_of(b) end
     local key, sig = path_of(root), table.concat(names, "|")
@@ -411,8 +635,15 @@ local function wire_rows(path)
         end
     end
     local n = 0
+    -- A hero list (the slot's picker) ends at its last hero: Down went on to
+    -- "start mission" (2026-10-14).
+    local away = require("awaymission")
+    local function hero(i) return away.is_hero_button(names[i]) end
     for i = 1, #list - 1 do
-        if in_row[i] or in_row[i + 1] then
+        if hero(i) ~= hero(i + 1) then
+            if hero(i) then list[i]:SetNavigationRuleBase(NAV_DOWN, 3) end
+            if hero(i + 1) then list[i + 1]:SetNavigationRuleBase(NAV_UP, 3) end
+        elseif in_row[i] or in_row[i + 1] then
             list[i]:SetNavigationRuleExplicit(NAV_DOWN, list[i + 1])
             list[i + 1]:SetNavigationRuleExplicit(NAV_UP, list[i])
             n = n + 1
@@ -427,8 +658,42 @@ end
 -- The spoken label for a focused button.
 label_for = function(b, path)
     local label
-    if b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C" then
+    local work = require("rooms").workteam_label(path) or require("rooms").serving_label(path)
+        or require("rooms").research_label(path)
+    local cls = b:GetClass():GetFName():ToString()
+    if work then
+        label = work
+    elseif cls == "WBP_IncomingCall_List_Button_C" then
+        local t = b.NotificationText
+        local ok, s = pcall(function() return t:GetText():ToString() end)
+        label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
+    elseif cls == "WBP_RadialButton_C" then
+        -- Said after the hover, with the centre's details (radial_focus);
+        -- the cached text here was said a second time (2026-10-14).
+        label = ""
+    elseif b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C" then
         label = require("events").option_label(b)
+    elseif require("combat").handles(b, path) then
+        label = require("combat").button_label(b, path)
+    elseif b:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C" then
+        -- A side mission offer's options: the wording is rich text the
+        -- plain label missed, so the options were silent (2026-10-14).
+        local texts = {}
+        local prefix = path .. "."
+        for _, cls in ipairs({ "RichTextBlock", "TextBlock" }) do
+            for _, t in ipairs(FindAllOf(cls) or {}) do
+                local tp = t:IsValid() and path_of(t)
+                if tp and tp:sub(1, #prefix) == prefix and require("screen").shown(t) then
+                    local ok, s = pcall(function() return t:GetText():ToString() end)
+                    s = ok and s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%s+", " ")
+                        :gsub("%s+([%.,])", "%1"):match("^%s*(.-)%s*$") or ""
+                    if s ~= "" then texts[#texts + 1] = s end
+                end
+            end
+        end
+        label = table.concat(texts, ". ")
+        if label == "" then label = nil end
+        if label and not b:GetIsEnabled() then label = label:gsub("%.$", "") .. ", unavailable" end
     elseif require("warpcore").handles(path) then
         label = require("warpcore").label(path)
     elseif require("awaymission").is_slot(path) then
@@ -443,6 +708,31 @@ label_for = function(b, path)
         label = require("dialogue").choice_label(path) or with_value(label_of(path), b)
     else
         label = with_value(label_of(path), b)
+    end
+    -- Choice groups (Performance Selection's LOW to EPIC, profiles, settings
+    -- tabs) show the current choice only by colour: the game keeps it
+    -- Selected. Say so (2026-10-14, the VM run).
+    -- Not on a room's buttons: the power button is Selected while on and
+    -- already says so ("Stellar Cartography on., selected", 2026-10-14).
+    -- Nor on dialogue choices: the first one is Selected by default and read
+    -- "Destroy the Array, selected" before anything was picked (2026-10-14).
+    if label and not label:find("selected", 1, true) and not require("rooms").is_module_button(path)
+        and not require("dialogue").is_choice(path) then
+        local ok, sel = pcall(function() return b:GetSelected() end)
+        -- Only in a group: a lone story card CONTINUE is Selected too and
+        -- was read "CONTINUE, selected" (2026-10-14).
+        local grouped = false
+        pcall(function()
+            BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+            local parent = b:GetParent()
+            local n = 0
+            for i = 0, parent:GetChildrenCount() - 1 do
+                local ch = parent:GetChildAt(i)
+                if ch and ch:IsValid() and ch:IsA(BUTTON_CLASS) then n = n + 1 end
+            end
+            grouped = n >= 2
+        end)
+        if ok and sel and grouped then label = label:gsub("%.$", "") .. ", selected" end
     end
     return label
 end
@@ -463,6 +753,9 @@ local function poll()
     end
     crumb.at("focus: scan buttons")
     local b = focused_button()
+    -- In battle the hidden hero setup's slot kept keyboard focus, so the
+    -- order wheel's button list never came up (2026-10-14).
+    if b and require("combat").active() and not require("screen").shown(b) then b = nil end
     -- While a mod list is open the game still moves menu focus on Up and
     -- Down; say nothing about it and park focus again, or the menu talks
     -- over the list ("bleeding through", 2026-10-11).
@@ -471,6 +764,10 @@ local function poll()
         return
     end
     if not b then b = focus_first_run_screen() end
+    if not b then
+        local okr, r = pcall(focus_radial)
+        if okr then b = r end
+    end
     if b then
         virtual = nil
         last_real = path_of(b)
@@ -478,9 +775,14 @@ local function poll()
         track_unfocused_window()
     end
     local path = b and path_of(b) or nil
+    ticks = ticks + 1
     if path == current then return end
     crumb.at("focus: changed to " .. tostring(path))
+    -- When focus first reaches a set of dialogue choices (not when it moves
+    -- between them): see the Enter guard in activate().
+    local was_choice = current ~= nil and require("dialogue").is_choice(current)
     current = path
+    if path and not was_choice and require("dialogue").is_choice(path) then focus_tick = ticks end
     if path then
         local ok, err = pcall(wire_rows, path)
         if not ok then print("[VoyagerAccess] rows error: " .. tostring(err) .. "\n") end
@@ -495,6 +797,7 @@ local function poll()
     end
     if is_setting(b) and is_heading(b) and skip_heading(b) then return end
     crumb.at("focus: label of " .. path)
+    if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then pcall(M.radial_focus, b, path) end
     local label = label_for(b, path)
     if section_prefix then
         label = label and (section_prefix .. ", " .. label) or section_prefix
@@ -574,6 +877,16 @@ local function activate()
     -- Only while the choice is on screen: after picking one, focus stayed
     -- on the hidden choice and Enter kept picking it (2026-10-11).
     local choice = dialogue.is_choice(current) and resolve(current)
+    -- The Enter that moves the last line on can land just as the choices
+    -- come up, and it picked "Choice 1" before it was heard (twice,
+    -- 2026-10-14). Within a second of the choices appearing, Enter says
+    -- the focused choice instead of picking it.
+    if choice and require("screen").shown(choice) and ticks - focus_tick < 10 then
+        local label = label_for(choice, current)
+        print("[VoyagerAccess] enter: choice just appeared, reading it\n")
+        if label then speech.say(label, true) end
+        return
+    end
     if choice and require("screen").shown(choice) then
         local cpath = current:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)")
         local c = cpath and resolve(cpath)
@@ -581,6 +894,23 @@ local function activate()
         if not (target and target:IsValid()) then target = resolve(current) end
         if target then
             print("[VoyagerAccess] enter: choice " .. tostring(current) .. "\n")
+            -- The Array's "Destroy the Array or go home" choice is a hold
+            -- button (bRequiresHold); a click did nothing, fourteen times
+            -- (2026-10-14). Hold it as Wait One Cycle is held.
+            local okh, hold = pcall(function() return target.bRequiresHold end)
+            if okh and hold then
+                speech.say("Holding", true)
+                target:HandleButtonPressed()
+                local held = path_of(target)
+                ExecuteInGameThreadWithDelay(2500, function()
+                    pcall(function()
+                        local nb = resolve(held)
+                        if nb then nb:HandleButtonReleased() end
+                        print("[VoyagerAccess] enter: released choice " .. held .. "\n")
+                    end)
+                end)
+                return
+            end
             click(target)
             return
         end
@@ -604,16 +934,60 @@ local function activate()
     -- A settings category whose page is already showing ignores the click
     -- (selection does not change, so the game does nothing), so focus the
     -- page's own desired target instead (proven 2026-10-10 on Graphics).
-    local outer = b:GetOuter()
-    local window = outer and outer:GetOuter()
-    if b:GetSelected() and window and window:IsValid()
-        and window:GetClass():GetFName():ToString() == "WBP_SettingsWindow_C" then
+    -- The tab buttons' outer is the game instance, not the window, so the
+    -- shown settings window is looked up instead (2026-10-14: walking the
+    -- outers never matched and Enter on the open tab did nothing).
+    -- A ring segment is under the mouse (radial_focus hovered it), and the
+    -- game's own Enter selects the hovered segment; clicking it as well
+    -- could do the action twice. So click only if the ring is still open,
+    -- with the same segment, a moment later (2026-10-14).
+    if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then
+        -- A room to build: built at the selected space by the mod, since the
+        -- game's own placement needs a mouse click on a slot (2026-10-14).
+        local okc, handled = pcall(require("construction").enter, b, radial_said[current])
+        if not okc then print("[VoyagerAccess] construction error: " .. tostring(handled) .. "\n") end
+        if okc and handled then return end
+        local seg = current
+        ExecuteInGameThreadWithDelay(400, function()
+            pcall(function()
+                local nb = resolve(seg)
+                if nb and require("screen").shown(nb) and current == seg then
+                    print("[VoyagerAccess] radial: clicking " .. seg .. "\n")
+                    click(nb)
+                end
+            end)
+        end)
+        return
+    end
+    if require("warpcore").handles(current) then require("warpcore").after_enter(current) end
+    local window = nil
+    if b:GetClass():GetFName():ToString() == "WBP_LCARS_Button_MainMenu_C" then
+        for _, w in ipairs(FindAllOf("WBP_SettingsWindow_C") or {}) do
+            if w:IsValid() and live(w) and require("screen").shown(w) then window = w end
+        end
+    end
+    local function focus_page()
         local page = window.ContentPanel:GetActiveWidget()
         local target = page and page:IsValid() and page:GetDesiredFocusTarget()
         if target and target:IsValid() then
             target:SetFocus()
-            return
+            return true
         end
+        return false
+    end
+    if window and b:GetSelected() and focus_page() then return end
+    -- A tab not yet open: the click opens its page, and the game then
+    -- sometimes moved focus into it and sometimes left it on the tab
+    -- (2026-10-14). Move it in, so one Enter always reaches the settings.
+    if window then
+        click(b)
+        local tab = current
+        ExecuteInGameThreadWithDelay(400, function()
+            pcall(function()
+                if current == tab and window:IsValid() then focus_page() end
+            end)
+        end)
+        return
     end
     local menu = open_panel_for(b)
     if menu then
@@ -626,11 +1000,54 @@ local function activate()
         local before = label_for(b, current)
         local path = current
         click(b)
+        -- Enter on an away team slot opens its hero picker, but the game
+        -- also takes that Enter as "Start away mission" and puts up "You
+        -- still have unassigned slots. Continue?" (twice, 2026-10-14). The
+        -- mod cannot keep the key from the game, so it closes that warning
+        -- with Return when it comes up straight after a slot was opened.
+        -- The battle's hero setup does the same (2026-10-14).
+        if path:find("WBP_AwayMissionHeroPicker_C_%d+%.") or path:find("HeroPickerTemplate", 1, true)
+            or (path:find("%.HeroLoadout%.") and path:find("OpenSelectionButton$")) then
+            M.quiet_start_warning_until = os.clock() + 2
+            local function dismiss(tries)
+                local done = false
+                pcall(function()
+                    for _, w in ipairs(FindAllOf("WBP_AM_ConfirmStart_C") or {}) do
+                        if w:IsValid() and live(w) and require("screen").shown(w) then
+                            print("[VoyagerAccess] away: closing the start warning the slot's Enter raised\n")
+                            click(w.CloseButton)
+                            done = true
+                            -- When the warning came first, the slot's click
+                            -- was lost and no picker opened: click it again.
+                            ExecuteInGameThreadWithDelay(300, function()
+                                pcall(function()
+                                    local open = false
+                                    for _, h in ipairs(require("awaymission").hero_buttons()) do
+                                        if h:IsValid() and live(h) and require("screen").shown(h) then open = true end
+                                    end
+                                    local slot = resolve(path)
+                                    if not open and slot then
+                                        print("[VoyagerAccess] away: opening the slot again\n")
+                                        click(slot)
+                                    end
+                                end)
+                            end)
+                        end
+                    end
+                end)
+                if not done and tries > 1 then ExecuteInGameThreadWithDelay(200, function() dismiss(tries - 1) end) end
+            end
+            ExecuteInGameThreadWithDelay(150, function() dismiss(5) end)
+        end
         -- The power button's text changed later than 400 ms (Switch Off on
         -- Life Support, 2026-10-11), so check every 300 ms for 2.4 s.
         local function check(tries)
             local done = true
             pcall(function()
+                -- Focus moved on (a settings tab opens its page): the old
+                -- button's new text only talked over the new focus
+                -- ("Audio, selected" cut off "Master Volume", 2026-10-14).
+                if current ~= path then return end
                 local now = resolve(path)
                 if not (now and require("screen").shown(now)) then return end
                 local after = label_for(now, path)
@@ -643,6 +1060,15 @@ local function activate()
             end)
             if not done and tries > 1 then
                 ExecuteInGameThreadWithDelay(300, function() check(tries - 1) end)
+            elseif not done and path:find("%.PowerToggleButton$") and current == path then
+                -- The game refuses a room it has no power for without a
+                -- word (Shield Generator, 57 of 60 in use, 2026-10-14).
+                pcall(function()
+                    local cm = FindFirstOf("STVConstructionManager")
+                    local info = cm:GetWarpcoreInfo()
+                    speech.say(string.format("Did not switch. Energy %d, rooms use %d.",
+                        info.EnergyAmount, info.EnergyConsumption), true)
+                end)
             end
         end
         ExecuteInGameThreadWithDelay(300, function() check(8) end)
@@ -660,6 +1086,17 @@ local function go_back()
             print("[VoyagerAccess] back: " .. path .. "\n")
             b:SetFocus()
             return
+        end
+    end
+    -- On a settings row with nothing stacked (the page was reached by
+    -- arrows), go back to the open settings tab (2026-10-14).
+    local cur = resolve(current)
+    if cur and is_setting(cur) then
+        for _, t in ipairs(FindAllOf("WBP_LCARS_Button_MainMenu_C") or {}) do
+            if t:IsValid() and live(t) and require("screen").shown(t) and t:GetSelected() then
+                t:SetFocus()
+                return
+            end
         end
     end
     speech.say("Nothing to go back to", true)
@@ -689,6 +1126,7 @@ local function edge(last)
     crumb.at("key: home/end")
     local b = resolve(current)
     if not b then return end
+    if require("dialogue").choice_edge(current, last) then return end
     local list = b:GetParent()
     if not (list and list:IsValid()) then return end
     BUTTON = BUTTON or StaticFindObject("/Script/CommonUI.CommonButtonBase")
@@ -707,8 +1145,17 @@ end
 
 -- For L (where am I): the focused button as the arrows read it, or nil.
 function M.current_label()
+    -- A window's mod button list (no real focus): its current item.
+    if virtual then
+        local vb = resolve(virtual.buttons[virtual.index])
+        local ok, l = pcall(label_for, vb, virtual.buttons[virtual.index])
+        if ok and l then
+            return string.format("%s, %d of %d", (l:gsub("%.$", "")), virtual.index, #virtual.buttons)
+        end
+    end
     local b = resolve(current)
     if not (b and require("screen").shown(b)) then return nil end
+    if radial_said[current] then return radial_said[current] end
     local ok, label = pcall(label_for, b, current)
     return ok and label or nil
 end
@@ -744,25 +1191,67 @@ function M.install()
     keys.on("enter", function()
         if require("popups").close_tutorial() then return end
         if require("whatsnew").open() then return require("whatsnew").close() end
+        if require("hotkeys").open() then return require("hotkeys").repeat_item() end
+        if require("credits").open() then return require("credits").repeat_item() end
+        if require("techtree").open() then return require("techtree").enter() end
+        if ship.list_open() then return ship.list_enter() end
         if require("resources").list_open() then return require("resources").close() end
         if require("view").nav_open() then return require("view").nav_enter() end
         if away.mission_active() then return away.mission_enter() end
         if M.virtual_active() then return M.virtual_enter() end
+        -- In battle with no wheel open, Enter opens Orders (combat.lua).
+        if require("combat").active() then
+            local fb = resolve(current)
+            if not (fb and require("screen").shown(fb)) then return require("combat").open_orders() end
+        end
         if ship_mode() then return ship.open() end
         if map_mode() then return system.enter() end
         activate()
     end)
     keys.on("backspace", function()
         if require("whatsnew").close() then return end
+        if require("hotkeys").close() then return end
+        if ship.list_close() then return end
         if require("resources").close() then return end
         if require("view").nav_close() then return end
         if map_mode() and system.menu_close() then return end
         go_back()
     end)
+    -- Escape is the game's (the pause menu, closing windows), but it also
+    -- closes the mod's own lists: with C open, Escape opened the pause menu
+    -- and the C list kept the arrow keys (2026-10-14).
+    -- The same Escape opens the game's pause menu, which the player did not
+    -- ask for (the next keys went into Settings, 2026-10-14): when Escape
+    -- closed a mod list, a pause menu that opens right after is resumed.
+    local function undo_pause()
+        local tries = 0
+        local function check()
+            tries = tries + 1
+            for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+                if b:IsValid() and b:GetFName():ToString() == "ResumeButton" and live(b)
+                    and b:GetFullName():find("WBP_PauseMenu_C", 1, true) and require("screen").shown(b) then
+                    print("[VoyagerAccess] escape: closing the pause menu it opened\n")
+                    click(b)
+                    return
+                end
+            end
+            if tries < 5 then ExecuteInGameThreadWithDelay(100, function() pcall(check) end) end
+        end
+        ExecuteInGameThreadWithDelay(100, function() pcall(check) end)
+    end
+    keys.on("escape", function()
+        local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
+            or require("view").nav_close() or (map_mode() and system.menu_close())
+        if closed then undo_pause() end
+    end)
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
         if require("whatsnew").open() then require("whatsnew").step(-1)
+        elseif require("hotkeys").open() then require("hotkeys").step(-1)
+        elseif require("credits").open() then require("credits").step(-1)
+        elseif require("techtree").open() then require("techtree").step(-1)
+        elseif ship.list_open() then ship.list_step(-1)
         elseif require("resources").list_open() then require("resources").step(-1)
         elseif require("view").nav_open() then require("view").nav_step(-1)
         elseif away.mission_active() then away.mission_step(-1)
@@ -774,6 +1263,10 @@ function M.install()
     end)
     keys.on("down", function()
         if require("whatsnew").open() then require("whatsnew").step(1)
+        elseif require("hotkeys").open() then require("hotkeys").step(1)
+        elseif require("credits").open() then require("credits").step(1)
+        elseif require("techtree").open() then require("techtree").step(1)
+        elseif ship.list_open() then ship.list_step(1)
         elseif require("resources").list_open() then require("resources").step(1)
         elseif require("view").nav_open() then require("view").nav_step(1)
         elseif away.mission_active() then away.mission_step(1)
@@ -785,19 +1278,29 @@ function M.install()
     end)
     local rooms = require("rooms")
     keys.on("left", function()
+        if require("techtree").open() then return require("techtree").switch_tab(-1) end
         if require("view").overview_tab(-1) then return end
         if rooms.window_open() then rooms.switch_tab(-1)
         elseif ship_mode() then ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
+        if require("techtree").open() then return require("techtree").switch_tab(1) end
         if require("view").overview_tab(1) then return end
         if rooms.window_open() then rooms.switch_tab(1)
         elseif ship_mode() then ship.step(1) elseif not map_mode() then adjust(false) end
+    end)
+    keys.on("j", function()
+        if ship.list_open() or ship_mode() then ship.list_toggle()
+        else speech.say("J lists the rooms in the ship view", true) end
     end)
     keys.on("pageup", function() if ship_mode() then ship.deck(-1) end end)
     keys.on("pagedown", function() if ship_mode() then ship.deck(1) end end)
     local function home_end(last)
         if require("whatsnew").open() then return require("whatsnew").edge(last) end
+        if require("hotkeys").open() then return require("hotkeys").edge(last) end
+        if require("credits").open() then return require("credits").edge(last) end
+        if require("techtree").open() then return require("techtree").edge(last) end
+        if ship.list_open() then return ship.list_edge(last) end
         if require("resources").list_open() then return require("resources").edge(last) end
         if require("view").nav_open() then return require("view").nav_edge(last) end
         if away.mission_active() then return away.mission_edge(last) end

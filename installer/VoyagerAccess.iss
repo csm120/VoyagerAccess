@@ -47,6 +47,11 @@ OutputBaseFilename=VoyagerAccessSetup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+; Authenticode, when build.ps1 passes /DSign and the "wfh" sign tool.
+#ifdef Sign
+SignTool=wfh
+SignedUninstaller=yes
+#endif
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 UninstallDisplayIcon={app}\{#MyAppExeName}

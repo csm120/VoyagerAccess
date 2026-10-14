@@ -29,6 +29,10 @@ local hold_until = 0
 function M.say(text, interrupt)
     if type(text) ~= "string" then return end
     text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    -- Parts joined with ". " after text that already ended a sentence read
+    -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
+    text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ",")
+    text = text:gsub("^%s+", ""):gsub("%s+$", "")
     if text == "" then return end
     if interrupt and os.time() < hold_until then interrupt = false end
     write("a", (interrupt and "I|" or "Q|") .. text .. "\n")
@@ -44,10 +48,11 @@ end
 -- takes to say, at roughly three words a second: the focus announcement of
 -- the window's first option cut off an event's locked options
 -- (2026-10-11). Queued after anything already speaking.
-function M.say_long(text)
+function M.say_long(text, interrupt)
     if type(text) ~= "string" or text == "" then return end
     local _, words = text:gsub("%S+", "")
-    M.say(text, false)
+    if interrupt then hold_until = 0 end
+    M.say(text, interrupt == true)
     hold_until = math.max(hold_until, os.time() + math.min(30, math.ceil(words / 3)))
 end
 
@@ -57,6 +62,17 @@ function M.release()
 end
 
 -- Asks the helper for a real left click at screen pixel (x, y).
+-- The helper puts the mouse cursor in the middle of the game window.
+function M.center_mouse()
+    write("a", "M|center\n")
+end
+
+-- The helper puts the mouse cursor on a radial menu segment: x, y are the
+-- segment's offset from the ring's centre in ring radii.
+function M.ring_mouse(x, y)
+    write("a", string.format("M|ring,%.3f,%.3f\n", x, y))
+end
+
 function M.click(x, y)
     write("a", string.format("C|%.0f,%.0f\n", x, y))
 end

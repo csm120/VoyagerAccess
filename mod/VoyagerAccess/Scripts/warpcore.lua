@@ -27,8 +27,26 @@ local function manager()
     return FindFirstOf("STVConstructionManager")
 end
 
+-- The game must not also move between tiers on Up and Down: with rules
+-- from focus.lua's row wiring it did, and one press went two tiers
+-- (2026-10-14). EUINavigationRule Stop = 3; EUINavigation Up = 2, Down = 3.
+local function stop_game_navigation(path)
+    local prefix = path:match("^(.*%.)[^%.]+$")
+    for _, name in ipairs({ "Button_GrayMode", "Button_Tier1", "Button_Tier2", "Button_Tier3",
+                            "Button_Tier4", "Button_Tier5", "Button_Tier6" }) do
+        local b = StaticFindObject(prefix .. name)
+        if b and b:IsValid() then
+            pcall(function()
+                b:SetNavigationRuleBase(2, 3)
+                b:SetNavigationRuleBase(3, 3)
+            end)
+        end
+    end
+end
+
 function M.label(path)
     local level = level_of(path)
+    pcall(stop_game_navigation, path)
     local text = level == 0 and "Gray Mode" or ("Tier " .. level)
     local cm = manager()
     if cm and cm:IsValid() then
@@ -38,6 +56,24 @@ function M.label(path)
         if ok2 and level > max then text = text .. ", locked" end
     end
     return text
+end
+
+-- Enter on a tier the game will not run (Tier 1 with 16 deuterium, Gray
+-- Mode, 2026-10-14) did nothing and said nothing: say so, with the
+-- deuterium on hand, once the click has had time to take.
+function M.after_enter(path)
+    local level = level_of(path)
+    ExecuteInGameThreadWithDelay(600, function()
+        pcall(function()
+            local cm = manager()
+            if not (cm and cm:IsValid()) then return end
+            if cm:GetSelectedWarpcoreLevel() == level then return end
+            local name = level == 0 and "Gray Mode" or ("Tier " .. level)
+            local deut = nil
+            pcall(function() deut = cm:GetWarpcoreInfo().DeuteriumAmount end)
+            require("speech").say(name .. " did not engage" .. (deut and (". Deuterium " .. deut) or "") .. ".", true)
+        end)
+    end)
 end
 
 -- Up (dir 1) to the next tier up, Down (dir -1) to the next one down.

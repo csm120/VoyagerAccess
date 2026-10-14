@@ -41,6 +41,21 @@ local function lines()
         by[w:GetFName():ToString()] = w
     end
     local parts = {}
+    -- Hull integrity, in the header beside morale (WBP_HullIntegrity:
+    -- CurrentHullValue, HullValuePerCycle). It fell from 150 to 60 while the
+    -- deflector was off and C never said so (2026-10-14).
+    local hull = shown_widgets("WBP_HullIntegrity_C")[1]
+    if hull then
+        local ok, text = pcall(function()
+            local t = "Hull " .. text_of(hull.CurrentHullValue)
+            local change = text_of(hull.HullValuePerCycle)
+            if change:match("^[%+%-]%d") then
+                t = t .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
+            end
+            return t
+        end)
+        if ok and text ~= "Hull " then parts[#parts + 1] = text end
+    end
     for _, key in ipairs(ORDER) do
         local w = by[key]
         if w then
@@ -62,7 +77,10 @@ local function lines()
     local cycles = by.Cycles
     -- Not cycles passed: it went 16, then 14 as Deuterium went 396, then 348
     -- at 24 a cycle, so it is how many cycles the fuel lasts.
-    if cycles then parts[#parts + 1] = "Fuel lasts " .. text_of(cycles.CyclesAmount) .. " cycles" end
+    if cycles then
+        local n = text_of(cycles.CyclesAmount)
+        parts[#parts + 1] = "Fuel lasts " .. n .. (n == "1" and " cycle" or " cycles")
+    end
     -- The rest of the strip (2026-10-11): energy (WBP_AggregateEnergy_Energy:
     -- CurrentResourceAmountText the output, UpkeepAmountText what rooms
     -- use), the battery (BatteryAmount stored, ExcessEnergyText the surplus

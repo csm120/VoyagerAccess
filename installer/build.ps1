@@ -27,6 +27,20 @@ if ($LASTEXITCODE) { throw "payload failed" }
 py -3.11 -m PyInstaller installer\VoyagerAccess.spec --distpath dist --workpath build\pyi --noconfirm --log-level WARN
 if ($LASTEXITCODE) { throw "PyInstaller failed" }
 
+# Authenticode (Azure Artifact Signing as Web Friendly Help LLC), before the
+# speech check so the check runs the signed exe. Not fatal on a machine that
+# cannot sign; check the release with installer\codesign.py --check.
+py -3.11 installer\codesign.py --can-sign
+$sign = ($LASTEXITCODE -eq 0)
+if ($sign) {
+    $az = "$env:ProgramFiles\Microsoft SDKs\Azure\CLI2\wbin"
+    if (Test-Path $az) { $env:PATH = "$az;$env:PATH" }
+    py -3.11 installer\codesign.py dist\VoyagerAccess\VoyagerAccess.exe
+    if ($LASTEXITCODE) { throw "signing VoyagerAccess.exe failed" }
+} else {
+    Write-Warning "NOT SIGNED: this build's exe and installer are unsigned"
+}
+
 $report = Join-Path $repo 'build\speech-check.txt'
 Remove-Item $report -ErrorAction SilentlyContinue
 $p = Start-Process dist\VoyagerAccess\VoyagerAccess.exe -ArgumentList '--speech-check', "`"$report`"" -Wait -PassThru
@@ -36,8 +50,18 @@ if ($p.ExitCode -ne 0) { throw "speech check failed: the build would be silent" 
 $iscc = @("$env:LOCALAPPDATA\Programs\Inno Setup 6\ISCC.exe", "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
     "$env:ProgramFiles\Inno Setup 6\ISCC.exe") | Where-Object { Test-Path $_ } | Select-Object -First 1
 if (-not $iscc) { throw "Inno Setup 6 (ISCC.exe) not found" }
-& $iscc /Q "/DMyAppVersion=$version" "/DMyAppVersionNumeric=$numeric.0" installer\VoyagerAccess.iss
+$isccArgs = @('/Q', "/DMyAppVersion=$version", "/DMyAppVersionNumeric=$numeric.0")
+if ($sign) {
+    # Inno signs the setup and the uninstaller it generates.
+    $signTool = py -3.11 installer\codesign.py --inno-sign-tool (Join-Path $repo 'build\artifact-signing.json')
+    $isccArgs += @('/DSign', "/Swfh=$signTool")
+}
+& $iscc @isccArgs installer\VoyagerAccess.iss
 if ($LASTEXITCODE) { throw "Inno Setup failed" }
+if ($sign) {
+    py -3.11 installer\codesign.py --check dist\installer\VoyagerAccessSetup.exe
+    if ($LASTEXITCODE) { throw "VoyagerAccessSetup.exe came out of Inno Setup unsigned" }
+}
 
 # The mod's scripts alone, for patching a running game, and a checksum file
 # beside each release file. The checksums used to be written by hand, and

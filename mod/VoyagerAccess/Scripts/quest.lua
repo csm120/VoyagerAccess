@@ -54,10 +54,25 @@ function M.objective()
         return (s:lower():gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end))
     end)
     local quest = shown_texts("WBP_QuestLineDisplay_C")[1]
+    -- A countdown in cycles shows as digit boxes before the quest's name
+    -- ("03"), read "0. 3. Caretaker" (2026-10-14): say it in words.
+    if quest then
+        local digits = ""
+        while true do
+            local d, rest = quest:match("^(%d+)%.%s+(.+)$")
+            if not d then break end
+            digits, quest = digits .. d, rest
+        end
+        local n = tonumber(digits)
+        if n then quest = quest .. ", " .. n .. (n == 1 and " cycle left" or " cycles left") end
+    end
     return quest and (quest .. ": " .. text) or text
 end
 
 function M.say_objective()
+    -- In battle the quest panel is hidden; the combat goal is the one shown.
+    local goal = require("combat").active() and require("combat").objective()
+    if goal then return speech.say("Combat goal: " .. goal, true) end
     speech.say(M.objective() or "No objective shown", true)
 end
 

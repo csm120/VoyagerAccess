@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from voyager.helper import (  # noqa: E402
-    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, parse_click, parse_line)
+    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, is_center_mouse, parse_click, parse_line, parse_ring)
 
 
 class ParseLineTests(unittest.TestCase):
@@ -29,6 +29,30 @@ class ParseClickTests(unittest.TestCase):
 
     def test_click_is_not_speech(self):
         self.assertIsNone(parse_line("C|640,360"))
+
+
+class ParseCenterTests(unittest.TestCase):
+    # Set course takes its target from under the mouse cursor (2026-10-14).
+    def test_center(self):
+        self.assertTrue(is_center_mouse("M|center\n"))
+
+    def test_not_center(self):
+        for bad in ["M|", "M|left", "C|640,360", "I|center", "center"]:
+            self.assertFalse(is_center_mouse(bad), bad)
+
+    def test_ring(self):
+        # A radial menu segment, as an offset from the ring's centre in ring
+        # radii (2026-10-14: its details only show on mouse hover).
+        self.assertEqual(parse_ring("M|ring,0,-1\n"), (0.0, -1.0))
+        self.assertEqual(parse_ring("M|ring,0.866,0.5"), (0.866, 0.5))
+
+    def test_not_ring(self):
+        for bad in ["M|ring", "M|ring,1", "M|ring,a,b", "M|center", "C|1,2", "M|ring,1,2,3"]:
+            self.assertIsNone(parse_ring(bad), bad)
+
+    def test_center_is_not_speech_or_click(self):
+        self.assertIsNone(parse_line("M|center"))
+        self.assertIsNone(parse_click("M|center"))
 
 
 class TailerTests(unittest.TestCase):
@@ -135,6 +159,16 @@ class KeyWatcherTests(unittest.TestCase):
         self.kb.state = {VK["f12"]: DOWN, VK_CONTROL: DOWN, VK_INSERT: DOWN}
         self.assertEqual(self.w.poll(), [])
 
+    def test_ctrl_f1_opens_the_key_list(self):
+        # Casey, 2026-10-14: a list of every key, browsable in the game.
+        self.kb.state = {VK["f1"]: DOWN, VK_CONTROL: DOWN}
+        self.assertEqual(self.w.poll(), ["ctrl+f1"])
+        self.kb.state = {}
+        self.w.poll()
+        # With a screen reader key also down it stays the screen reader's.
+        self.kb.state = {VK["f1"]: DOWN, VK_CONTROL: DOWN, VK_INSERT: DOWN}
+        self.assertEqual(self.w.poll(), [])
+
     def test_nothing_when_game_not_in_front(self):
         self.front = False
         self.kb.state[VK["up"]] = DOWN
@@ -145,7 +179,13 @@ class KeyWatcherTests(unittest.TestCase):
 
     def test_all_keys_named(self):
         self.assertEqual(sorted(VK), sorted(
-            ["enter", "backspace", "up", "down", "left", "right", "r", "o", "l", "n", "grave", "f1", "pageup", "pagedown", "home", "end", "c", "v", "f12"]))
+            ["enter", "backspace", "escape", "up", "down", "left", "right", "r", "o", "l", "n", "grave", "f1", "pageup", "pagedown", "home", "end", "c", "v", "j", "f12"]))
+
+    def test_escape_reaches_the_mod(self):
+        # Escape opened the game's pause menu while the mod's C list kept
+        # the arrow keys (2026-10-14): the mod has to hear it to close lists.
+        self.kb.state[VK["escape"]] = DOWN
+        self.assertEqual(self.w.poll(), ["escape"])
 
 
 if __name__ == "__main__":

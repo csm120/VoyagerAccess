@@ -111,6 +111,22 @@ function M.nav_enter()
         return
     end
     print("[VoyagerAccess] nav: " .. it[1] .. "\n")
+    -- Wait One Cycle is a hold button (bRequiresHold): a tap did nothing
+    -- (2026-10-14). Hold it as the away mission Confirm is held.
+    local ok, hold = pcall(function() return b.bRequiresHold end)
+    if ok and hold then
+        speech.say(it[1] .. ", holding", true)
+        b:HandleButtonPressed()
+        local name = it[2]
+        ExecuteInGameThreadWithDelay(2500, function()
+            pcall(function()
+                local nb = find(name)
+                if nb then nb:HandleButtonReleased() end
+                print("[VoyagerAccess] nav: released " .. name .. "\n")
+            end)
+        end)
+        return
+    end
     b:HandleButtonPressed()
     b:HandleButtonReleased()
     b:HandleButtonClicked()

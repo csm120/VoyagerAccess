@@ -15,6 +15,7 @@ local INTERVAL_MS = 150
 local window_path = nil
 local last_line = nil       -- last line spoken
 local typing = nil          -- line seen on the previous poll
+local speaker_wait = {}     -- { line, polls } while waiting for a speaker name
 local last_spoken = nil     -- "Speaker: line", kept after the window closes, for R
 local continue_action = nil
 -- Declared here because poll() uses them; declared below it, poll() saw
@@ -100,7 +101,9 @@ local function poll_popup(w)
     end
     local title = plain(popup.PopUpTitleText:GetText():ToString())
     local body = plain(popup.PopupText:GetText():ToString())
-    local card = (title ~= "" and title .. ". " or "") .. body
+    -- "Incoming!" already ends a sentence; ". " after it read "Incoming!."
+    local sep = title:match("[%.!?]$") and " " or ". "
+    local card = (title ~= "" and title .. sep or "") .. body
     if body == "" or card == last_popup then return end
     last_popup = card
     speak_story(card)
@@ -143,6 +146,15 @@ local function poll()
     -- counts as none.
     local speaker = (sp and sp:IsValid() and screen.shown(sp)) and plain(sp:GetText():ToString()) or ""
     if speaker == PLACEHOLDER_SPEAKER then return end
+    -- The first line after a cutscene settled before its speaker was shown,
+    -- so "Kathryn Janeway" was left off (2026-10-14, twice). Give the name
+    -- up to about a second; a window that never shows one (away missions)
+    -- is read after that.
+    if speaker == "" and sp and sp:IsValid() then
+        if speaker_wait.line ~= line then speaker_wait = { line = line, polls = 0 } end
+        speaker_wait.polls = speaker_wait.polls + 1
+        if speaker_wait.polls <= 7 then return end
+    end
     last_line = line
     speak_story(speaker ~= "" and (speaker .. ": " .. line) or line)
 end
@@ -161,8 +173,67 @@ local function text_of(w)
     return ok and s or ""
 end
 
+-- WBP_Dialogue_Choice_C is the bridge dialogue's choice (the Caretaker
+-- hail, 2026-10-14): focus sat on its number button (LeftButton) and only
+-- "1" was read. It is built like the sector choice.
+local function sector_choice_path(path)
+    return path and (path:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)") or path:match("^(.-WBP_Dialogue_Choice_C_%d+)"))
+end
+
+-- Up and Down did not move between these choices (2026-10-14): each
+-- choice's number button and text button get explicit rules to the same
+-- buttons of the choices above and below, in the panel's order.
+local wired_sig = nil
+local function shown_choices()
+    local list = {}
+    for _, cls in ipairs({ "WBP_Dialogue_Choice_C", "WBP_Dialogue_Choice_Sector_C" }) do
+        for _, c in ipairs(FindAllOf(cls) or {}) do
+            if c:IsValid() and c:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(c) then
+                local idx = 0
+                pcall(function() idx = c:GetParent():GetChildIndex(c) end)
+                list[#list + 1] = { c = c, idx = idx }
+            end
+        end
+    end
+    table.sort(list, function(a, b) return a.idx < b.idx end)
+    return list
+end
+
+-- Home and End: the first or last choice (Home did nothing, so Enter took
+-- the choice still focused, 2026-10-14).
+function M.choice_edge(path, last)
+    if not sector_choice_path(path) then return false end
+    local list = shown_choices()
+    local it = list[last and #list or 1]
+    if not it then return false end
+    local side = path:match("%.(RightButton)$") or "LeftButton"
+    pcall(function() it.c[side]:SetFocus() end)
+    return true
+end
+
+local function wire_choices()
+    local list = shown_choices()
+    local names = {}
+    for i, it in ipairs(list) do names[i] = it.c:GetFName():ToString() end
+    local sig = table.concat(names, "|")
+    if sig == wired_sig then return end
+    wired_sig = sig
+    for i, it in ipairs(list) do
+        for _, side in ipairs({ "LeftButton", "RightButton" }) do
+            pcall(function()
+                local b = it.c[side]
+                local up = list[i - 1] and list[i - 1].c[side]
+                local down = list[i + 1] and list[i + 1].c[side]
+                if up then b:SetNavigationRuleExplicit(2, up) else b:SetNavigationRuleBase(2, 3) end
+                if down then b:SetNavigationRuleExplicit(3, down) else b:SetNavigationRuleBase(3, 3) end
+            end)
+        end
+    end
+end
+
 function M.is_choice(path)
-    return path ~= nil and (path:find("WBP_Dialogue_Choice_Sector_C_%d+%.") ~= nil
+    if path and sector_choice_path(path) then pcall(wire_choices) end
+    return path ~= nil and (sector_choice_path(path) ~= nil
         or path:find("WBP_Dialogue_Choice_AwayMission_C_%d+%.WidgetTree_%d+%.RightButton") ~= nil)
 end
 
@@ -202,10 +273,21 @@ function M.choice_label(path)
         local c = StaticFindObject(apath)
         return (c and c:IsValid()) and away_choice_label(c) or nil
     end
-    local cpath = path:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)")
+    local cpath = sector_choice_path(path)
     local c = cpath and StaticFindObject(cpath)
     if not (c and c:IsValid()) then return nil end
     local parts = {}
+    -- Its number, as shown on its left ("1" to "4").
+    local number = ""
+    pcall(function()
+        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
+            local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
+            if tp and tp:sub(1, #cpath + 1) == cpath .. "." and tp:find("LeftButton", 1, true) and screen.shown(t) then
+                local s = plain(text_of(t))
+                if s:match("^%d+$") then number = s end
+            end
+        end
+    end)
     local wording = ""
     pcall(function() wording = text_of(c.RightButton.Choice) end)
     wording = plain(wording):gsub("^%[Optional%]%s*", "Optional: ")
@@ -230,9 +312,26 @@ function M.choice_label(path)
     local reward = ""
     pcall(function() reward = plain(text_of(c.RightButton.Reward)) end)
     if reward ~= "" then parts[#parts + 1] = reward end
+    -- A major decision is picked by holding (bRequiresHold), outlined in
+    -- gold on screen; Enter holds it for you (focus.lua).
+    local okh, hold = pcall(function() return c.RightButton.bRequiresHold end)
+    if okh and hold == true and #parts > 0 then parts[#parts + 1] = "Major decision" end
     if #parts == 0 then return nil end
     for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
-    return table.concat(parts, ". ") .. "."
+    local text = table.concat(parts, ". ") .. "."
+    if number ~= "" then
+        -- How many there are: "Choice 1" alone did not say whether others
+        -- followed (2026-10-14).
+        local count = 0
+        pcall(function()
+            local cls = c:GetClass():GetFName():ToString()
+            for _, o in ipairs(FindAllOf(cls) or {}) do
+                if o:IsValid() and o:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(o) then count = count + 1 end
+            end
+        end)
+        text = "Choice " .. number .. (count > 0 and (" of " .. count) or "") .. ": " .. text
+    end
+    return text
 end
 
 -- Other readers (tutorials, toasts) add their text for R to repeat.
@@ -241,6 +340,46 @@ function M.remember(text)
 end
 
 function M.repeat_line()
+    -- An open window (an event, a room, a detail view) is read again in
+    -- full, as when it opened: R gave only an event's locked option and the
+    -- event's own text could not be heard again (2026-10-14). Its locked
+    -- options are part of that text.
+    do
+        local oko, summary = pcall(function()
+            for _, w in ipairs(FindAllOf("WBP_AwayMissionOutcome_C") or {}) do
+                if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(w) then
+                    return require("awaymission").outcome_text(w:GetFullName():match("^%S+%s+(.+)$"))
+                end
+            end
+        end)
+        if oko and summary and summary ~= "" then
+            speech.say(summary, true)
+            return
+        end
+        local okw, text = pcall(function()
+            local popups, out = require("popups"), {}
+            for _, p in ipairs(popups.open_windows()) do
+                -- In dialogue, only the away mission summary (the mission
+                -- window is a dialogue): R gave the last line, not the
+                -- summary (2026-10-14).
+                if M.active() and not p:find("WBP_AwayMissionOutcome_C", 1, true) then goto next end
+                do
+                    -- The Construction Report came out twice (two widgets
+                    -- read the same way, 2026-10-14).
+                    local t = popups.text_under(p)
+                    local dup = false
+                    for _, o in ipairs(out) do if o == t then dup = true end end
+                    if t and t ~= "" and not dup then out[#out + 1] = t end
+                end
+                ::next::
+            end
+            return table.concat(out, ". ")
+        end)
+        if okw and text and text ~= "" then
+            speech.say(text, true)
+            return
+        end
+    end
     -- While an event with locked options is open, R reads those options:
     -- they take no focus, so this is how Casey reaches them (2026-10-11).
     local ok, locked = pcall(function() return require("events").locked_summary() end)

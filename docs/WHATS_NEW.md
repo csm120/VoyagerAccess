@@ -1,5 +1,26 @@
 # New in Voyager Access
 
+## Wednesday October 14th 2026
+
+Version 0.3.0
+
+The whole demo can now be played to the end, including the battles.
+
+- New: Control F1 lists every key, grouped by screen. Up and Down move, Home and End go to the ends, Escape or Backspace close it. F1 still says the keys for the screen you are on.
+- New: battles. Before a battle you hear both ships' combat power, and the hero list says each hero's ability. In battle, Enter opens Orders, and the order wheel is a list, including the enemy's systems with their health. L reads both ships, the enemies, your order, torpedoes, abilities and the goal. Target changes (Tab), abilities becoming active or ready, and pauses are spoken as they happen. The result says victory or defeat, hull, injuries and damaged rooms.
+- New: building rooms. In the construction ring, each room says how wide it is and whether it fits at the space you chose. Enter builds it there, or says why it cannot (not enough room, resources or work teams).
+- New: the tech tree is a list of tiers and technologies. Left and Right switch category. Enter opens an item, which reads its cost and description, and Enter again begins the research.
+- New: side mission requests read their title, who asks, what they want and the time limit, then the choices. Choices you cannot take are named.
+- New: C starts with hull integrity.
+- New: room windows say how much energy the room uses. If the game will not switch a room on, you hear why ("Did not switch. Energy 60, rooms use 60"). A warp core tier that will not engage says so too.
+- New: the Workshop's blueprints and crafting are read like research.
+- New: major decisions, such as what to do with the Array, say "Major decision". The game wants them held down; Enter holds them for you.
+- Changed: Escape also closes the mod's lists (C, J, N, the key list), without leaving the pause menu open.
+- Fixed: Enter pressed just as dialogue choices appear no longer picks the first one before you hear it. It reads the choice instead.
+- Fixed: away missions. The hero list says "3 of 6" and who is already on the team, and stops at its ends. The mission summary is read once, when it has finished counting. Results say "Skill 28, 25 needed".
+- Fixed: Home and End work on dialogue choices.
+- Fixed: smaller wording fixes, such as "1 cycle", Dismantle saying "Returns" instead of "Costs", and Set course saying when Voyager is already there.
+
 ## Sunday October 11th 2026
 
 Version 0.2.7

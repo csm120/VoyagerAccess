@@ -49,6 +49,78 @@ def parse_click(line):
         return None
 
 
+def is_center_mouse(line):
+    """True for "M|center": put the cursor in the middle of the game window.
+
+    The System Map's Set course takes its target from under the mouse
+    cursor; the mod centres the camera on the chosen point, so the cursor
+    must be in the middle too (2026-10-14).
+    """
+    return line.rstrip("\r\n") == "M|center"
+
+
+def parse_ring(line):
+    """Return (x, y) for "M|ring,x,y", an offset from the window centre in
+    ring radii, or None. Radial menu details only show on mouse hover."""
+    line = line.rstrip("\r\n")
+    if not line.startswith("M|ring,"):
+        return None
+    parts = line[7:].split(",")
+    if len(parts) != 2:
+        return None
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+
+
+# The ring's radius as a share of the window's height: 350 pixels at 1080
+# (measured on the build menu, 2026-10-14). Unreal scales the UI with height.
+RING_RADIUS = 350 / 1080
+
+
+def ring_mouse(nx, ny):
+    """Move the cursor onto a radial menu segment (offset in ring radii)."""
+    user32 = ctypes.windll.user32
+
+    class _Rect(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class _Point(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    hwnd = user32.GetForegroundWindow()
+    rect = _Rect()
+    if not hwnd or not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+        return
+    h = rect.bottom - rect.top
+    r = RING_RADIUS * h
+    pt = _Point(int((rect.right - rect.left) / 2 + nx * r), int(h / 2 + ny * r))
+    user32.ClientToScreen(hwnd, ctypes.byref(pt))
+    user32.SetCursorPos(pt.x, pt.y)
+
+
+def center_mouse():
+    """Move the cursor to the centre of the foreground window's client area."""
+    user32 = ctypes.windll.user32
+
+    class _Rect(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    class _Point(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    hwnd = user32.GetForegroundWindow()
+    rect = _Rect()
+    if not hwnd or not user32.GetClientRect(hwnd, ctypes.byref(rect)):
+        return
+    pt = _Point((rect.right - rect.left) // 2, (rect.bottom - rect.top) // 2)
+    user32.ClientToScreen(hwnd, ctypes.byref(pt))
+    user32.SetCursorPos(pt.x, pt.y)
+
+
 class _MouseInput(ctypes.Structure):
     _fields_ = [("dx", ctypes.c_long), ("dy", ctypes.c_long), ("mouseData", ctypes.c_ulong),
                 ("dwFlags", ctypes.c_ulong), ("time", ctypes.c_ulong),
@@ -108,9 +180,9 @@ class Tailer:
 # loops run Lua unlocked (LuaMod.cpp process_delayed_actions), so a key press
 # during a poll corrupted the Lua heap and crashed the game (crash inside
 # luaH_setint, 2026-10-10 22:24). The mod now runs Lua on the game thread only.
-VK = {"enter": 0x0D, "backspace": 0x08, "up": 0x26, "down": 0x28,
+VK = {"enter": 0x0D, "backspace": 0x08, "escape": 0x1B, "up": 0x26, "down": 0x28,
       "left": 0x25, "right": 0x27, "r": 0x52, "o": 0x4F, "l": 0x4C, "n": 0x4E, "grave": 0xC0, "f1": 0x70,
-      "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56,
+      "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56, "j": 0x4A,
       "f12": 0x7B}   # F12 is the helper's own: check for an update, or restart to finish one
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL = 0x10, 0x11, 0x12, 0x2D, 0x14
 # Insert and Caps Lock are NVDA and JAWS modifiers: NVDA+R never reaches the
@@ -148,6 +220,9 @@ class KeyWatcher:
         # stays ignored, so screen reader keys and Ctrl shortcuts never act.
         if held == {VK_CONTROL} and VK["f12"] in new:
             return ["ctrl+f12"]
+        # Ctrl+F1 opens the list of every key (Casey, 2026-10-14).
+        if held == {VK_CONTROL} and VK["f1"] in new:
+            return ["ctrl+f1"]
         if held:
             return []
         shift = bool(self.key_state(VK_SHIFT) & 0x8000)
@@ -253,6 +328,13 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
             point = parse_click(line)
             if point:
                 click(*point)
+                continue
+            if is_center_mouse(line) and game_in_front():
+                center_mouse()
+                continue
+            ring = parse_ring(line)
+            if ring and game_in_front():
+                ring_mouse(*ring)
 
 
 if __name__ == "__main__":
