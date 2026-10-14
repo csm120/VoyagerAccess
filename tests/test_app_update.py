@@ -383,12 +383,45 @@ class InstallModMessageTests(unittest.TestCase):
         self.assertEqual(app.install_mod(from_setup=True), 0)
         self.assertEqual(self.said, [])
 
-    def test_start_menu_run_confirms_without_naming_the_demo(self):
+    def test_start_menu_run_starts_the_game_without_a_box(self):
+        # Casey, 2026-10-14: "Add Voyager Access to the game" just starts
+        # the game, rather than a box saying to start it from Steam.
         app.steam.find_games = lambda s=None: self.demo()
-        app.install_mod()
-        self.assertEqual(len(self.said), 1)
-        self.assertNotIn("Demo", self.said[0])
-        self.assertIn(app.GAME, self.said[0])
+        started = []
+        saved = app.start_game
+        app.start_game = lambda: started.append(True) or 0
+        try:
+            self.assertEqual(app.install_mod(), 0)
+        finally:
+            app.start_game = saved
+        self.assertEqual(self.said, [])
+        self.assertEqual(started, [True])
+
+    def test_demo_and_full_game_both_get_it(self):
+        # Casey, 2026-10-14: whatever is installed, demo, full game or both.
+        class Full:
+            name = "Star Trek: Voyager - Across the Unknown"
+            appid = "2643390"
+        games = [Full()] + self.demo()
+        app.steam.find_games = lambda s=None: games
+        into, options = [], []
+        app.install_into = lambda g: into.append(g.appid)
+        app.set_launch_options = lambda gs, dx11=True: options.extend(g.appid for g in gs)
+        app.install_mod(from_setup=True)
+        self.assertEqual(into, ["2643390", "4054540"])
+        self.assertEqual(options, ["2643390", "4054540"])
+
+    def test_from_setup_leaves_starting_to_the_finish_page(self):
+        # Setup's Finish page has its own "Start" checkbox.
+        app.steam.find_games = lambda s=None: self.demo()
+        started = []
+        saved = app.start_game
+        app.start_game = lambda: started.append(True) or 0
+        try:
+            app.install_mod(from_setup=True)
+        finally:
+            app.start_game = saved
+        self.assertEqual(started, [])
 
     def test_not_installed_message_does_not_offer_the_demo(self):
         app.steam.find_games = lambda s=None: []

@@ -7,7 +7,7 @@
     VoyagerAccess.exe                   what setup runs after installing: put the
                                         mod in, set the launch options if missing,
                                         start the game again after an update, exit
-    VoyagerAccess.exe --install-mod     put the mod into the game, with a message
+    VoyagerAccess.exe --install-mod     put the mod into the game, then start it
     VoyagerAccess.exe --uninstall-mod   take it out of every game it was put in
     VoyagerAccess.exe --start-game      start the game through Steam (setup's Finish)
     VoyagerAccess.exe --speech-check F  write a report on the bundled files to F
@@ -298,9 +298,10 @@ def install_mod(from_setup=False):
             message(f"Voyager Access could not be added to the game.\n\n{e}", MB_OK | MB_ICONWARNING)
             return 1
     set_launch_options(games)
+    # From the Start menu, start the game rather than say to (Casey,
+    # 2026-10-14); setup's Finish page has its own Start checkbox.
     if not from_setup:
-        message(f"Voyager Access is ready for {GAME}.\n\n"
-                "Start the game from Steam as usual. Speech starts when the game loads.")
+        start_game()
     return 0
 
 

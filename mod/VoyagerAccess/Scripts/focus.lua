@@ -14,6 +14,7 @@ local INTERVAL_MS = 100
 -- look them up again with resolve() each time.
 local current = nil          -- path of the focused button
 local ticks, focus_tick = 0, -100   -- focus polls so far, and the poll choices appeared
+local arrow_tick = -100              -- the poll the game was last given Up or Down
 -- Paths of buttons Enter was pressed on, oldest first; Backspace returns to them.
 local back_stack = {}
 local pending_click = nil    -- { button = path, menu = path, polls = n }
@@ -33,6 +34,8 @@ local function resolve(path)
 end
 
 -- All visible, non-template text inside the button, in widget order.
+-- Texts in a collapsed box count as hidden: the full game's main menu buttons
+-- keep a "0LY" there, and it was spoken after every item (2026-10-14).
 local function label_of(path)
     local prefix = path .. "."
     local parts, seen = {}, {}
@@ -41,7 +44,10 @@ local function label_of(path)
     for _, t in ipairs(texts) do
         if t:IsValid() then
             local tpath = path_of(t)
-            if tpath and tpath:sub(1, #prefix) == prefix and t:IsVisible() then
+            -- A DLC tile's entitlement badge ("Dx", "1, 2, 3, 4", 2026-10-14)
+            -- says nothing in speech; its title follows.
+            if tpath and tpath:sub(1, #prefix) == prefix and not tpath:find("%.Entitlement_TXT$")
+                    and require("screen").shown(t) then
                 local ok, s = pcall(function() return t:GetText():ToString() end)
                 if ok and s ~= "" and s:sub(1, 1) ~= "#" and not seen[s] then
                     seen[s] = true
@@ -756,6 +762,21 @@ local function poll()
     -- In battle the hidden hero setup's slot kept keyboard focus, so the
     -- order wheel's button list never came up (2026-10-14).
     if b and require("combat").active() and not require("screen").shown(b) then b = nil end
+    -- Main menu: Down past the last setting moved focus to the DLC tiles
+    -- behind Settings, and after leaving Settings, to its hidden tabs
+    -- (full game, 2026-10-14). Focus on a hidden main menu button goes
+    -- back to the last button that was on screen, unread.
+    if b and not require("screen").shown(b) then
+        local p = path_of(b) or ""
+        if p:find("WBP_MainMenu", 1, true) or p:find("LCARS_Button_MainMenu", 1, true) then
+            local back = last_real and resolve(last_real)
+            if back and back ~= b and require("screen").shown(back) then
+                print("[VoyagerAccess] focus: hidden " .. p:match("([^%.]+)$") .. ", back to " .. last_real:match("([^%.]+)$") .. "\n")
+                back:SetFocus()
+            end
+            return
+        end
+    end
     -- While a mod list is open the game still moves menu focus on Up and
     -- Down; say nothing about it and park focus again, or the menu talks
     -- over the list ("bleeding through", 2026-10-11).
@@ -777,6 +798,21 @@ local function poll()
     local path = b and path_of(b) or nil
     ticks = ticks + 1
     if path == current then return end
+    -- In the full game the item whose panel was open stays selected after
+    -- Backspace, with its panel still open beside the menu, and Down from
+    -- EXIT went into that panel (Settings' tabs); Up from Settings' first tab
+    -- went out to EXIT (demo and full game, 2026-10-14). Navigation rules
+    -- were ignored, so focus is taken back: Up and Down never cross between
+    -- the main menu and its panel. Enter and Right still go in.
+    local MAIN = "WBP_MainMenu_C_%d+%.WidgetTree_%d+%.[%w_]+$"
+    if path and current and ticks - arrow_tick <= 2 and resolve(current)
+            and (current:find(MAIN) ~= nil) ~= (path:find(MAIN) ~= nil)
+            and (current:find("WBP_MainMenu", 1, true) or current:find("LCARS_Button_MainMenu", 1, true)) then
+        print("[VoyagerAccess] focus: arrow left the menu, staying\n")
+        resolve(current):SetFocus()
+        last_real = current
+        return
+    end
     crumb.at("focus: changed to " .. tostring(path))
     -- When focus first reaches a set of dialogue choices (not when it moves
     -- between them): see the Enter guard in activate().
@@ -795,6 +831,19 @@ local function poll()
             break
         end
     end
+    -- Down on a tab's last setting jumped up to the tab row ("Severity",
+    -- then "Accessibility, selected", full game, 2026-10-14). It stops there.
+    if is_setting(b) then pcall(function()
+        local parent = b:GetParent()
+        local last = nil
+        for _, s in ipairs(FindAllOf("WBP_Setting_C") or {}) do
+            if s:IsValid() and live(s) and require("screen").shown(s) then
+                local sp = s:GetParent()
+                if sp and sp:IsValid() and parent and sp:GetFullName() == parent:GetFullName() then last = s end
+            end
+        end
+        if last and path_of(last) == path then b:SetNavigationRuleBase(3, 3) end   -- Down: Stop
+    end) end
     if is_setting(b) and is_heading(b) and skip_heading(b) then return end
     crumb.at("focus: label of " .. path)
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then pcall(M.radial_focus, b, path) end
@@ -1099,6 +1148,18 @@ local function go_back()
             end
         end
     end
+    -- On a settings tab with nothing stacked, go back to the main menu's
+    -- SETTINGS ("Nothing to go back to" left Casey in Settings, 2026-10-14).
+    if current and current:find("LCARS_Button_MainMenu", 1, true) then
+        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+            local p = b:IsValid() and live(b) and path_of(b)
+            if p and p:find("WBP_MainMenu_C_%d+%.WidgetTree_%d+%.SettingsButton$") and require("screen").shown(b) then
+                print("[VoyagerAccess] back: main menu SETTINGS\n")
+                b:SetFocus()
+                return
+            end
+        end
+    end
     speech.say("Nothing to go back to", true)
 end
 
@@ -1259,7 +1320,7 @@ function M.install()
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
-        else last_dir = -1 end
+        else last_dir = -1 arrow_tick = ticks end
     end)
     keys.on("down", function()
         if require("whatsnew").open() then require("whatsnew").step(1)
@@ -1274,7 +1335,7 @@ function M.install()
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
-        else last_dir = 1 end
+        else last_dir = 1 arrow_tick = ticks end
     end)
     local rooms = require("rooms")
     keys.on("left", function()

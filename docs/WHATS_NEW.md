@@ -2,6 +2,21 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.2
+
+Voyager Access now works with the full game, not just the demo.
+
+- Fixed: with the full game installed, the installer said the game was not there, and nothing was spoken in the game. The full game's program has a different name from the demo's, and Voyager Access only knew the demo's. If this happened to you, download and run the installer once more; it finds the full game, and updates come in by themselves after that.
+- Changed: if you have both the demo and the full game, Voyager Access is added to both.
+- Changed: "Add Voyager Access to the game" in the Start menu now starts the game when it is done, instead of showing a message telling you to.
+- Fixed: the full game's main menu said "0LY" after every item. That text is hidden on screen, and it is no longer read.
+- Fixed: the DLC tiles on the main menu read their small badges ("Dx", "1, 2, 3, 4") before their names. They now say just the name, plus "Visit Store Page" for DLC you don't own.
+- Fixed: arrowing in Settings or the main menu could move into hidden menus behind them. Down now stops on the last setting of each tab, and on EXIT at the end of the main menu, and Up and Down never move between the main menu and Settings.
+- Fixed: Backspace on a Settings tab could say "Nothing to go back to" and leave you in Settings. It now goes back to SETTINGS on the main menu.
+- Fixed: the graphics quality and Gamma screens shown the first time the game starts now read their message first ("Choose a graphics quality that matches your hardware performance"), instead of after the list of buttons.
+
+## Wednesday October 14th 2026
+
 Version 0.3.1
 
 - Fixed: an update found just after the game started could close the game wherever you were, even if you had already loaded a save. Now it only does that while you are at the main menu. Otherwise it waits for you to close the game, or for F12.

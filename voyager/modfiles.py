@@ -10,7 +10,7 @@ import json
 import shutil
 from pathlib import Path
 
-from .steam import GAME_EXE
+from .steam import GAME_EXES
 
 
 class GameRunning(Exception):
@@ -85,7 +85,7 @@ def _game_pid():
     try:
         ok = k32.Process32FirstW(snap, ctypes.byref(entry))
         while ok:
-            if entry.szExeFile.lower() == GAME_EXE.lower():
+            if entry.szExeFile.lower() in {e.lower() for e in GAME_EXES}:
                 return entry.th32ProcessID
             ok = k32.Process32NextW(snap, ctypes.byref(entry))
         return None

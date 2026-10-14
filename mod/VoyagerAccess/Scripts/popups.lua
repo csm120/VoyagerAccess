@@ -119,7 +119,7 @@ local function parts_under(path)
                     local ok, s = pcall(function() return t:GetText():ToString() end)
                     s = ok and plain(s) or ""
                     if s ~= "" and s:sub(1, 1) ~= "#" and not NOISE[s:upper()] then
-                        parts[#parts + 1] = { name = tp:match("([^%.]+)$"), text = s }
+                        parts[#parts + 1] = { name = tp:match("([^%.]+)$"), text = s, path = tp }
                     end
                 end
             end
@@ -630,7 +630,32 @@ local function end_of_game(_, path)
     return #out > 0 and (table.concat(out, ". ") .. ".") or ""
 end
 
+-- The first-launch screens read their buttons before their message
+-- ("Performance Selection. LOW. MEDIUM. HIGH. EPIC. CONFIRM. Choose a
+-- graphics quality...", full game, 2026-10-14). The buttons are spoken as
+-- focus reaches them, so only the texts outside buttons are read here.
+local function without_buttons(parts, path)
+    local inside = {}
+    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+        local bp = b:IsValid() and path_of(b)
+        if bp and bp:sub(1, #path + 1) == path .. "." then inside[#inside + 1] = bp .. "." end
+    end
+    local out, seen = {}, {}
+    for _, p in ipairs(parts) do
+        local in_button = false
+        for _, bp in ipairs(inside) do
+            if p.path:sub(1, #bp) == bp then in_button = true break end
+        end
+        if not in_button and not seen[p.text] then
+            seen[p.text] = true
+            out[#out + 1] = p.text:gsub("%.%s*$", "")
+        end
+    end
+    return #out > 0 and (table.concat(out, ". ") .. ".") or ""
+end
+
 local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
+    WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
     WBP_EndOfGameMissionInfo_01_C = end_of_game,
     WBP_MultipleChoiceWidget_C = multiple_choice,
     WBP_AwayMissionDetailView_C = away_detail, WBP_BattleResultLCARS_C = battle_result,

@@ -12,7 +12,8 @@ from pathlib import Path
 
 FULL = "2643390"
 DEMO = "4054540"
-GAME_EXE = "STVoyager-Win64-Shipping.exe"
+# The full game's exe has "Steam" in its name; the demo's does not.
+GAME_EXES = ("STVoyagerSteam-Win64-Shipping.exe", "STVoyager-Win64-Shipping.exe")
 BIN_SUBDIR = Path("STVoyager") / "Binaries" / "Win64"
 
 _TOKEN = re.compile(r'"((?:[^"\\]|\\.)*)"|([{}])')
@@ -83,7 +84,7 @@ def find_games(steam=None):
             if not folder:
                 continue
             bin_dir = lib / "steamapps" / "common" / folder / BIN_SUBDIR
-            if (bin_dir / GAME_EXE).is_file():
+            if any((bin_dir / exe).is_file() for exe in GAME_EXES):
                 games.append(Game(appid, state.get("name", folder), bin_dir))
                 break
     return games

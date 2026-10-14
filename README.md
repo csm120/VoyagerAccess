@@ -2,7 +2,7 @@
 
 Voyager Access makes Star Trek: Voyager - Across the Unknown playable with a screen reader. It speaks the menus, dialogue, tutorials, objectives, ship rooms, the System and Sector Maps, point of interest events, away missions, battles, the tech tree, side mission requests and your resources through NVDA or JAWS, and adds keyboard controls where the game only offers a mouse or a controller, such as building rooms and giving orders in battle.
 
-The whole free Steam demo has been played through to its end with it; the full game should work too. It is built by a blind player for blind players, so expect a few gaps. If something is silent or a key does nothing, please tell us.
+The whole free Steam demo has been played through to its end with it, and it works with the full game too. It is built by a blind player for blind players, so expect a few gaps. If something is silent or a key does nothing, please tell us.
 
 ## Not official
 
@@ -12,12 +12,12 @@ Voyager Access is a free, unofficial fan project. It is not made, endorsed or su
 
 Voyager Access does not include the game. You get the game from Steam first, then add Voyager Access to it.
 
-1. Make sure you have Windows 10 or 11 (64-bit), and NVDA or JAWS running. Without a screen reader, Windows' own speech is used.
+1. Make sure you have Windows 11 (64-bit), which is what Steam lists for the game, and NVDA or JAWS running. Without a screen reader, Windows' own speech is used.
 2. If you don't have Steam yet, [get Steam from its official site](https://store.steampowered.com/about/), install it and sign in. A Steam account is free.
 3. In Steam, install [Star Trek: Voyager - Across the Unknown](https://store.steampowered.com/app/2643390/). You can buy the full game, or install the free demo from the same store page; Voyager Access works with either.
 4. Once the game (or the demo) has finished installing, install Voyager Access as described in the next section.
 
-Already ran the Voyager Access installer before you had the game? That's fine. Once the game is installed, open the Start menu, go to Voyager Access, and choose "Add Voyager Access to the game", or just run the installer again.
+Already ran the Voyager Access installer before you had the game? That's fine. Once the game is installed, open the Start menu, go to Voyager Access, and choose "Add Voyager Access to the game", which adds it and starts the game. Running the installer again works too.
 
 ## Installing
 

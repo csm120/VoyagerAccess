@@ -189,7 +189,12 @@ VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL = 0x10, 0x11, 0x12, 0x2D, 0
 # game, but the R key still shows as down here.
 CHORD_KEYS = (VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL)
 DEFAULT_KEYS = DEFAULT_FILE.parent / "keys.txt"
-GAME_EXE = "stvoyager-win64-shipping.exe"
+# The full game's exe has "Steam" in its name; the demo's does not.
+GAME_EXES = ("stvoyagersteam-win64-shipping.exe", "stvoyager-win64-shipping.exe")
+
+
+def is_game_exe(path):
+    return Path(path).name.lower() in GAME_EXES
 
 
 class KeyWatcher:
@@ -246,7 +251,7 @@ def game_in_front():
         size = ctypes.c_ulong(len(buf))
         if not kernel32.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
             return False
-        return buf.value.lower().endswith(GAME_EXE)
+        return is_game_exe(buf.value)
     finally:
         kernel32.CloseHandle(h)
 

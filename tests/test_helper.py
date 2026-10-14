@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from voyager.helper import (  # noqa: E402
-    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, is_center_mouse, parse_click, parse_line, parse_ring)
+    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, is_center_mouse, is_game_exe, parse_click, parse_line, parse_ring)
 
 
 class ParseLineTests(unittest.TestCase):
@@ -186,6 +186,14 @@ class KeyWatcherTests(unittest.TestCase):
         # the arrow keys (2026-10-14): the mod has to hear it to close lists.
         self.kb.state[VK["escape"]] = DOWN
         self.assertEqual(self.w.poll(), ["escape"])
+
+
+class GameExeTests(unittest.TestCase):
+    def test_demo_and_full_game_exes(self):
+        # The full game's exe has "Steam" in its name (2026-10-14).
+        self.assertTrue(is_game_exe("C:/Steam/Demo/STVoyager-Win64-Shipping.exe"))
+        self.assertTrue(is_game_exe("C:/Steam/Full/STVoyagerSteam-Win64-Shipping.exe"))
+        self.assertFalse(is_game_exe("C:/Windows/notepad.exe"))
 
 
 if __name__ == "__main__":

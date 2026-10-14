@@ -61,12 +61,18 @@ class FindGamesTests(unittest.TestCase):
     def tearDown(self):
         self.tmp.cleanup()
 
-    def install(self, lib, appid, folder, suffix=""):
+    def install(self, lib, appid, folder, suffix="", exe="STVoyager-Win64-Shipping.exe"):
         (lib / "steamapps" / f"appmanifest_{appid}.acf").write_text(MANIFEST % (appid, suffix, folder))
         win64 = lib / "steamapps" / "common" / folder / "STVoyager" / "Binaries" / "Win64"
         win64.mkdir(parents=True)
-        (win64 / "STVoyager-Win64-Shipping.exe").write_bytes(b"")
+        (win64 / exe).write_bytes(b"")
         return win64
+
+    def test_finds_the_full_game_by_its_own_exe_name(self):
+        # The full game's exe is STVoyagerSteam-Win64-Shipping.exe; only the
+        # demo's lacks "Steam" (2026-10-14: the full game was not found).
+        full = self.install(self.steam, FULL, "Voyager", exe="STVoyagerSteam-Win64-Shipping.exe")
+        self.assertEqual([(g.appid, g.bin_dir) for g in find_games(self.steam)], [(FULL, full)])
 
     def test_finds_demo_and_full_game_in_two_libraries(self):
         demo = self.install(self.steam, DEMO, "Voyager Demo", " Demo")
