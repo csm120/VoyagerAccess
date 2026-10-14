@@ -335,7 +335,9 @@ function M.skills_of(sheet)
     if not (sheet and sheet:IsValid()) then return "" end
     for i = 1, 3 do
         local a = sheet["AttributeDisplay" .. i]
-        if a and a:IsValid() and (a.CurrentValue or 0) > 0 then
+        -- A hidden third box keeps the last hero's value: Harry Kim (two
+        -- skills) was read with Janeway's "Science 22" (2026-10-14).
+        if a and a:IsValid() and a:IsVisible() and (a.CurrentValue or 0) > 0 then
             local skill = "Skill"
             local im = a.AttributeIcon
             if im and im:IsValid() then

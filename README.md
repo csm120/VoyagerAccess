@@ -1,6 +1,6 @@
 # Voyager Access
 
-Voyager Access makes Star Trek: Voyager - Across the Unknown playable with a screen reader. It speaks the menus, dialogue, tutorials, objectives, ship rooms, the System and Sector Maps, point of interest events, away missions, battles, the tech tree, side mission requests and your resources through NVDA or JAWS, and adds keyboard controls where the game only offers a mouse or a controller, such as building rooms and giving orders in battle.
+Voyager Access makes Star Trek: Voyager - Across the Unknown playable with a screen reader. It speaks the menus, the difficulty and Q Trials setup screens, dialogue, tutorials, objectives, ship rooms, the System and Sector Maps, point of interest events, away missions, battles, the tech tree, side mission requests and your resources through NVDA or JAWS, and adds keyboard controls where the game only offers a mouse or a controller, such as building rooms and giving orders in battle.
 
 The whole free Steam demo has been played through to its end with it, and it works with the full game too. It is built by a blind player for blind players, so expect a few gaps. If something is silent or a key does nothing, please tell us.
 
@@ -70,10 +70,19 @@ Menus and settings:
 2. Enter selects. Backspace goes back.
 3. Left and Right Arrow change a setting's value, or switch a window's tabs.
 
+Starting a game in the full game:
+
+1. On the main menu, Enter on CAMPAIGN (or Q TRIALS) opens three profiles. Enter on a profile, then on NEW CAMPAIGN (or NEW Q TRIAL).
+2. The difficulty window is a list of the four modes, each read with its description and what it changes. Enter on a mode starts the game.
+3. Custom opens Custom Difficulty Settings: Up and Down Arrow move through the three presets, every setting with its value and description, and Start Game. Left and Right Arrow change a setting. Enter on Start Game holds it down for you. Escape goes back.
+
+Q Trials setup: the ship and its numbers are read when the setup opens, and Left and Right Arrow change ship. Up and Down Arrow move through the captain, the hero slots, the Q Modifier, the Q Challenges level and Start Game. Enter on any of them opens its list of choices, and Enter picks one; locked choices say so. In the hero list, Enter chooses or removes a hero and says how many you have, and Confirm closes the list.
+
 Dialogue and cutscenes:
 
 1. Enter continues. When choices appear, Up and Down Arrow move between them and Enter picks one. A major decision, which the game wants held down, is held for you.
 2. Shift+Enter skips ahead in a dialogue, or skips a cutscene.
+3. Narration over a scene, like the start of a new campaign or a Q Trial, is read a line at a time. Shift+Enter skips it.
 
 Ship view:
 

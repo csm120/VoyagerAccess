@@ -672,18 +672,15 @@ local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = po
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
     -- Heading, then the question, then the rest: creation order put "Are
     -- you sure?" last on the second opening (2026-10-14).
-    -- The warning page: its heading and message. The setup page after it
-    -- (ship, captain, heroes, Q modifier, Q challenges) is not read yet, so
-    -- say so rather than leave the player in silence.
+    -- The warning page: its heading and message.
     WBP_Sandbox_Setup_C = function(parts)
         local head, body = nil, nil
         for _, p in ipairs(parts) do
             if p.name == "HeaderTextBlock_1" then head = p.text end
             if p.name == "Mainline" then body = p.text end
         end
-        if not body then
-            return "Q Trials setup. Voyager Access does not read this screen yet. Escape goes back."
-        end
+        -- The setup page is read item by item (qtrials.lua).
+        if not body then return "" end
         return (head and (head .. ". ") or "") .. body
     end,
     WBP_PauseMenu_Confirms_C = function(parts, path)

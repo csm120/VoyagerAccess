@@ -2,6 +2,19 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.4
+
+Q Trials can now be set up and started from the keyboard.
+
+- New: the Q Trials setup screen is read. When it opens you hear the ship and its numbers (difficulty, decks, building space, hull, hero slots, crew); Left and Right change ship. Up and Down move through the captain, the eight hero slots, the Q Modifier, the Q Challenges level and Start Game, each with where it is in the list.
+- New: Enter on the captain, a hero slot, the Q Modifier or the Q Challenges opens its list of choices, also read as a list. Captains and heroes say their trait, bonus, skills and ability; Q Modifiers and Q Challenges levels say what they do, and whether they are locked or selected.
+- New: in the hero list, Enter chooses or removes a hero and says how many you have, for example "Tom Paris chosen, 2 of 8". Your captain is named as not available. Confirm says how many are chosen and closes the list.
+- New: Start Game on the Q Trials setup is held down for you, and Q's narration at the start of a trial is read a line at a time.
+- New: F1 explains the keys on the difficulty window and the Q Trials setup, and L names them.
+- Fixed: a hero with two skills could be read with a third skill left over from the hero before, for example Harry Kim with Janeway's "Science 22".
+
+## Wednesday October 14th 2026
+
 Version 0.3.3
 
 You can now start a campaign in the full game, choose its difficulty, and set up a Custom game.

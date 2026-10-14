@@ -571,7 +571,14 @@ local function track_unfocused_window()
             local vb = resolve(bp)
             if not (vb and require("screen").shown(vb)) then all_there = false break end
         end
-        if all_there and w and require("screen").shown(w) and (not modal or virtual.window == modal) then return end
+        if all_there and w and require("screen").shown(w) and (not modal or virtual.window == modal) then
+            -- Its first button, once the window's message has been read.
+            if virtual.unsaid and require("popups").was_announced(virtual.window) then
+                virtual.unsaid = nil
+                say_virtual()
+            end
+            return
+        end
         virtual = nil
     end
     -- Windows the mod can give real focus to do not need the list.
@@ -602,11 +609,13 @@ local function track_unfocused_window()
             if found then index = found break end
         end
         virtual = { window = first, buttons = buttons, index = index }
-        -- The pause menu's confirmation, not yet read, says its first button
-        -- itself after its message (popups.lua); saying it here as well put
-        -- "BACK, 1 of 2" before "Exit to Main Menu" (2026-10-14).
+        -- The pause menu's confirmation and the Q Trials warning: their first
+        -- button waits until popups.lua has read the message (it came first,
+        -- "BACK, 1 of 2" before "Exit to Main Menu", 2026-10-14), and is said
+        -- by the check above once it has.
         local says_own = first:find(PAUSE_CONFIRM, 1, true) or first:find("WBP_Sandbox_Setup_C", 1, true)
-        if not says_own or require("popups").was_announced(first) then say_virtual() end
+        if not says_own or require("popups").was_announced(first) then say_virtual()
+        else virtual.unsaid = true end
     end
 end
 
@@ -649,8 +658,8 @@ local function wire_rows(path)
     -- The top of the button's real parent chain, not of its name: the away
     -- team hero buttons are named as top-level widgets but sit in a panel
     -- inside the loadout ("1 of 1" in the log, 2026-10-11).
-    -- The difficulty window wires its own list (difficulty.lua).
-    if require("difficulty").handles(path) then return end
+    -- The difficulty window and Q Trials setup wire their own lists.
+    if require("difficulty").handles(path) or require("qtrials").handles(path) then return end
     local root = resolve(path)
     if not root then return end
     for _ = 1, 64 do
@@ -705,6 +714,8 @@ end
 -- The spoken label for a focused button.
 label_for = function(b, path)
     local label
+    -- Leaving the Q Trials setup: its title comes again on the next visit.
+    if not require("qtrials").handles(path) then require("qtrials").away() end
     local work = require("rooms").workteam_label(path) or require("rooms").serving_label(path)
         or require("rooms").research_label(path)
     local cls = b:GetClass():GetFName():ToString()
@@ -713,6 +724,9 @@ label_for = function(b, path)
     elseif require("difficulty").handles(path) then
         -- Says ", selected" itself, on presets only (difficulty.lua).
         return require("difficulty").label(b, path)
+    elseif require("qtrials").handles(path) then
+        return require("qtrials").label(b, path)
+    elseif cls == "WBP_IncomingCall_List_Button_C" then
     elseif cls == "WBP_IncomingCall_List_Button_C" then
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
@@ -1145,6 +1159,8 @@ local function activate()
         -- poll() waits for the panel animation to finish.
         pending_click = { button = current, menu = path_of(menu), polls = 0 }
     else
+        -- A Q Trials hero is chosen or removed with its own announcement.
+        if require("qtrials").enter(b, current) then return end
         local before = label_for(b, current)
         local path = current
         -- A hold button (Custom difficulty's Start Game, bRequiresHold)
@@ -1340,6 +1356,9 @@ end
 -- "settings" or "menu" when an on-screen button has focus, else nil.
 function M.context()
     local b = resolve(current)
+    -- Before the on-screen check: the Q Trials pickers count as hidden.
+    if b and require("qtrials").handles(current) then return "qtrials" end
+    if b and require("difficulty").handles(current) then return "difficulty" end
     if not (b and require("screen").shown(b)) then return nil end
     return is_setting(b) and "settings" or "menu"
 end
@@ -1455,12 +1474,14 @@ function M.install()
     end)
     local rooms = require("rooms")
     keys.on("left", function()
+        if require("qtrials").switch_ship(current, -1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(-1) end
         if require("view").overview_tab(-1) then return end
         if rooms.window_open() then rooms.switch_tab(-1)
         elseif ship_mode() then ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
+        if require("qtrials").switch_ship(current, 1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(1) end
         if require("view").overview_tab(1) then return end
         if rooms.window_open() then rooms.switch_tab(1)
@@ -1484,6 +1505,7 @@ function M.install()
         if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
         if require("difficulty").edge(current, last) then return end
+        if require("qtrials").edge(current, last) then return end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end
             return system.edge(last)

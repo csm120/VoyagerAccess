@@ -25,6 +25,11 @@ local HELP = {
     settings = "Up and Down move between settings. Left and Right change the value. "
         .. "Home and End go to the first and last. Backspace goes back.",
     menu = "Up and Down move. Home and End go to the first and last. Enter selects. Backspace goes back.",
+    difficulty = "Up and Down move. Home and End go to the first and last. Enter picks a mode and starts the game. "
+        .. "In Custom, Left and Right change a setting, and Enter on Start Game holds it for you. Escape goes back.",
+    qtrials = "Up and Down move. Home and End go to the first and last. Enter opens a slot's choices and picks one. "
+        .. "In the hero list, Enter chooses or removes a hero, then Confirm. Left and Right change ship. "
+        .. "Enter on Start Game holds it for you. Escape goes back.",
     combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
         .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
         .. "L reads both ships. O reads the combat goal.",
@@ -69,6 +74,7 @@ end
 -- (the game's own key bindings).
 local PLACES = { cutscene = "Cutscene", story = "Story", dialogue = "Dialogue", ship = "Ship view", system = "System map",
     room = "Room window", event = "Point of interest", settings = "Settings", menu = "Menu", none = "Game",
+    difficulty = "Difficulty", qtrials = "Q Trials setup",
     combat = "Combat" }
 
 function M.say_where()
