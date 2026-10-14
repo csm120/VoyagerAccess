@@ -25,13 +25,17 @@ Along the way, Steam closes for a moment and starts again by itself; there is no
 
 If the game is not installed yet, the installer offers to open Steam's install window for the free demo, or the store page for the full game.
 
-After that, there is nothing to look after. Voyager Access starts when you start the game from Steam and closes when the game closes; nothing of it runs when you are not playing. If a game update removes it, it puts itself back before the game starts. Uninstalling it puts the game's launch options back the way they were.
+You don't need to do anything after installing:
 
-Voyager Access also keeps itself up to date. It checks for a new version when the game starts and every 10 minutes while you play:
+1. Voyager Access starts by itself when you start the game from Steam, and stops when you close the game. Nothing of it runs when you are not playing.
+2. If a game update removes it, it puts itself back before the game starts.
+3. If you uninstall it, the game's launch options in Steam go back to how they were.
 
-1. If an update turns up in the first minute, while you are still at the main menu, the game closes, updates and starts again by itself.
-2. If one turns up later, you hear that it is ready. It installs when you close the game, or press F12 to restart and install it now. The game only saves at story points, so it is never closed unless you press F12.
-3. After an update you hear which version you now have.
+Voyager Access also keeps itself up to date. It checks for a new version when the game starts, and every 10 minutes while you play. When it finds one:
+
+1. If it finds the update right after the game starts (usually during the opening, within a few seconds), the game closes, updates and starts again by itself.
+2. Otherwise you hear that the update is ready. It installs when you close the game, or you can press F12 to restart the game and install it right away. Because the game only saves at story points, Voyager Access never closes a game you are playing unless you press F12.
+3. After an update, you hear which version you now have.
 
 ## What's new
 
