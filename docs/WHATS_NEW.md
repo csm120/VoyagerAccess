@@ -2,6 +2,14 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.1
+
+- Fixed: an update found just after the game started could close the game wherever you were, even if you had already loaded a save. Now it only does that while you are at the main menu. Otherwise it waits for you to close the game, or for F12.
+- Fixed: if you installed Voyager Access before the game, the installer said it would add itself to the game later by itself. It doesn't, so it now tells you what to do: once the game is installed, choose "Add Voyager Access to the game" from the Voyager Access folder in the Start menu, or run the installer again.
+- New: the instructions now start with a Getting started section: Steam, then the game or its free demo, then Voyager Access.
+
+## Wednesday October 14th 2026
+
 Version 0.3.0
 
 The whole demo can now be played to the end, including the battles.

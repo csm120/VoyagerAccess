@@ -21,6 +21,7 @@ class PlaySessionTests(unittest.TestCase):
         self.now = 1000.0
         self.said, self.applied, self.fetches = [], [], 0
         self.result = None
+        self.menu = True
 
     def tearDown(self):
         app.fetch_update = self.saved
@@ -30,7 +31,7 @@ class PlaySessionTests(unittest.TestCase):
             self.fetches += 1
             return self.result
         app.fetch_update = fetch
-        return app.PlaySession(clock=lambda: self.now, threads=False)
+        return app.PlaySession(clock=lambda: self.now, threads=False, at_menu=lambda: self.menu)
 
     def step(self, s):
         def apply(found):
@@ -45,6 +46,51 @@ class PlaySessionTests(unittest.TestCase):
         self.step(s)
         self.assertTrue(s.restart)
         self.assertEqual(self.applied, [])
+
+    def test_early_update_waits_for_the_main_menu(self):
+        # Casey, 2026-10-14: an update found early closed the game wherever
+        # the player was; it must wait until the mod reports the main menu.
+        self.result = FOUND
+        self.menu = False
+        s = self.session()
+        self.now += 10
+        self.step(s)
+        self.assertFalse(s.restart)
+        self.assertEqual(self.said, [])
+        self.menu = True
+        self.now += 5
+        self.step(s)
+        self.assertTrue(s.restart)
+
+    def test_early_update_never_at_the_menu_is_offered(self):
+        # Already playing (loaded a save quickly): never closed, offered as
+        # a later update would be.
+        self.result = FOUND
+        self.menu = False
+        s = self.session()
+        self.now += 10
+        self.step(s)
+        self.now = 1000.0 + app.RESTART_WINDOW_SECONDS + 1
+        self.step(s)
+        self.assertFalse(s.restart)
+        self.assertEqual(self.applied, [FOUND])
+
+    def test_main_menu_state_file(self):
+        import os, time
+        with tempfile.TemporaryDirectory() as d:
+            saved = app.GAME_STATE
+            app.GAME_STATE = Path(d) / "game-state.txt"
+            try:
+                self.assertFalse(app.at_main_menu())          # no file yet
+                app.GAME_STATE.write_text("menu\n", encoding="utf-8")
+                self.assertTrue(app.at_main_menu())
+                old = time.time() - 60
+                os.utime(app.GAME_STATE, (old, old))
+                self.assertFalse(app.at_main_menu())          # the mod stopped writing
+                app.GAME_STATE.write_text("game\n", encoding="utf-8")
+                self.assertFalse(app.at_main_menu())
+            finally:
+                app.GAME_STATE = saved
 
     def test_late_update_patches_live_and_offers_f12(self):
         s = self.session()
@@ -354,6 +400,10 @@ class InstallModMessageTests(unittest.TestCase):
             app.steam.open_store_page = saved
         self.assertEqual(len(self.said), 1)
         self.assertNotIn("demo", self.said[0].lower())
+        # Nothing watches for the game being installed later (2026-10-14):
+        # the message must say how to add Voyager Access afterwards.
+        self.assertNotIn("automatically", self.said[0].lower())
+        self.assertIn("Add Voyager Access to the game", self.said[0])
 
 
 class StartGameTests(unittest.TestCase):

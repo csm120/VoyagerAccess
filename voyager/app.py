@@ -280,7 +280,8 @@ def install_mod(from_setup=False):
         if message(
                 f"{GAME} is not installed in Steam, and Voyager Access needs it.\n\n"
                 "Open the game's page in Steam now?\n\n"
-                "Once the game is installed, Voyager Access adds itself to it automatically.",
+                "After the game is installed, open the Start menu and choose "
+                "\"Add Voyager Access to the game\", or run this installer again.",
                 MB_YESNO | MB_ICONQUESTION) == IDYES:
             steam.open_store_page(steam.FULL)
         return 0
@@ -421,8 +422,10 @@ def launch_game(command):
 # Updates (Casey, 2026-10-11): checked when the game starts and every ten
 # minutes while it runs. Nothing checks while the game is closed: the helper
 # only runs with the game.
-# 1. Found within a minute of the game starting (intro or main menu): the
-#    game restarts to install it.
+# 1. Found soon after the game starts: the game restarts to install it, but
+#    only once the mod reports the main menu (Casey, 2026-10-14: a player
+#    who had already loaded a save could have been closed mid-game). If the
+#    main menu is not seen within the window, it is offered as in 2.
 # 2. Found later: the new Lua scripts go into the running game and the mod
 #    reloads them; the rest installs when the game closes, or at once if
 #    Casey presses F12. The game only saves at story points, so a game in
@@ -430,7 +433,21 @@ def launch_game(command):
 # VOYAGER_UPDATE_FEED points the check elsewhere for testing (file:// works);
 # VOYAGER_PLAY_CHECK_SECONDS shortens the in-game interval for testing.
 PLAY_CHECK_SECONDS = int(os.environ.get("VOYAGER_PLAY_CHECK_SECONDS", 10 * 60))
-RESTART_WINDOW_SECONDS = 60
+# Long enough for the game to load to its main menu (about half a minute).
+RESTART_WINDOW_SECONDS = 180
+# The mod writes "menu" or "game" here about once a second (help.lua).
+GAME_STATE = DATA_DIR / "game-state.txt"
+GAME_STATE_FRESH_SECONDS = 5
+
+
+def at_main_menu():
+    """True when the mod has just reported the game's main menu."""
+    try:
+        if time.time() - GAME_STATE.stat().st_mtime > GAME_STATE_FRESH_SECONDS:
+            return False
+        return GAME_STATE.read_text(encoding="utf-8").strip() == "menu"
+    except OSError:
+        return False
 RESTART_KEY = "f12"
 ANNOUNCE_DELAY_SECONDS = 3
 UPDATE_MARKER = DATA_DIR / "pending-update.json"
@@ -442,8 +459,9 @@ class PlaySession:
     """Update checks for one run of the game. step() runs on the main thread
     about once a second; the check itself runs in a background thread."""
 
-    def __init__(self, found=None, clock=time.monotonic, threads=True):
+    def __init__(self, found=None, clock=time.monotonic, threads=True, at_menu=at_main_menu):
         self.clock = clock
+        self.at_menu = at_menu
         self.started = clock()
         self.threads = threads
         self.found = found          # already offered in an earlier run: just offer F12
@@ -488,11 +506,16 @@ class PlaySession:
             say("Could not check for Voyager Access updates." if self.failed
                 else f"Voyager Access is up to date, version {__version__}.")
         if self.found and not self.offered:
+            if self.early:
+                if self.at_menu():
+                    self.asked = False
+                    self.offered = True
+                    self.restart = True
+                    return
+                if self.clock() - self.started <= RESTART_WINDOW_SECONDS:
+                    return          # not at the main menu yet: wait for it
             self.asked = False
             self.offered = True
-            if self.early:
-                self.restart = True
-                return
             version = self.found[0]
             if apply_scripts(self.found):
                 # After the mod's own "Voyager Access loaded" from the reload.

@@ -8,11 +8,16 @@ The whole free Steam demo has been played through to its end with it; the full g
 
 Voyager Access is a free, unofficial fan project. It is not made, endorsed or supported by Daedalic Entertainment, gameXcite, CBS Studios or Paramount. Star Trek and related marks are trademarks of CBS Studios Inc. Voyager Access does not include any of the game's files; you need your own copy of the game from Steam.
 
-## What you need
+## Getting started
 
-1. Windows 10 or 11, 64-bit.
-2. Star Trek: Voyager - Across the Unknown, or its free demo, installed through Steam.
-3. NVDA or JAWS running. Without a screen reader, Windows' own speech is used.
+Voyager Access does not include the game. You get the game from Steam first, then add Voyager Access to it.
+
+1. Make sure you have Windows 10 or 11 (64-bit), and NVDA or JAWS running. Without a screen reader, Windows' own speech is used.
+2. If you don't have Steam yet, [get Steam from its official site](https://store.steampowered.com/about/), install it and sign in. A Steam account is free.
+3. In Steam, install [Star Trek: Voyager - Across the Unknown](https://store.steampowered.com/app/2643390/). You can buy the full game, or install the free demo from the same store page; Voyager Access works with either.
+4. Once the game (or the demo) has finished installing, install Voyager Access as described in the next section.
+
+Already ran the Voyager Access installer before you had the game? That's fine. Once the game is installed, open the Start menu, go to Voyager Access, and choose "Add Voyager Access to the game", or just run the installer again.
 
 ## Installing
 
@@ -23,7 +28,7 @@ Voyager Access is a free, unofficial fan project. It is not made, endorsed or su
 
 Along the way, Steam closes for a moment and starts again by itself; there is nothing to answer. Voyager Access does that to set the game's launch options in Steam, so that it starts together with the game, and to set the game to use DirectX 11, because some computers crash when it uses DirectX 12. If you are playing another game through Steam at that moment, it waits until that game closes.
 
-If the game is not installed yet, the installer offers to open Steam's install window for the free demo, or the store page for the full game.
+If the game is not installed yet, the installer says so and offers to open the game's page in Steam. Install the game, then add Voyager Access as described under Getting started.
 
 You don't need to do anything after installing:
 
@@ -33,7 +38,7 @@ You don't need to do anything after installing:
 
 Voyager Access also keeps itself up to date. It checks for a new version when the game starts, and every 10 minutes while you play. When it finds one:
 
-1. If it finds the update right after the game starts (usually during the opening, within a few seconds), the game closes, updates and starts again by itself.
+1. If it finds the update right after the game starts, it waits for the main menu, then closes the game, updates and starts it again by itself. If you have already loaded a game by then, it leaves your game alone and works as in step 2.
 2. Otherwise you hear that the update is ready. It installs when you close the game, or you can press F12 to restart the game and install it right away. Because the game only saves at story points, Voyager Access never closes a game you are playing unless you press F12.
 3. After an update, you hear which version you now have.
 

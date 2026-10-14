@@ -146,7 +146,32 @@ local function view_poll()
     speech.say(text, true)
 end
 
+-- For the helper's update restart (Casey, 2026-10-14): it closes the game
+-- for an update only at the main menu, so the mod reports "menu" or "game"
+-- about once a second. The helper treats a file older than a few seconds
+-- as not at the menu.
+local STATE_FILE = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\game-state.txt"
+local state_ticks = 0
+
+local function write_state()
+    state_ticks = state_ticks + 1
+    if state_ticks < 3 then return end
+    state_ticks = 0
+    local menu = false
+    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+            menu = true
+        end
+    end
+    local f = io.open(STATE_FILE, "w")
+    if f then
+        f:write(menu and "menu\n" or "game\n")
+        f:close()
+    end
+end
+
 local function room_poll()
+    pcall(write_state)
     local open = require("rooms").window_open()
     if open and not room_was_open then
         local f = io.open(HINT_FILE, "r")
