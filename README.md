@@ -1,8 +1,8 @@
 # Voyager Access
 
-Voyager Access makes Star Trek: Voyager - Across the Unknown playable with a screen reader. It speaks the menus, dialogue, tutorials, objectives, ship rooms, the System Map, point of interest events and your resources through NVDA or JAWS, and adds keyboard controls where the game only offers a mouse or a controller.
+Voyager Access makes Star Trek: Voyager - Across the Unknown playable with a screen reader. It speaks the menus, dialogue, tutorials, objectives, ship rooms, the System and Sector Maps, point of interest events, away missions, battles, the tech tree, side mission requests and your resources through NVDA or JAWS, and adds keyboard controls where the game only offers a mouse or a controller, such as building rooms and giving orders in battle.
 
-So far it has been tested on the opening of the free Steam demo; the full game should work too. This is an early version, built by a blind player for blind players, so expect gaps. If something is silent or a key does nothing, please tell us.
+The whole free Steam demo has been played through to its end with it; the full game should work too. It is built by a blind player for blind players, so expect a few gaps. If something is silent or a key does nothing, please tell us.
 
 ## Not official
 
@@ -17,7 +17,7 @@ Voyager Access is a free, unofficial fan project. It is not made, endorsed or su
 ## Installing
 
 1. [Download the Voyager Access installer](https://github.com/csm120/VoyagerAccess/releases/latest/download/VoyagerAccessSetup.exe). This link always gets the newest version.
-2. Open the file you downloaded. If Windows says "Windows protected your PC", choose More info, then Run anyway. (Windows says this because the installer is not signed by a paid certificate.)
+2. Open the file you downloaded. The installer is signed by Web Friendly Help LLC. Windows may still say "Windows protected your PC" for a while, because the download is new to it; if it does, choose More info, check that the publisher is Web Friendly Help LLC, then choose Run anyway.
 3. The installer finds the game in Steam and adds Voyager Access to it, then tells you when it is ready.
 4. Start the game from Steam as usual. Speech starts when the game loads.
 
@@ -39,40 +39,55 @@ Every release is described in plain words in [What's new in Voyager Access](docs
 
 ## Keys
 
-Press F1 anywhere in the game to hear the keys for the screen you are on.
+Press F1 anywhere in the game to hear the keys for the screen you are on. Press Control+F1 for a list of every key, grouped by screen, which you move through with Up and Down Arrow; Escape or Backspace closes it.
 
 Everywhere:
 
-1. F1: help for this screen.
-2. O: your current objective.
-3. C: your resources (cargo), crew, and how long your fuel lasts.
-4. V: switch between the ship and the System Map.
-5. R: repeat the last line, tutorial or window.
-6. F12: check for a Voyager Access update now. If one is found, you hear that it is ready; press F12 again to restart the game and install it.
+1. F1: help for this screen. Control+F1: every key.
+2. L: where you are and what is selected.
+3. O: your current objective. In a battle, the battle's goal.
+4. C: hull, resources (cargo), crew, work teams, fuel, energy, battery and morale, as a list.
+5. N: a list of places to go: ship, System Map, Sector Map, Overview, Research, and Wait one cycle.
+6. V: switch between the ship and the System Map.
+7. R: repeat the last line, tutorial or window.
+8. Escape: the game's own back and pause menu. It also closes any list Voyager Access opened.
+9. F12: check for a Voyager Access update now. If one is found, you hear that it is ready; press F12 again to restart the game and install it.
+10. Control+F12: what's new in Voyager Access.
+11. Backtick (the key left of 1): copy a troubleshooting report to the clipboard.
 
 Menus and settings:
 
 1. Up and Down Arrow move through the items; Home and End go to the first and last.
 2. Enter selects. Backspace goes back.
-3. Left and Right Arrow change a setting's value.
+3. Left and Right Arrow change a setting's value, or switch a window's tabs.
 
 Dialogue and cutscenes:
 
-1. Enter continues. When choices appear, Up and Down Arrow move between them and Enter picks one.
+1. Enter continues. When choices appear, Up and Down Arrow move between them and Enter picks one. A major decision, which the game wants held down, is held for you.
 2. Shift+Enter skips ahead in a dialogue, or skips a cutscene.
 
 Ship view:
 
 1. Up and Down Arrow change deck; Left and Right Arrow move between the rooms on a deck.
 2. Home and End go to the first and last room on the deck.
-3. Enter opens the room. Its window reads its state, and each button reads what it costs and why it cannot be used yet. Left and Right Arrow switch the room's tabs. Escape closes the room.
+3. J: a list of all the ship's rooms with their deck and state; Enter goes to one.
+4. Enter opens the room. Its window reads its state and the energy it uses, and each button reads what it costs and why it cannot be used yet. Left and Right Arrow switch the room's tabs. Escape closes the room.
+5. A ruined room or empty building space opens a ring of actions; Up and Down Arrow move through it and Enter picks one. On empty space, each room you could build says how many spaces wide it is and whether it fits there, and Enter builds it. Escape closes the ring.
 
-System Map:
+System Map and Sector Map:
 
-1. Up and Down Arrow move through the points of interest, nearest first. Each says whether it has been scanned and what it holds.
-2. Enter opens a list of actions: Scan, or Set course.
+1. Up and Down Arrow move through the points of interest, or the star systems on the Sector Map. Each says whether it has been scanned and which resources it has.
+2. Enter opens a list of actions: Scan, or Set course. While you travel you hear when you are under way, halfway and arrived; L adds the trip's progress.
 
 Point of interest events: each option reads its reward, its risk, and its chances of a good or bad outcome. Locked options are read when the event opens, and with R.
+
+Tech tree (from the Science Laboratory, or Research in the N list): Up and Down Arrow move through the tiers and technologies, Left and Right Arrow switch category, and Enter opens one, reading its cost and description; Enter again begins the research.
+
+Away missions: Up and Down Arrow move through the choices, the heroes for each and Confirm; each choice reads the skill it needs, its reward and its danger. Enter picks a hero or confirms. The result and the mission summary are read for you.
+
+Battles: Enter opens Orders, and the order wheel is a list (attack a system of the enemy ship, defend a side, repair, flee). L reads both ships, the enemies, your order, torpedoes, the heroes' abilities and the goal. The game's own keys work too: Space pauses, 1 to 3 use the heroes' abilities, Tab changes target, Shift fires a torpedo. Target changes, abilities becoming ready, and pauses are spoken as they happen.
+
+Side mission requests read who is asking, what they want and the time limit, then the choices.
 
 Tutorials are read aloud and then closed for you. R repeats the last one.
 
