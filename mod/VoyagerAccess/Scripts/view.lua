@@ -21,7 +21,7 @@ end
 function M.toggle()
     -- Not behind a window: V switched the map behind an open Research
     -- Report (VM, 2026-10-15).
-    if require("focus").virtual_active() then
+    if require("focus").virtual_window_open() then
         speech.say("Close the window first", true)
         return
     end

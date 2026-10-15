@@ -74,13 +74,30 @@ def parse_ring(line):
         return None
 
 
+def parse_ring_click(line):
+    """Return (x, y) for "M|ringclick,x,y": the same offset as M|ring, then a
+    real left click. A map point next to Voyager takes Set course only once
+    a click has selected it (demo, 2026-10-15)."""
+    line = line.rstrip("\r\n")
+    if not line.startswith("M|ringclick,"):
+        return None
+    parts = line[12:].split(",")
+    if len(parts) != 2:
+        return None
+    try:
+        return float(parts[0]), float(parts[1])
+    except ValueError:
+        return None
+
+
 # The ring's radius as a share of the window's height: 350 pixels at 1080
 # (measured on the build menu, 2026-10-14). Unreal scales the UI with height.
 RING_RADIUS = 350 / 1080
 
 
-def ring_mouse(nx, ny):
-    """Move the cursor onto a radial menu segment (offset in ring radii)."""
+def ring_mouse(nx, ny, then_click=False):
+    """Move the cursor onto a radial menu segment (offset in ring radii),
+    and left-click there when asked."""
     user32 = ctypes.windll.user32
 
     class _Rect(ctypes.Structure):
@@ -98,7 +115,10 @@ def ring_mouse(nx, ny):
     r = RING_RADIUS * h
     pt = _Point(int((rect.right - rect.left) / 2 + nx * r), int(h / 2 + ny * r))
     user32.ClientToScreen(hwnd, ctypes.byref(pt))
-    user32.SetCursorPos(pt.x, pt.y)
+    if then_click:
+        click(pt.x, pt.y)
+    else:
+        user32.SetCursorPos(pt.x, pt.y)
 
 
 def center_mouse():
@@ -340,6 +360,10 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
             ring = parse_ring(line)
             if ring and game_in_front():
                 ring_mouse(*ring)
+                continue
+            ring = parse_ring_click(line)
+            if ring and game_in_front():
+                ring_mouse(*ring, then_click=True)
 
 
 if __name__ == "__main__":

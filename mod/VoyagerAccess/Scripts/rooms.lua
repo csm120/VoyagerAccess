@@ -378,6 +378,12 @@ end
 
 -- The open room window, or nil.
 open_window = function()
+    -- A room window left open when the story switches to the System Map
+    -- stays "shown" behind the map: Escape opened the pause menu and I named
+    -- the room (demo, VM, 2026-10-15). Room windows are in front only in the
+    -- ship view.
+    local okm, map = pcall(function() return require("system").active() end)
+    if okm and map then return nil end
     for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
         if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then return w end
     end

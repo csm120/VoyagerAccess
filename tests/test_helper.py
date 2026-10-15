@@ -46,6 +46,18 @@ class ParseCenterTests(unittest.TestCase):
         self.assertEqual(parse_ring("M|ring,0,-1\n"), (0.0, -1.0))
         self.assertEqual(parse_ring("M|ring,0.866,0.5"), (0.866, 0.5))
 
+    def test_ring_click(self):
+        # The same offset, then a real left click: Set course takes a point
+        # next to Voyager only once a click has selected it (demo, VM,
+        # 2026-10-15).
+        from voyager.helper import parse_ring_click
+        self.assertEqual(parse_ring_click("M|ringclick,0.1,-0.2\n"), (0.1, -0.2))
+        for bad in ["M|ringclick", "M|ringclick,1", "M|ringclick,a,b", "M|ring,0,1", "C|1,2"]:
+            self.assertIsNone(parse_ring_click(bad), bad)
+        self.assertIsNone(parse_ring("M|ringclick,0,1"))
+        self.assertIsNone(parse_line("M|ringclick,0,1"))
+        self.assertIsNone(parse_click("M|ringclick,0,1"))
+
     def test_not_ring(self):
         for bad in ["M|ring", "M|ring,1", "M|ring,a,b", "M|center", "C|1,2", "M|ring,1,2,3"]:
             self.assertIsNone(parse_ring(bad), bad)

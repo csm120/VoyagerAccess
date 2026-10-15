@@ -46,21 +46,28 @@ function M.context()
     if require("story").active() then return "story" end
     if dialogue.active() then return "dialogue" end
     if require("combat").active() then return "combat" end
-    -- Event and room windows (2026-10-11): Escape closing a room is the
-    -- game's own, tried with a real key press.
     local screen = require("screen")
-    for _, pair in ipairs({ { "WBP_POIMultipleChoice_C", "event" }, { "WBP_RoomManagementV2_C", "room" } }) do
-        for _, w in ipairs(FindAllOf(pair[1]) or {}) do
-            if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(w) then
-                return pair[2]
-            end
+    -- The pause menu over a room: I said "Main Engineering, level 1,
+    -- active. GAMMA" (demo, VM, 2026-10-15).
+    for _, w in ipairs(FindAllOf("WBP_PauseMenu_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(w) then
+            return "menu"
         end
     end
+    -- Event and room windows (2026-10-11): Escape closing a room is the
+    -- game's own, tried with a real key press.
+    for _, w in ipairs(FindAllOf("WBP_POIMultipleChoice_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(w) then
+            return "event"
+        end
+    end
+    -- Not a room left open behind the System Map (rooms.lua).
+    if require("rooms").window_open() then return "room" end
     local focus = require("focus").context()
     -- A window read as the mod's own button list (a Research Report over
     -- the map): I said "System map" and N and V worked on the map behind it
     -- (full game, VM, 2026-10-15).
-    if not focus and require("focus").virtual_active() then focus = "menu" end
+    if not focus and require("focus").virtual_window_open() then focus = "menu" end
     if require("ship").active() and not focus then return "ship" end
     if require("system").active() and not focus then return "system" end
     return focus or "none"
@@ -114,7 +121,19 @@ function M.say_where()
             if label and label ~= "" then parts[2] = label end
             parts[#parts + 1] = require("combat").status()
         else
-            parts[2] = require("focus").current_label()
+            -- A window read as the mod's button list: its title, not "Menu"
+            -- ("Menu. CLOSE, 1 of 2" over a Construction Report, demo, VM,
+            -- 2026-10-15).
+            local f = require("focus")
+            local win = ctx == "menu" and f.virtual_active() and f.virtual_window()
+            if win then
+                local ok, t = pcall(function() return require("popups").text_under(win) end)
+                local title = ok and t and t:match("^([^%.:]+)")
+                if title and title ~= "" then parts[1] = title end
+            end
+            parts[2] = f.current_label()
+            -- The team screen said "Menu" (demo, VM, 2026-10-15).
+            if parts[1] == "Menu" and parts[2] and parts[2]:find("^Away team slot") then parts[1] = "Away team" end
         end
     end
     local out = {}

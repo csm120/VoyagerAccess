@@ -635,6 +635,19 @@ function M.current_path()
     return current
 end
 
+-- The window whose buttons the mod's list holds, or nil (help.lua's I).
+function M.virtual_window()
+    return virtual and virtual.window or nil
+end
+
+-- A window list that stands in front of the views. A ruined room's prompt
+-- (WBP_RoomPrompt, "Clear Debris") is part of the ship view: counted as a
+-- window, V said "Close the window first" in the ship view (demo, VM,
+-- 2026-10-15).
+function M.virtual_window_open()
+    return M.virtual_active() and not virtual.window:find("WBP_RoomPrompt_C", 1, true)
+end
+
 function M.virtual_active()
     if virtual and require("dialogue").active() and not virtual.window:find(PAUSE_CONFIRM, 1, true) then virtual = nil end
     return virtual ~= nil
@@ -966,6 +979,23 @@ local function poll()
         section_prefix = nil
     end
     print(string.format("[VoyagerAccess] focus: %s | %s\n", tostring(label), path))
+    -- A room window or event that has just opened: popups.lua reads the
+    -- window and then says this button. Said here as well, it came three
+    -- times over: "Life Support off. Life Support, inactive. ... Life
+    -- Support off." (2026-10-15).
+    -- A room's buttons are in their own module widgets (WBP_UpgradeModule),
+    -- not under the window's path, so any such window still unread counts.
+    local popups = require("popups")
+    local okm, map = pcall(function() return require("system").active() end)
+    for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C" }) do
+        if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
+            for _, w in ipairs(FindAllOf(cls) or {}) do
+                if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then
+                    return
+                end
+            end
+        end
+    end
     if label then speech.say(label, true) end
 end
 
@@ -1378,6 +1408,32 @@ end
 local function go_back()
     crumb.at("key: backspace")
     if require("qtrials").back(current) then return end
+    -- A hero list (a room's WBP_RoomHeroPickerSelection, the away team's
+    -- WBP_AwayMissionHeroPickerSelection): close it the way Escape does,
+    -- which puts focus back on the slot or "Assign a hero" ("Nothing to go
+    -- back to", demo, VM, 2026-10-15). CloseMenu left the room's button
+    -- hidden. The list is found by walking up from the focused hero.
+    if current then
+        local closed = false
+        pcall(function()
+            local w, d = resolve(current), 0
+            while w and w:IsValid() and d < 10 do
+                if w:GetClass():GetFName():ToString():find("HeroPickerSelection_C$") then
+                    w:CallBackAction()
+                    closed = true
+                    return
+                end
+                local p = nil
+                pcall(function() p = w:GetParent() end)
+                if not (p and p:IsValid()) then pcall(function() p = w:GetOuter() end) end
+                w, d = p, d + 1
+            end
+        end)
+        if closed then
+            print("[VoyagerAccess] back: hero list closed\n")
+            return
+        end
+    end
     while #back_stack > 0 do
         local path = table.remove(back_stack)
         local b = path ~= current and resolve(path) or nil

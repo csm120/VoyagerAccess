@@ -977,8 +977,13 @@ local function on_screen()
     -- its 30 buttons became a list read over the loading screen and the
     -- game (Casey, 2026-10-14). With the game's HUD up it is not a window.
     local in_game = shown_widget("WBP_HUD_C") or shown_widget("WBP_Loading_Screen_C")
+    -- A room window left open when the story switched to the System Map is
+    -- still "shown" behind the map; it is not in front (rooms.lua).
+    local okm, map = pcall(function() return require("system").active() end)
+    local skip_room = okm and map
     for i, cls in ipairs(WATCH) do
-        for _, w in ipairs((not (in_game and cls == "WBP_Sandbox_Setup_C")) and FindAllOf(cls) or {}) do
+        local skip = (in_game and cls == "WBP_Sandbox_Setup_C") or (skip_room and cls == "WBP_RoomManagementV2_C")
+        for _, w in ipairs((not skip) and FindAllOf(cls) or {}) do
             if w:IsValid() then
                 local p = path_of(w)
                 if p and p:find("^/Engine/Transient%.") and screen.shown(w) then
@@ -1134,7 +1139,21 @@ local function poll()
                 -- "CONTINUE" came before "Trading Station. We accepted their
                 -- trade offer" (VM, 2026-10-14).
                     or (announced[p] and last_text[p] ~= nil and p:find("WBP_POIMultipleChoice_C", 1, true) ~= nil)
-                speech.say_long(text, first_event and true or nil)
+                -- The summary changes again after it was read, when a rank
+                -- counts up: the whole summary came a second time with only
+                -- "rank 1" now "rank 2" (demo, VM, 2026-10-15). Only the
+                -- sentences that changed are said.
+                local say = text
+                if outcome and last_text[p] then
+                    local old = {}
+                    for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
+                    local new = {}
+                    for s in (text .. " "):gmatch("(.-%.)%s+") do
+                        if not old[s] then new[#new + 1] = s end
+                    end
+                    if #new > 0 then say = table.concat(new, " ") end
+                end
+                speech.say_long(say, first_event and true or nil)
                 -- An offer that opened over the construction ring left focus
                 -- on the ring behind it, and its options could not be reached
                 -- (2026-10-14): focus its first option the player can take.

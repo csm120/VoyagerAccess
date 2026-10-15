@@ -520,7 +520,10 @@ end
 -- to Ocampa" while 900 away), the centre hit Voyager and no course was set,
 -- and the story could not go on (VM, 2026-10-14). Then the cursor is put on
 -- the target's own screen position, nudged away from Voyager.
-local function aim_at(actor)
+-- With click, the helper also clicks there: a Ship Wreck beside Voyager
+-- took no course from the cursor alone, twice, and took it once a real
+-- click had selected it (demo, VM, 2026-10-15). Used for the second try.
+local function aim_at(actor, click)
     local ok = pcall(function()
         local pc = FindFirstOf("PlayerController")
         local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
@@ -558,8 +561,12 @@ local function aim_at(actor)
         local bar = 0.11 * h
         if ty < bar and ty > bar - 30 / 1080 * h then ty = bar + 4 / 1080 * h end
         local r = 350 / 1080 * h   -- the helper's ring radius
-        print(string.format("[VoyagerAccess] course: aiming at %.0f,%.0f\n", tx, ty))
-        speech.ring_mouse((tx - w / 2) / r, (ty - h / 2) / r)
+        print(string.format("[VoyagerAccess] course: aiming at %.0f,%.0f%s\n", tx, ty, click and ", clicking" or ""))
+        if click then
+            speech.ring_click((tx - w / 2) / r, (ty - h / 2) / r)
+        else
+            speech.ring_mouse((tx - w / 2) / r, (ty - h / 2) / r)
+        end
     end)
     if not ok then speech.center_mouse() end
 end
@@ -574,8 +581,10 @@ fire_course = function(name, path, attempt)
             local q = pawn()
             if not q then return end
             local a = StaticFindObject(path)
-            if a and a:IsValid() then aim_at(a) end
-            ExecuteInGameThreadWithDelay(150, function()
+            local click = attempt > 1
+            if a and a:IsValid() then aim_at(a, click) end
+            -- The helper's click takes about 150 ms (hover, press, release).
+            ExecuteInGameThreadWithDelay(click and 500 or 150, function()
                 pcall(function()
                     local q2 = pawn()
                     if not q2 then return end

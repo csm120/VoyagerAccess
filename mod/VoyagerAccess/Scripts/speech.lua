@@ -73,6 +73,11 @@ function M.ring_mouse(x, y)
     write("a", string.format("M|ring,%.3f,%.3f\n", x, y))
 end
 
+-- The same, then a real left click there (the helper's M|ringclick).
+function M.ring_click(x, y)
+    write("a", string.format("M|ringclick,%.3f,%.3f\n", x, y))
+end
+
 function M.click(x, y)
     write("a", string.format("C|%.0f,%.0f\n", x, y))
 end

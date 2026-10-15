@@ -2,6 +2,18 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.9
+
+Smaller fixes found while replaying the demo and the full game.
+
+- Fixed: opening a room said its first button, then the room, then the button again. Now you hear the room, then the button, once each.
+- Fixed: Backspace in a list of heroes, either a room's "Assign a hero" list or the away team's, said "Nothing to go back to". It now closes the list and puts you back where you were.
+- New: Home and End on the away team screen go to the first slot and to Start Mission.
+- Changed: I names the window you're in, for example "Construction Report. CLOSE, 1 of 2" or "Away team", and says "Menu" in the pause menu instead of naming the room behind it.
+- Fixed: while a report was open, I, N and V worked on the map behind it. N now stays closed there, and V says "Close the window first".
+
+## Thursday October 15th 2026
+
 Version 0.3.8
 
 Fixes from the full game's second sector, State of Flux.
