@@ -80,7 +80,10 @@ local PLACES = { cutscene = "Cutscene", story = "Story", dialogue = "Dialogue", 
 function M.say_where()
     local away = require("awaymission")
     local parts = {}
-    if away.mission_active() then
+    local tree = require("techtree").where()
+    if tree then
+        parts[1] = tree
+    elseif away.mission_active() then
         parts[1] = "Away mission"
         parts[2] = away.mission_where()
     else

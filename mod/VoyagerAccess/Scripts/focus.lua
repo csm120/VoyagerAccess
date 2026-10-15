@@ -621,9 +621,18 @@ local function track_unfocused_window()
         -- Every window now: a side mission offer said "Acknowledged, 1 of 1"
         -- before its message (Q Trial, VM, 2026-10-14). popups.lua marks
         -- every open window on its first pass, so this never waits for long.
-        if require("popups").was_announced(first) then say_virtual()
+        -- Not the start warning a slot's Enter raised: it is being closed
+        -- quietly, and "Return, 1 of 2" was said anyway (VM, 2026-10-14).
+        if first:find("FewerHeroesConfirmWidget", 1, true) and os.clock() < (M.quiet_start_warning_until or 0) then
+            virtual.unsaid = nil
+        elseif require("popups").was_announced(first) then say_virtual()
         else virtual.unsaid = true end
     end
+end
+
+-- The focused button's path as the mod last saw it (dialogue.choice_step).
+function M.current_path()
+    return current
 end
 
 function M.virtual_active()
@@ -733,7 +742,6 @@ label_for = function(b, path)
         return require("difficulty").label(b, path)
     elseif require("qtrials").handles(path) then
         return require("qtrials").label(b, path)
-    elseif cls == "WBP_IncomingCall_List_Button_C" then
     elseif cls == "WBP_IncomingCall_List_Button_C" then
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
@@ -944,6 +952,12 @@ local function poll()
         if last and path_of(last) == path then b:SetNavigationRuleBase(3, 3) end   -- Down: Stop
     end) end
     if is_setting(b) and is_heading(b) and skip_heading(b) then return end
+    -- awaymission.lua moves the game's focus along its own list and says
+    -- each item itself; saying the focused button too would double it.
+    if (path:find("WBP_Dialogue_Choice_AwayMission_C", 1, true) or path:find("STVAwayMissionHeroSelectionPlaque", 1, true)
+        or path:find("WBP_AwayMission_Choice_HeroSelection", 1, true)) and require("awaymission").mission_active() then
+        return
+    end
     crumb.at("focus: label of " .. path)
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then pcall(M.radial_focus, b, path) end
     local label = label_for(b, path)
@@ -1075,7 +1089,7 @@ local function activate()
         return
     end
     if choice and require("screen").shown(choice) then
-        local cpath = current:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)")
+        local cpath = current:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)") or current:match("^(.-WBP_Dialogue_Choice_C_%d+)")
         local c = cpath and resolve(cpath)
         local target = c and c.RightButton
         if not (target and target:IsValid()) then target = resolve(current) end
@@ -1114,6 +1128,29 @@ local function activate()
         return
     end
     local b = resolve(current)
+    -- The battle setup rebuilds its slots after a hero is chosen, so the
+    -- slot just announced was gone by path; Enter then reached the game as
+    -- Start and raised "unassigned slots" (VM, 2026-10-14). Ask again.
+    if not b then
+        local fb = focused_button()
+        if fb and require("screen").shown(fb) then
+            current = path_of(fb)
+            b = fb
+            print("[VoyagerAccess] enter: focus looked up again: " .. current .. "\n")
+        end
+    end
+    -- The away team's slots lose keyboard focus about a second after a hero
+    -- is chosen; Enter then reached the game as Start Mission ("unassigned
+    -- slots", VM, 2026-10-14). The last button that had focus is used.
+    if not b and last_real then
+        local lb = resolve(last_real)
+        if lb and require("screen").shown(lb) then
+            current = last_real
+            b = lb
+            pcall(function() lb:SetFocus() end)
+            print("[VoyagerAccess] enter: using the last focused button: " .. current .. "\n")
+        end
+    end
     if not b then
         print("[VoyagerAccess] enter: no focused button\n")
         return
@@ -1248,6 +1285,17 @@ local function activate()
             return
         end
         click(b)
+        -- The Science Laboratory's analysis button moves between its
+        -- Unexplored and Analysis sections, so the changed-label check below
+        -- never fired and Enter said nothing (VM, 2026-10-14).
+        if b:GetClass():GetFName():ToString() == "WBP_RoomMgmt_Analyze_Button_C" then
+            local started = before and before:find("^Unexplored") ~= nil
+            local stopped = before and before:find("^Analysis") ~= nil
+            if started or stopped then
+                speech.say(started and "Analysis started" or "Analysis stopped", true)
+                return
+            end
+        end
         -- Enter on an away team slot opens its hero picker, but the game
         -- also takes that Enter as "Start away mission" and puts up "You
         -- still have unassigned slots. Continue?" (twice, 2026-10-14). The
@@ -1556,6 +1604,7 @@ function M.install()
         elseif away.mission_active() then away.mission_step(-1)
         elseif M.virtual_active() then M.virtual_step(-1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
+        elseif require("dialogue").choice_step(current, -1) then last_dir = -1 arrow_tick = ticks
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
         else last_dir = -1 arrow_tick = ticks end
@@ -1572,6 +1621,7 @@ function M.install()
         elseif away.mission_active() then away.mission_step(1)
         elseif M.virtual_active() then M.virtual_step(1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
+        elseif require("dialogue").choice_step(current, 1) then last_dir = 1 arrow_tick = ticks
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
         else last_dir = 1 arrow_tick = ticks end

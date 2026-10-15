@@ -85,6 +85,8 @@ local WATCH = {
     -- Leave Sector: choose the next sector (first met in a Q Trial, VM,
     -- 2026-10-14); its entries are read by M.leave_sector_entry
     "WBP_LeaveSector_C",
+    -- Q Trials results (sector end or game over): sandbox_result
+    "WBP_SandboxSectorResult_C",
 }
 
 -- Text widget classes, listed separately in case FindAllOf does not
@@ -600,7 +602,7 @@ local function battle_result(_, path)
     local W = StaticFindObject("/Script/UMG.UserWidget")
     local PANEL = StaticFindObject("/Script/UMG.PanelWidget")
     local BTN = StaticFindObject("/Script/CommonUI.CommonButtonBase")
-    local outcome, hull, section = nil, nil, nil
+    local outcome, hull, section, pending_amount, pending_name = nil, nil, nil, nil, nil
     local lists, order = {}, {}
     local HEAD = { injured_headline = "Injuries", injured_headline_1 = "Damaged rooms" }
     local function walk(x, depth)
@@ -608,8 +610,22 @@ local function battle_result(_, path)
         local ok, txt = pcall(function() return x:GetText():ToString() end)
         if ok and type(txt) == "string" then
             local name, t = x:GetFName():ToString(), plain(txt)
-            if t == "" then return end
-            if HEAD[name] or name == "headline_text" then
+            if t == "" or t == "+" then return end
+            -- A reward's amount and its name are two texts: "50 Morale".
+            -- Either can come first in the layout.
+            if name == "ResourceAmountTextBlock" then
+                if not pending_name then pending_amount = t return end
+                t = t .. " " .. pending_name
+                pending_name = nil
+            elseif name == "ResourceNameTextBlock" then
+                if not pending_amount then pending_name = t return end
+                t = pending_amount .. " " .. t
+                pending_amount = nil
+            end
+            -- "Gained" is ResourcesGained.Headline_Text; "headline_text" never
+            -- matched, so the rewards ran into the injuries ("Injuries, 4:
+            -- None, Gained, Morale, 50", VM, 2026-10-14).
+            if HEAD[name] or name:lower() == "headline_text" then
                 section = HEAD[name] or t
                 if not lists[section] then lists[section] = {} order[#order + 1] = section end
             -- "Destroyed" or "Fled" alone did not say who won (2026-10-14).
@@ -633,7 +649,13 @@ local function battle_result(_, path)
     local out = { "Combat result: " .. (outcome or "over") }
     if hull then out[#out + 1] = "Hull status " .. hull .. "%" end
     for _, s in ipairs(order) do
-        if #lists[s] > 0 then out[#out + 1] = s .. ": " .. table.concat(lists[s], ", ") end
+        -- With a count first: 22 injured names came with no hint of how many
+        -- (Q Trial defeat, VM, 2026-10-14). "None" stays as it is.
+        local n = #lists[s]
+        local counted = s == "Injuries" or s == "Damaged rooms"
+        if n == 1 and lists[s][1]:lower() == "none" then out[#out + 1] = s .. ": none"
+        elseif n > 0 and counted then out[#out + 1] = s .. ", " .. n .. ": " .. table.concat(lists[s], ", ")
+        elseif n > 0 then out[#out + 1] = s .. ": " .. table.concat(lists[s], ", ") end
     end
     for k, s in ipairs(out) do out[k] = s:gsub("%.%s*$", "") end
     return table.concat(out, ". ") .. "."
@@ -776,7 +798,34 @@ function M.leave_sector_entry(e)
     return table.concat(out, ". ") .. "."
 end
 
-local LAYOUTS = { WBP_LeaveSector_C = leave_sector, WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
+-- Q Trials results at the end of a sector or a trial (WBP_SandboxSectorResult,
+-- first met after a defeat in the VM, 2026-10-14; only "Return to Main
+-- Menu" was read). Q's remark (QuipText) is voiced and left out.
+local function sandbox_result(parts)
+    local by = {}
+    for _, p in ipairs(parts) do if not by[p.name] then by[p.name] = p.text end end
+    local out = {}
+    if by.CommonTextBlock_59 then out[#out + 1] = by.CommonTextBlock_59 end
+    out[#out + 1] = (by.CommonTextBlock_51 or "Trial Results") .. (by.SectorNr_TXT and (", " .. by.SectorNr_TXT) or "")
+    local stats = {}
+    for _, pair in ipairs({ { "Passed cycles", "passedCycles_TXT" }, { "Points of interest explored", "POIsExplored_TXT" },
+        { "Technologies researched", "TechResearched_TXT" }, { "Rooms built or upgraded", "RoomsBuilt_TXT" },
+        { "Time", "PlayTime_TXT" } }) do
+        if by[pair[2]] then stats[#stats + 1] = pair[1] .. " " .. by[pair[2]] end
+    end
+    if #stats > 0 then out[#out + 1] = "Sector performance: " .. table.concat(stats, ", ") end
+    if by.RemainingDistance_TXT then
+        local total = (by.InitialDistance_TXT or ""):gsub("^%s*/%s*", "")
+        out[#out + 1] = "Earth distance remaining " .. by.RemainingDistance_TXT .. (total ~= "" and (" of " .. total) or "")
+    end
+    local function nums(s) return (s:gsub("[()]", ""):gsub("%d+", function(d) return tostring(tonumber(d)) end)) end
+    if by.RewardHeadText then out[#out + 1] = by.RewardHeadText .. ", " .. nums((by.RewardAmount_TXT or ""):gsub("/", " of ")) end
+    if by.UnlockedRewards_TXT then out[#out + 1] = by.UnlockedRewards_TXT .. ", " .. nums(by.UnlockedRewardsAmount_TXT or "") end
+    for i, s in ipairs(out) do out[i] = s:gsub("%s+$", ""):gsub("%.$", ""):gsub("(%d) LY", "%1 light years"):gsub("(%d) ly", "%1 light years") end
+    return table.concat(out, ". ") .. "."
+end
+
+local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C = leave_sector, WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
     -- Heading, then the question, then the rest: creation order put "Are
     -- you sure?" last on the second opening (2026-10-14).
@@ -1006,7 +1055,8 @@ local function poll()
                     or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
                     or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
                     or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
-                    or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true))
+                    or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
+                    or p:find("WBP_SandboxSectorResult_C", 1, true))
                 -- An event's result replaces its options in the same window:
                 -- "CONTINUE" came before "Trading Station. We accepted their
                 -- trade offer" (VM, 2026-10-14).

@@ -211,6 +211,39 @@ function M.choice_edge(path, last)
     return true
 end
 
+-- Up and Down on a choice when the game does not move: the Caretaker's
+-- choices on the bridge had the explicit rules and still did not move
+-- (VM, 2026-10-14). Shortly after the key, if the same choice still has
+-- focus, the mod moves it; where the game does move, nothing happens here.
+function M.choice_step(path, dir)
+    if not sector_choice_path(path) then return false end
+    local list = shown_choices()
+    local side = path:match("%.(RightButton)$") or "LeftButton"
+    local i = nil
+    for k, it in ipairs(list) do
+        if path:sub(1, #it.c:GetFullName():match("^%S+%s+(.+)$")) == it.c:GetFullName():match("^%S+%s+(.+)$") then i = k end
+    end
+    if not i then return false end
+    local from = list[i].c:GetFullName():match("^%S+%s+(.+)$")
+    local to = list[i + dir] and list[i + dir].c:GetFullName():match("^%S+%s+(.+)$")
+    if not to then return true end
+    ExecuteInGameThreadWithDelay(200, function()
+        pcall(function()
+            local fc = StaticFindObject(from)
+            local tc = StaticFindObject(to)
+            -- Judged by the mod's own focus: on the bridge no button had
+            -- keyboard focus at all, and a keyboard focus test moved one
+            -- choice too many when the game had moved too. If the mod still
+            -- has the same choice, nothing moved.
+            if fc and fc:IsValid() and tc and tc:IsValid() and require("focus").current_path() == path then
+                print("[VoyagerAccess] dialogue: moving to the next choice myself\n")
+                tc[side]:SetFocus()
+            end
+        end)
+    end)
+    return true
+end
+
 local function wire_choices()
     local list = shown_choices()
     local names = {}
@@ -256,6 +289,15 @@ local function away_choice_label(c)
         end)
         parts[#parts + 1] = "Needs " .. skill .. " " .. amount
     end
+    -- A trait shown with the choice ("[Pilot]", "[Quick-witted]") was not
+    -- read (full game, VM, 2026-10-14).
+    pcall(function()
+        local rt = c.RightButton.RequirementText
+        if rt and rt:IsValid() and screen.shown(rt) then
+            local t = plain(text_of(rt)):gsub("^%[", ""):gsub("%]$", "")
+            if t ~= "" then parts[#parts + 1] = "Trait: " .. t end
+        end
+    end)
     -- Risk is not read yet: riskLvl_1 to riskLvl_3 are always visible (the
     -- level is drawn some other way, likely by color), and reading them said
     -- "High risk" for every choice (2026-10-11).

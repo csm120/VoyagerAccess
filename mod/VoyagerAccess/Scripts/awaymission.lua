@@ -250,7 +250,13 @@ function M.hero_label(path)
     end
     if on_team then text = text:gsub("^([^,%.]+)", "%1, on the team", 1) end
     local oke, enabled = pcall(function() return b:GetIsEnabled() end)
-    if oke and enabled == false then text = text:gsub("^([^,%.]+)", "%1, unavailable", 1) end
+    -- A battle's unavailable heroes stay enabled and are drawn at half
+    -- opacity (Chakotay and B'Elanna in the sparring match against their own
+    -- ship; Enter did nothing and nothing said why, VM, 2026-10-14).
+    local oko, op = pcall(function() return b:GetRenderOpacity() end)
+    if (oke and enabled == false) or (oko and type(op) == "number" and op < 0.75) then
+        text = text:gsub("^([^,%.]+)", "%1, unavailable", 1)
+    end
     if index then text = text:gsub("%.$", "") .. string.format(", %d of %d.", index, #shown) end
     return text
 end
@@ -418,6 +424,21 @@ end
 -- The active choice is the one whose button says "Confirm"; the others say
 -- "Lock In". Each choice keeps a hero marked (SelectedStateWidget) even
 -- when it is not the active one (read 2026-10-11).
+-- A hero in the choice's team. SelectedStateWidget marks only the hero
+-- clicked last; with two chosen, Kes and Tuvok went (Skill 35) while only
+-- Tuvok was marked and Confirm named only him. A hero already in the team
+-- shows LockedWidget (VM, 2026-10-14), so either counts.
+local function chosen(h)
+    local yes = false
+    pcall(function()
+        for _, k in ipairs({ "SelectedStateWidget", "LockedWidget" }) do
+            local w = h[k]
+            if w and w:IsValid() and screen.shown(w) then yes = true end
+        end
+    end)
+    return yes
+end
+
 local function is_active(c)
     local cb = c.ConfirmButton
     return plain(text_of(cb and cb.Name_TextBlock)):lower() == "confirm"
@@ -527,8 +548,7 @@ local function item_label(it)
         if okf then
             for _, n in ipairs(tired) do if n == it.name then text = text .. ", fatigued" end end
         end
-        local sel = h.SelectedStateWidget
-        if is_active(c) and sel and sel:IsValid() and screen.shown(sel) then text = text .. ", selected" end
+        if is_active(c) and chosen(h) then text = text .. ", selected" end
         return text .. "."
     else
         -- Casey pressed Enter on the inactive choice's Lock In and nothing
@@ -541,8 +561,7 @@ local function item_label(it)
         for _, o in ipairs(mission_items or {}) do
             if o.kind == "hero" and o.choice == it.choice then
                 local h = StaticFindObject(o.hero)
-                local sel = h and h:IsValid() and h.SelectedStateWidget
-                if sel and sel:IsValid() and screen.shown(sel) then who[#who + 1] = o.name end
+                if h and h:IsValid() and chosen(h) then who[#who + 1] = o.name end
             end
         end
         if #who == 0 then return "Lock In: select a hero for this choice first." end
@@ -551,8 +570,30 @@ local function item_label(it)
     end
 end
 
+-- The game's own keyboard focus follows the mod's list. It stayed on a
+-- hero the game had marked (Tuvok), the game took the same Enter and pressed
+-- him, and the mod's choice of Harry Kim was lost: "Confirm with Tuvok",
+-- Skill 0 (VM, 2026-10-14).
+local function focus_item(it)
+    pcall(function()
+        local c = StaticFindObject(it.choice)
+        if not (c and c:IsValid()) then return end
+        local target = nil
+        if it.kind == "hero" then
+            local h = StaticFindObject(it.hero)
+            target = h and h:IsValid() and h.Button
+        elseif it.kind == "choice" then
+            target = c.RightButton
+        else
+            target = c.ConfirmButton
+        end
+        if target and target:IsValid() then target:SetFocus() end
+    end)
+end
+
 local function say_item()
     local it = mission_items[mission_index]
+    if it then focus_item(it) end
     local label = it and item_label(it)
     if label then
         print("[VoyagerAccess] mission: " .. label .. "\n")
@@ -607,9 +648,18 @@ function M.mission_enter()
     elseif it.kind == "hero" then
         local h = StaticFindObject(it.hero)
         if h and h:IsValid() and h.Button and h.Button:IsValid() then
+            -- A second Enter on a hero already chosen left the highlight on
+            -- Tom Paris while the game sent Harry Kim, and Confirm named Tom
+            -- (VM, 2026-10-14). Choosing another hero replaces the choice,
+            -- so a chosen hero is not pressed again.
+            local c = StaticFindObject(it.choice)
+            if c and c:IsValid() and is_active(c) and chosen(h) then
+                require("speech").say(it.name .. " is already chosen for this", true)
+                return
+            end
             print("[VoyagerAccess] mission: select " .. it.name .. "\n")
             press(h.Button)
-            ExecuteInGameThreadWithDelay(300, function() pcall(say_item) end)
+            ExecuteInGameThreadWithDelay(600, function() pcall(say_item) end)
         end
     else
         -- A hold button: press, wait out the hold, then release. Untested

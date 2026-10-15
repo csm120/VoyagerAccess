@@ -114,6 +114,16 @@ function M.open()
     return list ~= nil
 end
 
+-- For I (where am I): "Tech tree, Engineering. Small Battery Compartment,
+-- tier 2, researching, 15 of 57" (it said only "Game.", VM, 2026-10-14).
+function M.where()
+    if not list then return nil end
+    local it = list.items[list.index]
+    local head = "Tech tree" .. ((list.tab and list.tab ~= "") and (", " .. list.tab) or "")
+    if not it then return head end
+    return string.format("%s. %s, %d of %d", head, it.text, list.index, #list.items)
+end
+
 local function refresh(keep_index)
     local items = build()
     if #items == 0 then return false end

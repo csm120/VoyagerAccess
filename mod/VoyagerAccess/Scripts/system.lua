@@ -499,6 +499,47 @@ end
 -- the course is fired after 900 ms (300 ms failed once for the Shipwreck),
 -- and a course that did not take is tried once more before the player is
 -- told.
+-- With the camera on the target, the cursor goes on the target. When
+-- Voyager sits on top of it (Ocampa after the first away team: "Fly back
+-- to Ocampa" while 900 away), the centre hit Voyager and no course was set,
+-- and the story could not go on (VM, 2026-10-14). Then the cursor is put on
+-- the target's own screen position, nudged away from Voyager.
+local function aim_at(actor)
+    local ok = pcall(function()
+        local pc = FindFirstOf("PlayerController")
+        local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
+        local voy = nil
+        for _, cls in ipairs({ "BP_SectorVoyager_C", "BP_SectorVoyager_Sandbox_C" }) do
+            for _, x in ipairs(FindAllOf(cls) or {}) do
+                if x:IsValid() and x:GetFullName():find("PersistentLevel", 1, true) then voy = x end
+            end
+        end
+        if not (pc and lib and voy) then error("no camera") end
+        local size = lib:GetViewportSize(pc)
+        local w, h = size.X, size.Y
+        local st, sv = {}, {}
+        pc:ProjectWorldLocationToScreen(actor:K2_GetActorLocation(), st, false)
+        pc:ProjectWorldLocationToScreen(voy:K2_GetActorLocation(), sv, false)
+        if not (w and h and h > 0) then error("no size") end
+        -- Off screen: leave it to the camera and the centre.
+        if not (st.X and st.Y and st.X >= 0 and st.Y >= 0 and st.X <= w and st.Y <= h) then error("off screen") end
+        -- Always on the target itself: the camera did not always move to it
+        -- (Class Y planet stayed at the side and the centre hit Voyager,
+        -- VM, 2026-10-14). Nudged away from Voyager when they are close.
+        local dx, dy = st.X - sv.X, st.Y - sv.Y
+        local len = math.sqrt(dx * dx + dy * dy)
+        local tx, ty = st.X, st.Y
+        if len <= 80 then
+            if len < 1 then dx, dy, len = 1, 0, 1 end
+            tx, ty = st.X + dx / len * 12, st.Y + dy / len * 12
+        end
+        local r = 350 / 1080 * h   -- the helper's ring radius
+        print(string.format("[VoyagerAccess] course: aiming at %.0f,%.0f\n", tx, ty))
+        speech.ring_mouse((tx - w / 2) / r, (ty - h / 2) / r)
+    end)
+    if not ok then speech.center_mouse() end
+end
+
 fire_course = function(name, path, attempt)
     local q0 = pawn()
     local actor = StaticFindObject(path)
@@ -508,9 +549,17 @@ fire_course = function(name, path, attempt)
         pcall(function()
             local q = pawn()
             if not q then return end
-            q:OnSetCourseActionStarted({})
-            q:OnSetCourseActionTriggered({})
-            verify_course(name, path, attempt)
+            local a = StaticFindObject(path)
+            if a and a:IsValid() then aim_at(a) end
+            ExecuteInGameThreadWithDelay(150, function()
+                pcall(function()
+                    local q2 = pawn()
+                    if not q2 then return end
+                    q2:OnSetCourseActionStarted({})
+                    q2:OnSetCourseActionTriggered({})
+                    verify_course(name, path, attempt)
+                end)
+            end)
         end)
     end)
 end

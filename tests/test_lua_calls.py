@@ -66,6 +66,19 @@ class LuaCallTests(unittest.TestCase):
                     problems.append(f"{f.name}:{n}")
         self.assertEqual(problems, [])
 
+    def test_no_doubled_condition_lines(self):
+        # A doubled "elseif cls == ... then" line gives the first copy an
+        # empty body: incoming calls were read as nothing from 0.3.4 to
+        # 0.3.6 (found 2026-10-14).
+        problems = []
+        for f in sorted(SCRIPTS.glob("*.lua")):
+            lines = f.read_text(encoding="utf-8").splitlines()
+            for n in range(1, len(lines)):
+                a, b = lines[n - 1].strip(), lines[n].strip()
+                if a == b and re.match(r"^(elseif|if)\b.*\bthen$", a):
+                    problems.append(f"{f.name}:{n + 1}")
+        self.assertEqual(problems, [])
+
     def test_the_check_catches_a_missing_function(self):
         src = "local function plain(s) return s end\nlocal x = plain(text_of(t))\n"
         self.assertEqual(undefined_calls(src), {"text_of"})

@@ -2,6 +2,24 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.7
+
+Fixes from playing the full game's campaign from the start.
+
+- Fixed: Set course could do nothing when Voyager was sitting right on top of the place you wanted, or when the camera didn't move to it. The campaign got stuck at "Fly back to Ocampa". Set course now aims at the place itself.
+- Fixed: incoming calls were read as nothing at all since 0.3.4. They now say who's calling, for example "Incoming call: Caretaker".
+- Fixed: the Caretaker's choices on the bridge didn't move with Up and Down, and Enter could press the wrong part of a choice.
+- Fixed: on an away mission, Enter could send a different hero than the one you heard, because the game was still looking at another hero. It now picks the hero you're on. Confirm names everyone you chose, and Enter on a hero you already chose just says so.
+- Fixed: on the away team screen, Enter right after choosing a hero could start the mission by accident.
+- New: away mission choices say their trait, for example "Trait: Ocampa".
+- New: in the battle setup, heroes who can't join this battle say "unavailable". Before, Enter on them did nothing and nothing said why.
+- Fixed: the battle result listed rewards as if they were injuries ("Injuries: None, Gained, Morale, 50"). It now says "Injuries: none. Gained: 50 Morale", and long lists start with how many there are, for example "Injuries, 22".
+- New: the Q Trials results screen at the end of a sector or a trial is read: performance, distance and rewards.
+- New: starting an analysis in the Science Laboratory says "Analysis started".
+- New: I in the tech tree says the category and the item you're on.
+
+## Wednesday October 14th 2026
+
 Version 0.3.6
 
 "Where am I" has moved from L to I.
