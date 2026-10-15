@@ -468,7 +468,9 @@ local function join_numbers(texts)
             out[#out + 1] = t
         end
     end
-    for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
+    -- A range's closing bracket is its own text and dropped, which left
+    -- "Low Morale (0 - 800" (VM, 2026-10-15): "Low Morale 0 to 800".
+    for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", ""):gsub("%(([%d,]+) %- ([%d,]+)%)?", "%1 to %2") end
     return table.concat(out, ". ") .. "."
 end
 
@@ -479,7 +481,8 @@ local OVERVIEW_SKIP = { ScreenName_Text = true, CommonTextBlock_30 = true, Commo
 -- or a position), said with one.
 local OVERVIEW_LABELS = {
     ConsumedDeuteriumText = "The warp core uses %s deuterium per cycle",
-    ProducedEnergyText = "and produces %s energy",
+    -- Its own sentence: ". and produces" (VM, 2026-10-15).
+    ProducedEnergyText = "It produces %s energy",
     CyclesText = "%s before forced gray mode",
     SmallBatteriesAmount = "Small batteries: %s",
     LargeBatterieAmount = "Large batteries: %s",
@@ -507,10 +510,72 @@ local function overview(_, path)
             end
         end
     end
+    -- The Heroes tab is walked hero by hero (view.lua); read whole, its
+    -- ranks came out beside the wrong names and every selection read the
+    -- whole tab again (VM, 2026-10-15).
+    if tab and tab:lower():find("hero", 1, true) then
+        local n = 0
+        pcall(function() n = require("view").hero_count() end)
+        return "Overview, " .. tab .. " tab. " .. n .. " heroes. Up and Down choose one and read its details."
+    end
+    -- The Combat tab is two tables (rooms, how many, their combat power)
+    -- and a sum; read as a flat list it came out "combat power 0 of 12 ...
+    -- Hull 0.112 of 400" (VM, 2026-10-15).
+    if tab and tab:lower():find("combat", 1, true) then
+        local panel = nil
+        for _, x in ipairs(FindAllOf("WBP_Combat_Overview_C") or {}) do
+            if x:IsValid() and path_of(x):find("^/Engine/Transient%.") and screen.shown(x) then panel = x end
+        end
+        if panel then
+            local pairs_ = ordered_texts(panel, function(name, s) return name .. "=" .. s end)
+            local seq = {}
+            for _, p in ipairs(pairs_) do
+                local n, v = p:match("^([%w_]+)=(.*)$")
+                if n then seq[#seq + 1] = { n = n, v = v } end
+            end
+            local out, i = {}, 1
+            local by = {}
+            for _, e in ipairs(seq) do by[e.n] = by[e.n] or e.v end
+            -- Each table: header, then label/count pairs, then a power column.
+            local function table_at(header)
+                local start = nil
+                for k, e in ipairs(seq) do if e.n == header then start = k end end
+                if not start then return nil end
+                local labels, counts, powers, k = {}, {}, {}, start + 1
+                while seq[k] and seq[k].n == "txt_Label" and seq[k + 1] and seq[k + 1].n == "txt_Count" do
+                    labels[#labels + 1], counts[#counts + 1] = seq[k].v, seq[k + 1].v
+                    k = k + 2
+                end
+                if seq[k] and seq[k].n:find("^col_CPWR") then k = k + 1 end
+                while seq[k] and seq[k].n == "txt_Count" and #powers < #labels do powers[#powers + 1] = seq[k].v k = k + 1 end
+                local rows = {}
+                for r, l in ipairs(labels) do
+                    rows[#rows + 1] = l .. ", " .. counts[r] .. " built" .. (powers[r] and (", combat power " .. powers[r]) or "")
+                end
+                return table.concat(rows, "; ")
+            end
+            local def, off = table_at("col_defense"), table_at("col_Offense")
+            out[#out + 1] = "Overview, " .. tab .. " tab"
+            if def then out[#out + 1] = "Defense: " .. def end
+            if off then out[#out + 1] = "Offense: " .. off end
+            if by.TECH_PWR then out[#out + 1] = "Tech combat power " .. by.TECH_PWR end
+            if by.HULL_PWR then out[#out + 1] = "Defensive combat power " .. (by.Def_PWR or by.HULL_PWR) .. ", from hull " .. by.HULL_PWR end
+            if by.OFF_PWR then out[#out + 1] = "Offensive combat power " .. by.OFF_PWR .. (by.BATT_PWR and (", base attack power " .. by.BATT_PWR) or "") end
+            if by.WarpCoreTier then out[#out + 1] = "Warp core " .. by.WarpCoreTier:lower() end
+            if by.ReqCE_Value then out[#out + 1] = "Required combat energy " .. by.ReqCE_Value:gsub("/", " of ") end
+            if by.reduction then out[#out + 1] = "Combat power lost to missing energy " .. by.reduction end
+            if by.ACP then out[#out + 1] = "Combat ally " .. by.ACP end
+            if by.TCP then out[#out + 1] = "Voyager combat power " .. by.TCP .. (by.avgNmyPwr and (", against average enemy power " .. by.avgNmyPwr) or "") end
+            return table.concat(out, ". ") .. "."
+        end
+    end
     local level = nil   -- Heroes tab: "Lv. 1" comes before the name it belongs to
     local texts = ordered_texts(w, function(name, t)
         if OVERVIEW_LABELS[name] then
-            return string.format(OVERVIEW_LABELS[name], (t:gsub("^%+", ""):gsub("/$", "")))
+            -- "uses -24 deuterium": the sign is in "uses" already.
+            local v = t:gsub("^%+", ""):gsub("/$", "")
+            if name == "ConsumedDeuteriumText" then v = v:gsub("^%-", "") end
+            return string.format(OVERVIEW_LABELS[name], v)
         end
         if name == "LevelText" then
             level = t:gsub("^Lv%.%s*", "level ")
@@ -525,7 +590,15 @@ local function overview(_, path)
             or name:find("^Upgrade") or name:find("^AddedValue") or name == "SkillValue"
     end)
     table.insert(texts, 1, "Overview, " .. (tab or "") .. " tab")
-    return join_numbers(texts)
+    -- The Q Trials tab: "Q Challenges. Q Challenges. (Active 0/10)" (VM,
+    -- 2026-10-15): a text the same as the one before it is dropped, and
+    -- "(Active 0/10)" reads "Active 0 of 10".
+    local kept = {}
+    for _, t in ipairs(texts) do
+        t = t:gsub("^%((Active) (%d+)/(%d+)%)$", "%1 %2 of %3")
+        if t ~= kept[#kept] then kept[#kept + 1] = t end
+    end
+    return join_numbers(kept)
 end
 
 M.ordered_texts = ordered_texts
@@ -609,6 +682,16 @@ end
 -- screen (on controller press d-pad left two times)" and "in the lower
 -- left part of the ship" told a keyboard player nothing.
 function M.clean_tutorial(text)
+    -- Colours used as labels: "Yellow: Average outcomes ... Orange & Red:
+    -- Bad and terrible outcomes" (Points of Interest, Q Trials, VM,
+    -- 2026-10-15). The words after the colour say it all.
+    local COLOURS = { green = true, yellow = true, orange = true, red = true, blue = true, purple = true, white = true, gold = true }
+    text = text:gsub("(%a+)%s*&%s*(%a+):%s*", function(a, b)
+        if COLOURS[a:lower()] and COLOURS[b:lower()] then return "" end
+    end)
+    text = text:gsub("(%a+):%s+", function(a)
+        if COLOURS[a:lower()] then return "" end
+    end)
     -- Controller hints in brackets.
     text = text:gsub("%s*%([^%)]*[Cc]ontroller[^%)]*%)", ""):gsub("%s*%([^%)]*[Gg]amepad[^%)]*%)", "")
     -- Where something sits on the screen.

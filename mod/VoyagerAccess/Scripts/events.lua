@@ -470,7 +470,9 @@ function M.option_label(b)
     -- running into the next ("Leave the storage alone..." is not "Leave for
     -- now"; Casey, 2026-10-11).
     -- Heroes: the skill the option tests, and the way to choose one.
-    local heroes = heroes_of(b)
+    -- Not on a locked option: "Locked: ... Left and Right choose a hero"
+    -- offered a choice that cannot be made (Demon Planet, VM, 2026-10-15).
+    local heroes = is_locked(b) and {} or heroes_of(b)
     if #heroes > 1 then
         local skill = o and attribute_of(o)
         local i = chosen[path_of(b)] or 1

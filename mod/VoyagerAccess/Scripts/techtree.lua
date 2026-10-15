@@ -73,14 +73,18 @@ local function build()
             end)
             local num = tonumber(n) or (#tiers + 1)
             tiers[#tiers + 1] = {
-                n = num,
+                n = num, researched = w.bAlreadyResearched == true,
                 text = string.format("Tier %d, %s", num, state(w.bAlreadyResearched, w.bCanBeresearched, w.bCurrentResearch)),
                 button = path_of(w.TierButton),
             }
         end
     end
     table.sort(tiers, function(a, b) return a.n < b.n end)
-    for _, t in ipairs(tiers) do items[#items + 1] = t end
+    local tier_done = {}
+    for _, t in ipairs(tiers) do
+        items[#items + 1] = t
+        tier_done[t.n] = t.researched
+    end
     local techs = {}
     for _, w in ipairs(FindAllOf("WBP_TechWidget_C") or {}) do
         if live(w) and screen.shown(w.RegularTechButton) then
@@ -89,10 +93,16 @@ local function build()
             local name = ""
             pcall(function() name = w.TechName:ToString() end)
             if w.bObfuscate or name == "" then name = "Unknown technology" end
+            -- Row 0 is the starting technologies, above the Tier 1 band;
+            -- row N is tier N. "row + 1" called Hyperspanner tier 3 while it
+            -- sits in the Tier 2 band (VM screenshot, 2026-10-15).
+            local st = state(w.bAlreadyResearched, w.bCanBeresearchItem, w.bCurrentResearch)
+            local where = row == 0 and "starting technology" or ("tier " .. row)
+            -- A tech in a tier not yet researched is locked by that tier.
+            if st == "locked" and row > 0 and tier_done[row] == false then st = "locked until its tier is researched" end
             techs[#techs + 1] = {
                 row = row, col = col,
-                text = string.format("%s, tier %d, %s", name, row + 1,
-                    state(w.bAlreadyResearched, w.bCanBeresearchItem, w.bCurrentResearch)),
+                text = string.format("%s, %s, %s", name, where, st),
                 button = path_of(w.RegularTechButton),
             }
         end

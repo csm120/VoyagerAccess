@@ -27,6 +27,27 @@ local HOLD_SECONDS = 2
 local hold_until = 0
 local last_text, last_at = nil, -100
 
+-- Words the game writes run together, which some synthesizers say as one
+-- mushed word ("Shuttlebay", "Lifesupport"; Casey, 2026-10-15). The number
+-- is where the space goes. Found in the game's own text; everyday words
+-- such as "starship" and "subspace" are left alone.
+local SPLIT = { shuttlebay = 7, aeroshuttlebay = 4, aeroshuttle = 4, aerowing = 4, sickbay = 4, holodeck = 4,
+    turbolift = 5, transwarp = 5, nanoprobe = 4, lifeform = 4, lifesign = 4, lifesupport = 4, warpcore = 4,
+    messhall = 4, shuttlecraft = 7, stardate = 4, homeworld = 4 }
+local function split_words(text)
+    return (text:gsub("%a+", function(w)
+        local l = w:lower()
+        local base, tail = l, ""
+        if not SPLIT[base] and l:sub(-1) == "s" then base, tail = l:sub(1, -2), "s" end
+        local at = SPLIT[base]
+        if not at then return nil end
+        local out = w:sub(1, at) .. " " .. w:sub(at + 1)
+        -- Aeroshuttlebay: "Aero shuttlebay", then the rest.
+        if base == "aeroshuttlebay" then out = w:sub(1, 4) .. " " .. w:sub(5, 11) .. " " .. w:sub(12) end
+        return out
+    end))
+end
+
 function M.say(text, interrupt)
     if type(text) ~= "string" then return end
     text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -34,6 +55,7 @@ function M.say(text, interrupt)
     -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
     text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ","):gsub("%s+([;:!%?%)])", "%1")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    text = split_words(text)
     if text == "" then return end
     if interrupt and os.time() < hold_until then interrupt = false end
     -- The same line queued again right after itself is dropped: the demo's

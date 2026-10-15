@@ -434,6 +434,56 @@ end
 -- it was read as "2, /, 200, 20, Upkeep, Recruitment, 35, Talaxian Ally"
 -- (VM, 2026-10-15). Costs are WBP_CombatAllyCost_SingleResource widgets in
 -- CraftingCostRoot (to recruit) or CraftingCostRoot_PerCycle (upkeep).
+-- A Shuttlebay's shuttle buttons (WBP_Shuttle_Status_Button in a
+-- WBP_ShuttleStatus): Build, Status (Maintenance) and Remove. Each shows only
+-- the shuttle type; "Dismantle" is the hover label, so Enter on "Class 2
+-- Shuttle" would have scrapped the ship's only shuttle (Q Trials, VM,
+-- 2026-10-15). The costs beside it are what building takes or dismantling
+-- gives back.
+function M.shuttle_label(b, path)
+    local entry = path:match("^(.+)%.WidgetTree_%d+%.[%w_]+$")
+    local w = entry and StaticFindObject(entry)
+    if not (w and w:IsValid()) then return nil end
+    local name = path:match("([%w_]+)$")
+    local kind = plain(text_of(w.Text_ShuttleType))
+    if kind == "" or kind:sub(1, 1) == "#" then kind = "shuttle" end
+    local costs = {}
+    local prefix = entry .. "."
+    for _, c in ipairs(FindAllOf("WBP_ShuttleCost_SingleResource_C") or {}) do
+        local cp = c:IsValid() and path_of(c)
+        if cp and cp:sub(1, #prefix) == prefix and screen.shown(c) then
+            local amount = plain(text_of(c.ResourceAmount)):gsub("^[%+%-]", "")
+            local res = "resources"
+            pcall(function()
+                local ro = c.ResourceImage.Brush.ResourceObject
+                if ro and ro:IsValid() then res = ro:GetFName():ToString():match("^MI_UI_(%a-)_") or ro:GetFName():ToString():match("^MI_UI_(%a+)") or res end
+            end)
+            res = (res:gsub("(%l)(%u)", "%1 %2"))
+            if amount:match("%d") then costs[#costs + 1] = amount .. " " .. res end
+        end
+    end
+    local list = table.concat(costs, ", ")
+    local parts
+    if name == "RemoveButton" then
+        parts = { "Dismantle " .. kind }
+        if list ~= "" then parts[#parts + 1] = "Returns " .. list end
+    elseif name == "BuildButton" then
+        parts = { "Build " .. kind }
+        if list ~= "" then parts[#parts + 1] = "Costs " .. list end
+        local cycles = plain(text_of(w.RequiredCycles_Text))
+        if cycles:match("^%d+$") then parts[#parts + 1] = cycles .. (cycles == "1" and " cycle" or " cycles") end
+    else
+        parts = { kind }
+        local status = plain(text_of(w.StatusInfoText))
+        if status ~= "" and status:sub(1, 1) ~= "#" then parts[#parts + 1] = status end
+        local remaining = plain(text_of(w.RemainingTextBlock))
+        if remaining:match("%d") then parts[#parts + 1] = remaining end
+    end
+    local ok, en = pcall(function() return b:GetIsEnabled() end)
+    if ok and en == false then parts[#parts + 1] = "unavailable" end
+    return table.concat(parts, ". ") .. "."
+end
+
 function M.ally_label(b)
     local name = plain(text_of(b.CombatAllyName))
     if name == "" then return nil end
@@ -508,6 +558,42 @@ function M.patients_text()
     return table.concat(out, ". ") .. "."
 end
 
+-- The Aeroshuttle Bay's Trading tab: "New trade offer in 14 cycles.
+-- Awaiting new trade offers" twice, none of it focusable; only "Trading
+-- tab" was said (Q Trials, VM, 2026-10-15). Its texts in order, each once;
+-- offers that are buttons are read as focus reaches them.
+function M.trading_text()
+    local module = nil
+    for _, w in ipairs(FindAllOf("WBP_AeroShuttleBayModule_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then module = w end
+    end
+    if not module then return nil end
+    local mp = path_of(module) .. "."
+    local out, seen, done = {}, {}, {}
+    for _, cls in ipairs({ "TextBlock", "CommonTextBlock", "RichTextBlock", "CommonRichTextBlock" }) do
+        for _, t in ipairs(FindAllOf(cls) or {}) do
+            local tp = t:IsValid() and path_of(t)
+            -- A CommonTextBlock is found as a TextBlock too: "4 slots" for 2.
+            if tp and not done[tp] and tp:sub(1, #mp) == mp and screen.shown(t) and not tp:find("Button", 1, true) then
+                done[tp] = true
+                local s = plain(text_of(t))
+                if s ~= "" and s:sub(1, 1) ~= "#" then
+                    local key = s:lower()
+                    if seen[key] then seen[key] = seen[key] + 1 else seen[key] = 1 out[#out + 1] = s end
+                end
+            end
+        end
+    end
+    if #out == 0 then return nil end
+    for i, s in ipairs(out) do
+        local n = seen[s:lower()]
+        -- Capitals only for the empty slots' "AWAITING NEW TRADE OFFERS".
+        if s == s:upper() then s = s:sub(1, 1) .. s:sub(2):lower() end
+        out[i] = (s:gsub("%.%s*$", "")) .. (n > 1 and (", " .. n .. " slots") or "")
+    end
+    return table.concat(out, ". ") .. "."
+end
+
 -- Left and Right in a room window switch its tabs (Management, Warp Core,
 -- Heroes); the game only does that with a controller. The room window's own
 -- SelectPreviousTab and SelectNextTab are UFunctions. The selected tab is
@@ -536,6 +622,7 @@ function M.switch_tab(dir)
                         -- Only on that tab: just after leaving it, its page
                         -- still counts as shown (review, 2026-10-15).
                         local t = name:lower():find("patient", 1, true) and M.patients_text()
+                            or name:lower():find("trading", 1, true) and M.trading_text()
                         if t then require("speech").say(t, false) end
                     end)
                     pcall(function()

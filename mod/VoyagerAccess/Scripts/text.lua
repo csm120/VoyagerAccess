@@ -38,6 +38,14 @@ function M.prep(s)
     -- +20"); after a word it can be a label wrapped onto two lines
     -- ("CURRENTLY NO / CRAFTABLE BLUEPRINTS"), so only numbers get a comma.
     s = s:gsub("([%d%%])[ \t]*\r?\n[\r\n%s]*", "%1, ")
+    -- A line that starts with a number is a list item too: "750 DEUTERIUM
+    -- storage capacity / 750 FOOD storage capacity" (Cargo Bay upgrade,
+    -- VM, 2026-10-15).
+    s = s:gsub("(%a)[ \t]*\r?\n[\r\n%s]*([%+%-]?%d)", "%1, %2")
+    -- A lowercase word, a line break, then a capital starts a new sentence:
+    -- "storage capacity / Changes ENERGY consumption". Labels wrapped onto
+    -- two lines are all capitals, so they stay joined.
+    s = s:gsub("(%l)[ \t]*\r?\n[\r\n%s]*(%u)", "%1. %2")
     return s
 end
 

@@ -915,6 +915,20 @@ label_for = function(b, path)
         label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
     elseif cls == "WBP_LeaveSectorEntry_C" then
         label = require("popups").leave_sector_entry(b)
+    elseif cls == "WBP_ResourceSelectionButton_C" then
+        -- A Cargo Bay's storage choice: only "+50" is text, the resource is
+        -- its Icon (MI_UI_Duranium; VM, 2026-10-15). "Duranium, +50 storage".
+        local res = nil
+        pcall(function()
+            local img = b.Icon
+            if not (img and img:IsValid()) then return end
+            local ro = img.Brush.ResourceObject
+            if ro and ro:IsValid() then res = ro:GetFName():ToString():match("^MI_UI_(%a+)") end
+        end)
+        label = with_value(label_of(path), b)
+        if res and label then label = res:gsub("(%l)(%u)", "%1 %2") .. ", " .. label:gsub("%.$", "") .. " storage" end
+    elseif cls == "WBP_Shuttle_Status_Button_C" then
+        label = require("rooms").shuttle_label(b, path) or with_value(label_of(path), b)
     elseif cls == "WBP_SectorExitBonusFuel_Button_C" then
         label = require("popups").bonus_fuel_label(b)
     elseif cls == "WBP_RadialButton_C" then
@@ -1969,6 +1983,7 @@ function M.install()
         elseif require("resources").list_open() then require("resources").step(-1)
         elseif require("view").nav_open() then require("view").nav_step(-1)
         elseif away.keys_active() then away.mission_step(-1)
+        elseif require("view").heroes_open() then require("view").hero_step(-1)
         elseif M.virtual_active() then M.virtual_step(-1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif require("dialogue").choice_step(current, -1) then last_dir = -1 arrow_tick = ticks
@@ -1986,6 +2001,7 @@ function M.install()
         elseif require("resources").list_open() then require("resources").step(1)
         elseif require("view").nav_open() then require("view").nav_step(1)
         elseif away.keys_active() then away.mission_step(1)
+        elseif require("view").heroes_open() then require("view").hero_step(1)
         elseif M.virtual_active() then M.virtual_step(1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif require("dialogue").choice_step(current, 1) then last_dir = 1 arrow_tick = ticks
@@ -2027,6 +2043,7 @@ function M.install()
         if require("resources").list_open() then return require("resources").edge(last) end
         if require("view").nav_open() then return require("view").nav_edge(last) end
         if away.keys_active() then return away.mission_edge(last) end
+        if require("view").heroes_open() then return require("view").hero_step(last and 1 or -1, true) end
         if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
         if require("difficulty").edge(current, last) then return end

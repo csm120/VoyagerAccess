@@ -153,6 +153,121 @@ end
 
 -- Left and Right switch the Overview's tabs, as in a room window; the new
 -- tab is read by popups.lua when its text changes. True when it did.
+-- The Overview's Heroes tab: a grid of hero cards (WBP_Hero_InfoCardButton,
+-- plain UMG Buttons the mod's button lists do not take) and the selected
+-- hero's details. Only the first hero's details could be heard (Q Trials,
+-- VM, 2026-10-15). Up and Down walk the cards; each step selects the card as
+-- a click does (its own OnButtonClicked event) and reads the details.
+local hero_index = nil
+
+local function heroes_panel()
+    for _, w in ipairs(FindAllOf("WBP_Hero_Overview_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(w) then return w end
+    end
+    return nil
+end
+
+function M.heroes_open()
+    local open = heroes_panel() ~= nil
+    if not open then hero_index = nil end
+    return open
+end
+
+local function texts_in(prefix)
+    local out, seen = {}, {}
+    for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+        for _, t in ipairs(FindAllOf(cls) or {}) do
+            local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
+            if tp and not seen[tp] and tp:sub(1, #prefix) == prefix and screen.shown(t) then
+                seen[tp] = true
+                local ok, s = pcall(function() return t:GetText():ToString() end)
+                if ok then out[tp:match("([%w_]+)$")] = require("text").prep(s):gsub("<[^>]*>", "") end
+            end
+        end
+    end
+    return out
+end
+
+local function hero_cards()
+    local panel = heroes_panel()
+    if not panel then return {} end
+    local pp = panel:GetFullName():match("^%S+%s+(.+)$") .. "."
+    local cards = {}
+    for _, c in ipairs(FindAllOf("WBP_Hero_InfoCardButton_C") or {}) do
+        local cp = c:IsValid() and c:GetFullName():match("^%S+%s+(.+)$")
+        if cp and cp:sub(1, #pp) == pp and screen.shown(c) then
+            local parent, idx, pidx = nil, 0, 0
+            pcall(function()
+                parent = c:GetParent()
+                idx = parent:GetChildIndex(c)
+                pidx = parent:GetParent():GetChildIndex(parent)
+            end)
+            cards[#cards + 1] = { w = c, path = cp, key = pidx * 1000 + idx }
+        end
+    end
+    table.sort(cards, function(a, b) return a.key < b.key end)
+    return cards
+end
+
+local function card_text(c)
+    local parts = {}
+    for _, cls in ipairs({ "TextBlock" }) do
+        for _, t in ipairs(FindAllOf(cls) or {}) do
+            local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
+            if tp and tp:sub(1, #c.path + 1) == c.path .. "." and screen.shown(t) then
+                local ok, s = pcall(function() return t:GetText():ToString() end)
+                -- Skill values without their icons ("25, 29") are left out.
+                if ok and s ~= "" and not s:match("^[%d%s%+%-]+$") then parts[#parts + 1] = s end
+            end
+        end
+    end
+    return table.concat(parts, ", ")
+end
+
+local function hero_details()
+    local panel = heroes_panel()
+    if not panel then return "" end
+    local by = texts_in(panel:GetFullName():match("^%S+%s+(.+)$") .. ".")
+    local out = {}
+    local function add(k, label)
+        local v = by[k]
+        if v and v ~= "" then out[#out + 1] = (label and (label .. ": ") or "") .. v:gsub("%.%s*$", "") end
+    end
+    add("SelectedHeroTrait_1", "Trait")
+    add("SelectedHeroTrait_2", "Trait")
+    add("SelectedHeroCondition_1")
+    add("SelectedHeroCondition_2")
+    add("SelectedHeroLocation", "Location")
+    -- "Passive Bonus" or "Combat Ability", as the header says.
+    local head = by.CaptainBonusHeader_TXT
+    if not head or head == "" then head = by.CombatAbilityHeader_TXT end
+    add("AbilityTextBlock", (head and head ~= "") and head or "Bonus")
+    add("SelectedHeroBiography")
+    return table.concat(out, ". ") .. "."
+end
+
+function M.hero_count()
+    return #hero_cards()
+end
+
+function M.hero_step(dir, edge)
+    local cards = hero_cards()
+    if #cards == 0 then return false end
+    if edge then
+        hero_index = dir < 0 and 1 or #cards
+    else
+        hero_index = math.max(1, math.min(#cards, (hero_index or 0) + dir))
+    end
+    local c = cards[hero_index]
+    local name = card_text(c)
+    pcall(function() c.w["BndEvt__WBP_Hero_InfoCardButton_Button_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature"](c.w) end)
+    speech.say(string.format("%s, %d of %d", name ~= "" and name or "Hero", hero_index, #cards), true)
+    ExecuteInGameThreadWithDelay(250, function()
+        pcall(function() speech.say(hero_details(), false) end)
+    end)
+    return true
+end
+
 function M.overview_tab(dir)
     local w = nil
     for _, x in ipairs(FindAllOf("WBP_OverviewInfoWidget_C") or {}) do
@@ -167,6 +282,10 @@ function M.overview_tab(dir)
             b:HandleButtonPressed()
             b:HandleButtonReleased()
             b:HandleButtonClicked()
+            -- The game gets the same arrow: on the Q Trials tab it moved
+            -- focus into the Q Modifier picker instead (VM, 2026-10-15). The
+            -- tab is read as a whole, so the game's focus is parked.
+            ExecuteInGameThreadWithDelay(150, function() pcall(require("focus").park_focus) end)
             return true
         end
     end

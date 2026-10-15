@@ -2,6 +2,22 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.15
+
+Rooms and screens from a longer Q Trial, and one of your suggestions.
+
+- Changed: words the game writes run together are split for speech, so "Shuttlebay" is said "Shuttle bay", and the same goes for Sickbay, Holodeck, Turbolift, Aeroshuttle and a few more. Some voices were running them into one word.
+- Fixed: the Shuttle bay's Shuttles tab read its only button as "Class 2 Shuttle". That button dismantles the shuttle. It now says "Dismantle Class 2 Shuttle. Returns 40 Duranium, 2 Dilithium."
+- New: the Aeroshuttle Bay's Trading tab reads its page, for example "New trade offer in 16 cycles. Awaiting new trade offers, 2 slots." It used to say only "Trading tab".
+- New: a Cargo Bay's storage choices name their resource, for example "Duranium, +50 storage, selected". They used to say only "+50".
+- Fixed: room upgrade descriptions ran their lists together ("750 DEUTERIUM storage capacity 750 FOOD storage capacity"). They're read with commas now.
+- Fixed: the tech tree gave every technology a tier one too high. The starting technologies are called that now, and a technology locked because its tier isn't researched says so.
+- New: in the Overview, the Heroes tab is a list. Up and Down choose a hero and read their trait, whether they're recruited, where they are, their bonus or combat ability, and their biography. Before, only the first hero's details could be heard.
+- Changed: the Overview's Combat tab reads each room with how many are built and its combat power, then the totals, instead of a jumble of numbers.
+- Fixed: the Overview said "uses -24 deuterium", lost the brackets around morale ranges, and repeated itself on the Q Trials tab. Right on the Q Trials tab no longer opens the Q Modifier picker.
+
+## Thursday October 15th 2026
+
 Version 0.3.14
 
 A crash fix for Q Trials, and more from a Q Trial's first battle.
