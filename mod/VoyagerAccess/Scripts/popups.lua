@@ -322,7 +322,10 @@ local function poi_result(parts, by, path)
     for _, p in ipairs(parts) do
         if p.name == "CommonRichTextBlock" and not p.text:find("{", 1, true) and not said[p.text] then
             said[p.text] = true
-            out[#out + 1] = p.text
+            -- "FOOD -150 food" once the icon became a word (text.lua):
+            -- "-150 food" (Trading Station, VM, 2026-10-15).
+            local name, amount, word = p.text:match("^(%u[%u%s%-]*) ([%+%-][%d,]+) (%a[%a%s%-]*)$")
+            out[#out + 1] = (name and name:lower() == word:lower()) and (amount .. " " .. word) or p.text
         end
     end
     for k, s in ipairs(out) do out[k] = s:gsub("%.%s*$", ""):gsub("%s+,", ","):gsub("  +", " ") end
@@ -669,7 +672,9 @@ local function energy_loss(_, path)
     -- ("Phaser Control Room -9, Sickbay -7") say what energy each used.
     local t = ordered_texts(w, function(name, s)
         if name == "EnergyLossReason" then return (s:gsub("(%l) (%u)", "%1. %2")) end
-        if name == "RoomsLost" then return (s:gsub(" %-%s*(%d+)", " %1 energy")) end
+        -- The shared clean-up (text.lua) may already have named the icon:
+        -- "9 energy energy" (VM, 2026-10-15).
+        if name == "RoomsLost" then return (s:gsub(" %-%s*(%d+)", " %1 energy"):gsub("energy energy", "energy")) end
         return false
     end)
     local out, rows = {}, {}
@@ -1347,6 +1352,7 @@ local function poll()
                     or p:find("WBP_ConfirmationWidget_C", 1, true) or p:find("WBP_HeroUnavailableWidget_C", 1, true)
                     or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
                     or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
+                    or p:find("WBP_BattleResultLCARS_C", 1, true)
                     or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true))
                 -- An event's result replaces its options in the same window:
                 -- "CONTINUE" came before "Trading Station. We accepted their

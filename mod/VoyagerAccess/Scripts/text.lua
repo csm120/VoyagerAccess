@@ -26,6 +26,14 @@ function M.prep(s)
     s = s:gsub(IMG .. "%s*([%+%-]?%d[%d,%.]*)", function(id, n) return n .. " " .. unit(id) end)
     -- Number then icon: "3 <img id="Cycles"/>".
     s = s:gsub("(%d)%s*" .. IMG, function(d, id) return d .. " " .. unit(id) end)
+    -- A name already said before the number: "TRITANIUM +30 tritanium" and
+    -- "FOOD -150 food" in event results (Q Trials, VM, 2026-10-15) read
+    -- "+30 tritanium". Tags may still be around the name.
+    local function same(name, n, word)
+        if name:lower() == word:lower() then return n .. " " .. word end
+    end
+    s = s:gsub("(%u[%u%-]+)%s*</%w*>%s*([%+%-][%d,]+) (%a[%a%-]*)", same)
+    s = s:gsub("(%u[%u%-]+)%s+([%+%-][%d,]+) (%a[%a%-]*)", same)
     -- A line break right after a number is a list ("Deuterium +20 / Food
     -- +20"); after a word it can be a label wrapped onto two lines
     -- ("CURRENTLY NO / CRAFTABLE BLUEPRINTS"), so only numbers get a comma.

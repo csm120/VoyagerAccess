@@ -519,8 +519,25 @@ restore_focus = function()
     if ctx == "ship" or ctx == "system" or ctx == "dialogue" or ctx == "cutscene" or ctx == "story" then return false end
     local b = resolve(last_real)
     if not (b and require("screen").shown(b)) then
+        -- Hidden under the player: a battle's third hero slot hid once no
+        -- hero was left for it, focus was on it, and the arrows went silent
+        -- (Q Trials ambush, VM, 2026-10-15). The nearest shown button in the
+        -- same window takes focus instead.
+        local near, prefix = nil, last_real
+        for _ = 1, 4 do
+            prefix = prefix:match("^(.+)%.[^%.]+$")
+            if not prefix or not prefix:find("WidgetTree_", 1, true) then break end
+            for _, o in ipairs(FindAllOf("CommonButtonBase") or {}) do
+                local op = o:IsValid() and live(o) and path_of(o)
+                if op and op:sub(1, #prefix + 1) == prefix .. "." and require("screen").shown(o) then near = o break end
+            end
+            if near then break end
+        end
         last_real = nil
-        return false
+        if not near then return false end
+        print("[VoyagerAccess] focus: hidden, moving to " .. path_of(near):match("([^%.]+)$") .. "\n")
+        near:SetFocus()
+        return true
     end
     -- Not behind an open window: the Q Trials warning (focusless buttons)
     -- had focus put back on NEW Q TRIAL under it, where Enter would press
@@ -624,7 +641,11 @@ local function track_unfocused_window()
     -- buttons left Close Report and Enter Ship out of reach (2026-10-14).
     local buttons, first, seen = {}, nil, {}
     for _, wpath in ipairs(windows) do
-        if not wpath:find("Tutorial", 1, true) then
+        -- Nor the map's point details: their item rewards are buttons, read
+        -- with the details already, and as a list they took the arrows from
+        -- the map ("Kazon Tactical Intel, 1 of 1" after a scan, Backspace
+        -- said "Nothing to go back to", Q Trials, VM, 2026-10-15).
+        if not wpath:find("Tutorial", 1, true) and not wpath:find("POIDetailView", 1, true) then
             for _, bp in ipairs(window_buttons(wpath)) do
                 if not seen[bp] then
                     seen[bp] = true
@@ -746,10 +767,15 @@ function M.number_buttons(all, all_names)
         -- ("CONTINUE, 16 of 16", VM, 2026-10-15): a button that is not the
         -- HUD's does not count the HUD's.
         local in_hud = names[i]:find("WBP_HUD_C_", 1, true) ~= nil
+        -- Nor a room's tab bar: a damaged Aeroshuttle Bay's only action was
+        -- "Repair, 6 of 6" with the five tab buttons (VM, 2026-10-15).
+        local function tab(n) return n:find("TabButton$") ~= nil end
+        local is_tab = tab(names[i])
         for _, a in ipairs(chains[i].chain) do
             local group = {}
             for j = 1, #list do
-                if chains[j].set[a] and (in_hud or not names[j]:find("WBP_HUD_C_", 1, true)) then
+                if chains[j].set[a] and (in_hud or not names[j]:find("WBP_HUD_C_", 1, true))
+                    and (is_tab or not tab(names[j])) then
                     group[#group + 1] = j
                 end
             end
@@ -977,6 +1003,22 @@ label_for = function(b, path)
         end)
         if ok and sel and grouped then label = label:gsub("%.$", "") .. ", selected" end
     end
+    -- Surrender's cost shows only while the mouse is over it
+    -- (WBP_SurrenderCost in the loadout's ResourceRewardBundle, "40
+    -- Duranium", Q Trials ambush, VM, 2026-10-15).
+    if label and path:find("HeroLoadout", 1, true) and path:find("%.SurrenderButton$") then
+        local costs = {}
+        local prefix = path:match("^(.-%.HeroLoadout)%.")
+        for _, w in ipairs(FindAllOf("WBP_SurrenderCost_C") or {}) do
+            local wp = w:IsValid() and path_of(w)
+            if wp and prefix and wp:sub(1, #prefix + 1) == prefix .. "." then
+                local oka, a = pcall(function() return w.ResourceAmountTextBlock:GetText():ToString() end)
+                local okn, n = pcall(function() return w.ResourceNameTextBlock:GetText():ToString() end)
+                if oka and okn and a ~= "" then costs[#costs + 1] = a .. " " .. n end
+            end
+        end
+        if #costs > 0 then label = label:gsub("%.$", "") .. ". Costs " .. table.concat(costs, ", ") end
+    end
     return label
 end
 
@@ -1158,6 +1200,10 @@ local function poll()
         print("[VoyagerAccess] focus: held until the event result is read\n")
         return
     end
+    -- While the game's chances are being read, the option waits: it was
+    -- said with the mod's own chances, then again with the game's (Looted
+    -- Wreckage, Q Trials, VM, 2026-10-15). The sweep says it at the end.
+    if path:find("WBP_POIMultipleChoice_C", 1, true) and require("events").sweeping_now() then return end
     -- A room window or event that has just opened: popups.lua reads the
     -- window and then says this button. Said here as well, it came three
     -- times over: "Life Support off. Life Support, inactive. ... Life
@@ -1171,8 +1217,10 @@ local function poll()
     -- 2026-10-15).
     -- And the first-launch screens: "CONFIRM" came before "Performance
     -- Selection" when focus was polled first (demo, VM, 2026-10-15).
+    -- And a battle's result: "Proceed" came before "Combat result:
+    -- victory..." (Q Trials ambush, VM, 2026-10-15).
     for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C", "WBP_MultipleChoiceWidget_C",
-                           "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C" }) do
+                           "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C", "WBP_BattleResultLCARS_C" }) do
         if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
             for _, w in ipairs(FindAllOf(cls) or {}) do
                 if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then

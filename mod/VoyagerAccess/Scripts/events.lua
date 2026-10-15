@@ -17,6 +17,7 @@
 
 local M = {}
 local speech = require("speech")
+local crumb = require("crumb")
 
 local function path_of(o)
     return o:GetFullName():match("^%S+%s+(.+)$")
@@ -52,11 +53,21 @@ end
 local has_current = nil   -- does the option button's class have CurrentOption
 local function option_for(b, wording)
     if has_current == nil then
+        -- CurrentOption is declared by the native parent
+        -- (STVPOIEventSelectableOptionButton), not the Blueprint class, so
+        -- the parents are searched too. Looking at the Blueprint class alone
+        -- always sent the full game to the demo's wording scan below, whose
+        -- GetOptionDescription crashed the game at a Q Trial's Trading
+        -- Station (3 of 3, VM, 2026-10-15).
         has_current = false
         pcall(function()
-            b:GetClass():ForEachProperty(function(p)
-                if p:GetFName():ToString() == "CurrentOption" then has_current = true end
-            end)
+            local c, depth = b:GetClass(), 0
+            while c and c:IsValid() and depth < 4 and not has_current do
+                c:ForEachProperty(function(p)
+                    if p:GetFName():ToString() == "CurrentOption" then has_current = true end
+                end)
+                c, depth = c:GetSuperStruct(), depth + 1
+            end
         end)
     end
     if has_current then
@@ -128,6 +139,7 @@ end
 -- calls done(). Does nothing but call done() when every option has its
 -- weights already.
 local sweeping = false
+function M.sweeping_now() return sweeping end
 function M.sweep(done)
     -- Fresh for each reading: a station met again after a room was built
     -- would keep the old odds under the same button and wording.
@@ -413,6 +425,10 @@ function M.option_label(b)
     -- "...for resource exposure: [Torpedo Launch Bay Lvl 1]" left a colon
     -- before the full stop: "exposure:." (Icy Planetoid, VM, 2026-10-15).
     text = (text:gsub("%s*:%s*$", ""))
+    -- A trade: "Trade Food 150 for DEUTERIUM +150 deuterium" (Trading
+    -- Station, Q Trials, VM, 2026-10-15) reads "Trade Food 150 for 150
+    -- deuterium".
+    text = (text:gsub(" for %u[%u%s%-]* %+([%d,]+) (%a[%a%s%-]*)$", " for %1 %2"))
     local parts = { is_locked(b) and ("Locked: " .. text) or text }
     if needs then parts[#parts + 1] = "Needs " .. needs end
     -- Bracketed notes other than room levels were dropped with the

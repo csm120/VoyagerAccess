@@ -2,6 +2,21 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.14
+
+A crash fix for Q Trials, and more from a Q Trial's first battle.
+
+- Fixed: flying to a Trading Station in Q Trials crashed the game, every time. The mod was looking up the station's options the slow way, the way the demo needs, and one of those lookups took the game down. It now asks the game for each option directly, in every event.
+- New: Surrender in the battle setup says what it costs, for example "Surrender, 1 of 3. Costs 40 Duranium". The game only shows that while the mouse is over it.
+- Fixed: the battle setup named only the first enemy ship. It now names them all, for example "against Kazon Carrier, combat power 61; Kazon Swarm Alpha, combat power 30".
+- Fixed: the battle setup said "Choose up to 3 heroes" and offered a third slot the game had hidden, because only two heroes were free. It now counts only the slots you can use.
+- Changed: event results no longer say "65% of the possible reward". That number is the game's outcome rate, and it contradicted the option's "Up to" amount. The outcome itself is still said, for example "Outcome: good. 447 deuterium."
+- Fixed: after scanning a point that gives an item, the item became a one-line list that took the arrows away from the map, and Backspace said "Nothing to go back to". The item is still read with the scan, and the arrows stay on the map.
+- Fixed: a damaged room with only Repair said "Repair, 6 of 6", counting the room's tabs.
+- Fixed: Sector Map systems with a settlement said its name twice.
+
+## Thursday October 15th 2026
+
 Version 0.3.13
 
 More fixes from the forum, and from replaying the campaign's start.

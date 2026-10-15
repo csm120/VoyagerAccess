@@ -102,6 +102,15 @@ function M.combat_loadout()
     return nil
 end
 
+-- A hero slot on screen: its picker can count as shown while its
+-- OpenSelectionButton is hidden (a battle's third slot, VM, 2026-10-15).
+local function slot_shown(p)
+    if not (p and p:IsValid() and screen.shown(p)) then return false end
+    local ok, b = pcall(function() return p.OpenSelectionButton end)
+    if ok and b and b:IsValid() then return screen.shown(b) end
+    return true
+end
+
 -- "Prepare for combat. U.S.S. Voyager, combat power 77, against Val Jean,
 -- combat power 51": the two ship panels (WBP_UI_Ship_Panel: ShipName,
 -- Combat_Power), the player's first, then up to how many heroes.
@@ -113,23 +122,40 @@ function M.combat_prep_text(L)
         if pp and pp:sub(1, #prefix) == prefix and screen.shown(p) then
             local name = plain(text_of(p.ShipName))
             local power = plain(text_of(p.Combat_Power))
-            local idx = 0
-            pcall(function() idx = p:GetParent():GetChildIndex(p) end)
+            local idx, side = 0, 0
+            pcall(function()
+                local parent = p:GetParent()
+                idx = parent:GetChildIndex(p)
+                -- AllyGridPanel and EnemyGridPanel: a second enemy, the Kazon
+                -- Swarm Alpha, was left out (Q Trials ambush, VM, 2026-10-15).
+                if parent:GetFName():ToString():find("Enemy", 1, true) then side = 1 end
+            end)
             if name ~= "" then
-                ships[#ships + 1] = { idx = idx, text = name .. (power ~= "" and (", combat power " .. power) or "") }
+                ships[#ships + 1] = { idx = idx, side = side, text = name .. (power ~= "" and (", combat power " .. power) or "") }
             end
         end
     end
-    table.sort(ships, function(a, b) return a.idx < b.idx end)
+    table.sort(ships, function(a, b)
+        if a.side ~= b.side then return a.side < b.side end
+        return a.idx < b.idx
+    end)
     local parts = { "Prepare for combat" }
-    if #ships >= 2 then
-        parts[#parts + 1] = ships[1].text .. ", against " .. ships[2].text
-    elseif ships[1] then
-        parts[#parts + 1] = ships[1].text
+    local ours, theirs = {}, {}
+    for _, s in ipairs(ships) do
+        if s.side == 1 then theirs[#theirs + 1] = s.text else ours[#ours + 1] = s.text end
+    end
+    if #theirs == 0 and #ours >= 2 then theirs = { table.remove(ours) } end
+    if #ours > 0 then
+        parts[#parts + 1] = table.concat(ours, "; ") .. (#theirs > 0 and (", against " .. table.concat(theirs, "; ")) or "")
     end
     local count = 0
-    pcall(function() L.HeroPickers:ForEach(function() count = count + 1 end) end)
-    if count > 0 then parts[#parts + 1] = "Choose up to " .. count .. " heroes" end
+    -- Only slots on screen: with two heroes free the third slot is hidden,
+    -- and "Choose up to 3 heroes" sent focus onto it (VM, 2026-10-15).
+    pcall(function() L.HeroPickers:ForEach(function(_, e)
+        local ok, shown = pcall(function() return slot_shown(e:get()) end)
+        if not ok or shown then count = count + 1 end
+    end) end)
+    if count > 0 then parts[#parts + 1] = "Choose up to " .. count .. (count == 1 and " hero" or " heroes") end
     return sentences(parts)
 end
 
@@ -176,10 +202,14 @@ function M.slot_label(path)
     if not L then return nil end
     local picker_path = path:match("^(.-)%.WidgetTree_%d+%.OpenSelectionButton$")
     local index, count, picker = nil, 0, nil
-    L.HeroPickers:ForEach(function(i, e)
+    -- Hidden slots are not counted: a battle's third slot hides when no
+    -- hero is left for it (VM, 2026-10-15).
+    L.HeroPickers:ForEach(function(_, e)
         local p = e:get()
-        count = count + 1
-        if p:IsValid() and path_of(p) == picker_path then index, picker = i, p end
+        if slot_shown(p) then
+            count = count + 1
+            if path_of(p) == picker_path then index, picker = count, p end
+        end
     end)
     if not picker then return nil end
     local hero = plaque_text(picker.HeroPlaque)
@@ -195,7 +225,7 @@ function M.slot_label(path)
         pcall(function()
             L.HeroPickers:ForEach(function(_, e)
                 local p = e:get()
-                if not (p:IsValid() and plaque_text(p.HeroPlaque)) then full = false end
+                if slot_shown(p) and not plaque_text(p.HeroPlaque) then full = false end
             end)
         end)
         if full and path:find("WBP_AwayMissionLoadout_C", 1, true) then

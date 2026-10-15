@@ -104,7 +104,9 @@ local function name_of(actor)
         end)
         pcall(function()
             local warn = actor.SystemWarning:ToString()
-            if warn ~= "" then marks[#marks + 1] = warn end
+            -- Not when the name already says it: "Ogla Main Settlement, Ogla
+            -- Main Settlement" (Q Trials, VM, 2026-10-15).
+            if warn ~= "" and not name:find(warn, 1, true) then marks[#marks + 1] = warn end
         end)
         return name .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
     end
