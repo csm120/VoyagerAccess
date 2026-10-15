@@ -458,7 +458,10 @@ end
 local function say_virtual()
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
-    local label = label_for(b, virtual.buttons[virtual.index]) or "Button"
+    -- No label yet: "Button, 1 of 1" was said as a Mess Hall opened, before
+    -- focus moved to its real first button (VM, 2026-10-15).
+    local label = label_for(b, virtual.buttons[virtual.index])
+    if not label or label == "" then return end
     -- An event option already says its place ("1 of 2, 2 locked, 1 of 2",
     -- VM, 2026-10-14).
     if not label:find("%d+ of %d+") then

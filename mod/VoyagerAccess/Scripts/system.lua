@@ -6,8 +6,9 @@
 -- (a planet, a wreck, a debris field). Actors in systems you are not in are
 -- hidden. Scanning calls the sector pawn's own TryToScanPOI with the
 -- component, what the scan input does for the hovered point.
--- GetDisplayName on the sector tree node returned nothing (2026-10-10), so
--- names come from the actor's class.
+-- GetDisplayName on the sector tree node returned nothing (2026-10-10);
+-- names come from the actor's GetTooltipWidgetText (2026-10-14), with the
+-- actor's class as the fallback.
 
 local speech = require("speech")
 local crumb = require("crumb")

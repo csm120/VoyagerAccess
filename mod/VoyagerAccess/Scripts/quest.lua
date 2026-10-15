@@ -107,8 +107,11 @@ local function poll()
     crumb.at("quest: poll")
     local now = M.objective()
     -- A side mission's countdown changes every cycle; only a change in
-    -- the objectives themselves is announced (VM, 2026-10-14).
-    local function bare(s) return (s:gsub(", %d+ cycles? left", "")) end
+    -- the objectives themselves is announced (VM, 2026-10-14). Progress
+    -- counts too: "Store DEUTERIUM (552/900)" drops every cycle as fuel
+    -- burns, and the objective was read four times in one trip (VM,
+    -- 2026-10-15). O reads the current counts.
+    local function bare(s) return (s:gsub(", %d+ cycles? left", ""):gsub("%(%d+/%d+%)", "")) end
     if now and (not last or bare(now) ~= bare(last)) then
         print("[VoyagerAccess] objective: " .. now .. "\n")
         speech.say("Objective: " .. now, false)

@@ -2,6 +2,16 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.10
+
+Less repeating.
+
+- Fixed: the objective was read again every cycle while a number in it changed, such as "Store Deuterium (552 of 900)" going down as fuel burns. It now comes up only when the goals themselves change. O still reads the current numbers.
+- Fixed: after a report such as the Construction Report, its first button, for example "CLOSE, 1 of 1", was said twice.
+- Fixed: opening the Mess Hall could say "Button, 1 of 1" before its real first button.
+
+## Thursday October 15th 2026
+
 Version 0.3.9
 
 Smaller fixes found while replaying the demo and the full game.

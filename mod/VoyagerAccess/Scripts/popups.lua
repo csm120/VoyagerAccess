@@ -1174,7 +1174,12 @@ local function poll()
                 -- The pause confirmation's buttons are the window list's,
                 -- said by focus.lua once the window is read; asking here
                 -- named the pause menu behind it ("MAIN MENU", 2026-10-14).
-                if first_event and not p:find("WBP_PauseMenu_Confirms_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
+                -- A window read as the mod's own button list says its first
+                -- button itself: "CLOSE, 1 of 1" came twice after a
+                -- Construction Report (VM, 2026-10-15).
+                local own_list = false
+                pcall(function() own_list = require("focus").virtual_active() end)
+                if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
                     local okl, label = pcall(function() return require("focus").current_label() end)
                     if okl and label and label ~= "" then speech.say(label, false) end
                 end
