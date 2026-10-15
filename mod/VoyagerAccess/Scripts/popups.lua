@@ -511,7 +511,7 @@ local TUTORIAL_KEYS = {
     ["Basic Resources"] = "C reads your resources",
     ["Consequences"] = "Up and Down move between the options, and each says its outcome odds; Enter picks one",
     ["Engineering Office"] = "choose the Engineering Office in the ship view and press Enter to open it",
-    ["Help"] = "F1 lists the keys for the screen you are on, and L says where you are",
+    ["Help"] = "F1 lists the keys for the screen you are on, and I says where you are",
     ["Life support"] = "rooms say on or off as you move through the decks; open Life support with Enter and press Enter on its power button",
     ["Morale"] = "press N, choose Overview, then press Right to reach the Morale tab",
     ["Points of Interest"] = "V switches to the System Map; Up and Down move through the points, nearest first, and Enter opens Scan and Set course",
@@ -1045,6 +1045,11 @@ local function poll()
     for p in pairs(now) do if not announced[p] then changed = true end end
     for p in pairs(announced) do if not now[p] then changed = true end end
     announced = now
+    -- A window that closed is read afresh when it opens again: the battle
+    -- setup's "unassigned slots" warning, closed quietly after a slot's
+    -- Enter, kept its text and said only "Return" when it came up for real
+    -- (VM, 2026-10-14).
+    for p in pairs(last_text) do if not now[p] then last_text[p] = nil end end
     if changed then save_announced() end
     if #spoken > 0 then require("dialogue").remember(table.concat(spoken, ". ")) end
 end

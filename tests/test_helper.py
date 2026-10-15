@@ -179,7 +179,7 @@ class KeyWatcherTests(unittest.TestCase):
 
     def test_all_keys_named(self):
         self.assertEqual(sorted(VK), sorted(
-            ["enter", "backspace", "escape", "up", "down", "left", "right", "r", "o", "l", "n", "grave", "f1", "pageup", "pagedown", "home", "end", "c", "v", "j", "f12"]))
+            ["enter", "backspace", "escape", "up", "down", "left", "right", "r", "o", "i", "n", "grave", "f1", "pageup", "pagedown", "home", "end", "c", "v", "j", "f12"]))
 
     def test_escape_reaches_the_mod(self):
         # Escape opened the game's pause menu while the mod's C list kept

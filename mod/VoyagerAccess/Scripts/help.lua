@@ -15,7 +15,7 @@ local HELP = {
     dialogue = "Enter continues. Shift+Enter skips to the choices. R repeats the last line. "
         .. "On choices, Up and Down move and Enter picks one.",
     ship = "Up and Down change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
-        .. "Enter opens the room. V switches to the System Map. L says where you are.",
+        .. "Enter opens the room. V switches to the System Map. I says where you are.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
         .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship.",
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room.",
@@ -32,9 +32,9 @@ local HELP = {
         .. "Enter on Start Game holds it for you. Escape goes back.",
     combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
         .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
-        .. "L reads both ships. O reads the combat goal.",
+        .. "I reads both ships. O reads the combat goal.",
     none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
-        .. "L says where you are. R repeats the last line. Ctrl+F12 lists what is new in Voyager Access.",
+        .. "I says where you are. R repeats the last line. Ctrl+F12 lists what is new in Voyager Access.",
 }
 
 -- Which kind of screen is in front, most specific first.
@@ -67,7 +67,7 @@ function M.say_help()
     speech.say((HELP[ctx] or HELP.none) .. " Control F1 lists every key.", true)
 end
 
--- L: where am I. The kind of screen and what is selected on it, read the
+-- I: where am I (L until 0.3.6: the game opens Leave Sector on L in Q Trials). The kind of screen and what is selected on it, read the
 -- way the arrows read it (Casey, 2026-10-11: after entering a room or
 -- restarting you do not know where you are). Not Shift+Up: the game also
 -- gets the arrow and would move focus. L is unbound in every context
@@ -234,7 +234,7 @@ end
 
 function M.install()
     require("keys").on("f1", M.say_help)
-    require("keys").on("l", M.say_where)
+    require("keys").on("i", M.say_where)
     LoopInGameThreadWithDelay(300, function()
         local ok, err = pcall(room_poll)
         if not ok then print("[VoyagerAccess] room poll error: " .. tostring(err) .. "\n") end

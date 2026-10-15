@@ -181,7 +181,7 @@ class Tailer:
 # during a poll corrupted the Lua heap and crashed the game (crash inside
 # luaH_setint, 2026-10-10 22:24). The mod now runs Lua on the game thread only.
 VK = {"enter": 0x0D, "backspace": 0x08, "escape": 0x1B, "up": 0x26, "down": 0x28,
-      "left": 0x25, "right": 0x27, "r": 0x52, "o": 0x4F, "l": 0x4C, "n": 0x4E, "grave": 0xC0, "f1": 0x70,
+      "left": 0x25, "right": 0x27, "r": 0x52, "o": 0x4F, "i": 0x49, "n": 0x4E, "grave": 0xC0, "f1": 0x70,
       "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56, "j": 0x4A,
       "f12": 0x7B}   # F12 is the helper's own: check for an update, or restart to finish one
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL = 0x10, 0x11, 0x12, 0x2D, 0x14

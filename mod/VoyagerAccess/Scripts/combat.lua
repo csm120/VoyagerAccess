@@ -44,6 +44,12 @@ local function main()
     return nil
 end
 
+-- The combat screen is up at all, the hero setup included (system.lua keeps
+-- travel lines quiet over it; VM, 2026-10-14).
+function M.screen_up()
+    return main() ~= nil
+end
+
 -- In battle: the combat screen is up and the hero setup before it is gone.
 function M.active()
     local w = main()

@@ -2,6 +2,16 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.6
+
+"Where am I" has moved from L to I.
+
+- Changed: I now says where you are and what's selected, and in battle it reads both ships. L used to do this, but in Q Trials the game itself opens Leave Sector when you press L, so one press did both. Leave sector is still in the N list.
+- Fixed: the battle setup's "You still have unassigned slots" warning could be read as just "Return", without the warning.
+- Fixed: "Halfway to" and "Arrived at" were still said over the battle setup when a battle interrupted your trip.
+
+## Wednesday October 14th 2026
+
 Version 0.3.5
 
 Q Trials can now be played past the start, and the full game's DLC page and battles read properly.

@@ -13,7 +13,7 @@ local GROUPS = {
     { "Everywhere", {
         "F1: the keys for the screen you are on",
         "Control F1: this list of every key. Escape or Backspace closes it",
-        "L: where you are and what is selected",
+        "I: where you are and what is selected",
         "O: your objective. In combat, the combat goal",
         "C: hull, resources, crew, energy, battery and morale, as a list",
         "N: navigation list: ship view, System Map, Sector Map, Overview, Research, Wait one cycle",
@@ -49,7 +49,7 @@ local GROUPS = {
         "Up and Down: points of interest, or star systems on the Sector Map",
         "Home and End: the nearest and the farthest",
         "Enter: Scan and Set course. Backspace closes that list",
-        "L: adds the trip's progress while Voyager is under way",
+        "I: adds the trip's progress while Voyager is under way",
     } },
     { "Events at a point of interest", {
         "Up and Down: the options. R reads the locked ones",
@@ -67,7 +67,7 @@ local GROUPS = {
     } },
     { "Combat", {
         "Enter: open Orders. In the order wheel, Up and Down move, Enter picks, Back is last",
-        "L: both ships, the enemies, the order, torpedoes, abilities and the goal",
+        "I: both ships, the enemies, the order, torpedoes, abilities and the goal",
         "O: the combat goal",
         "Space, the game's key: pause and resume",
         "1 to 3, the game's keys: the heroes' abilities",

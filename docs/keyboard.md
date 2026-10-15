@@ -38,7 +38,7 @@ follows them.
 ## Keys in use
 
 1. Everywhere: F1 help, O objective, C resources, energy and morale, V ship view or System Map, N navigation list,
-   L where am I, R repeat, Ctrl+F12 what's new (a list, like C), Ctrl+F1 every key (a list, grouped by screen; hotkeys.lua keeps it in step with this file). Backtick (the key left of 1) copies a report for
+   I where am I, R repeat, Ctrl+F12 what's new (a list, like C), Ctrl+F1 every key (a list, grouped by screen; hotkeys.lua keeps it in step with this file). Backtick (the key left of 1) copies a report for
    troubleshooting to the clipboard (the helper's job, like F12). F12 belongs to the helper, not the mod: after an
    update is offered it restarts the game to install it; otherwise it checks for an update
    now and says what it found (a found update is offered, never installed
@@ -63,7 +63,7 @@ follows them.
    Enter opens the action list (Scan, Set course). The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds
    without a move). Set course says "Under way to", "Halfway to" and
-   "Arrived at"; L adds the trip's progress and says "not moving" if the
+   "Arrived at"; I adds the trip's progress and says "not moving" if the
    ship has stopped short. In an event at a point of interest, Up and Down
    move through the options; where an option can take a hero (Q Trials),
    Left and Right choose one ("No hero" first) and Enter carries the option
@@ -78,7 +78,7 @@ follows them.
 9. Combat: the game's own keys work (Space pauses and resumes, 1 to 3 use
    the heroes' abilities, Tab changes target, Shift fires a torpedo, Left
    and Right pick a system and Up and Down move energy to it). Enter opens
-   Orders; the order wheel is a list (Up, Down, Enter; Back is last). L
+   Orders; the order wheel is a list (Up, Down, Enter; Back is last). I
    reads both ships, the enemies, the order, torpedoes, abilities and the
    goal; O reads the goal. Target changes, abilities turning active or
    ready, and pauses are spoken as they happen.

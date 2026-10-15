@@ -344,7 +344,7 @@ local function watch_arrival(name, target, start_d)
         travel.d, travel.still = d, still
         -- A battle that interrupts the trip: "Halfway to" and "Arrived at"
         -- were said over the battle setup (Q Trial, VM, 2026-10-14).
-        local okb, battle = pcall(function() return require("combat").active() end)
+        local okb, battle = pcall(function() return require("combat").screen_up() end)
         battle = okb and battle
         if still >= 2 and (not start_d or d <= start_d * 0.9) then
             travel = nil
