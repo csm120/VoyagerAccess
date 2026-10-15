@@ -25,7 +25,7 @@ local function run()
         local why = nil
         pcall(function()
             for _, p in ipairs(require("popups").open_windows()) do
-                if not p:find("WBP_PoiEventWidget_C", 1, true) then why = p:match("([%w_]+)$") end
+                if not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("WBP_RoomPrompt_C", 1, true) then why = p:match("([%w_]+)$") end
             end
             if require("credits").open() then why = "credits list" end
             if require("ship").list_open() then why = "room list" end

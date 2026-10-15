@@ -154,6 +154,15 @@ function M.research_label(path)
                 label = label .. ". Enter: " .. by.OnClickAction_TXT
             end
         end
+        -- With no blueprints the list below shows "currently no craftable
+        -- blueprints" (only "currently no" is a text widget), and Down had
+        -- nowhere to go without a word (VM, 2026-10-15).
+        local mp = path:match("^(.-WBP_Workshop_CraftModule_C_%d+)%.")
+        local none = false
+        for _, text in pairs(mp and texts_under(mp) or {}) do
+            if text:lower():find("^currently no%s+craftable") then none = true end
+        end
+        if none then label = label:gsub("%.$", "") .. ". No blueprints to craft" end
         return label .. "."
     end
     local function workshop_open()
@@ -420,6 +429,84 @@ function M.window_open()
     return open_window() ~= nil
 end
 
+-- A combat ally on the Bridge's Combat Allies tab (WBP_CombatAllyButton):
+-- it was read as "2, /, 200, 20, Upkeep, Recruitment, 35, Talaxian Ally"
+-- (VM, 2026-10-15). Costs are WBP_CombatAllyCost_SingleResource widgets in
+-- CraftingCostRoot (to recruit) or CraftingCostRoot_PerCycle (upkeep).
+function M.ally_label(b)
+    local name = plain(text_of(b.CombatAllyName))
+    if name == "" then return nil end
+    local power = plain(text_of(b.AllyCombatPower))
+    local parts = { power:match("%d") and (name .. ", combat power " .. power) or name }
+    local bp = path_of(b) .. "."
+    local recruit, upkeep = {}, {}
+    for _, w in ipairs(FindAllOf("WBP_CombatAllyCost_SingleResource_C") or {}) do
+        local wp = w:IsValid() and path_of(w)
+        if wp and wp:sub(1, #bp) == bp and screen.shown(w) then
+            local amount = plain(text_of(w.ResourceAmount))
+            local res = "resources"
+            pcall(function()
+                local ro = w.ResourceImage.Brush.ResourceObject
+                if ro and ro:IsValid() then res = ro:GetFName():ToString():match("^MI_UI_(%a-)_") or res end
+            end)
+            res = (res:gsub("(%l)(%u)", "%1 %2")):lower()
+            local par = ""
+            pcall(function() par = w:GetParent():GetFName():ToString() end)
+            if amount:match("%d") then
+                local list = par:find("PerCycle", 1, true) and upkeep or recruit
+                list[#list + 1] = amount .. " " .. res
+            end
+        end
+    end
+    if #recruit > 0 then parts[#parts + 1] = "Recruitment: " .. table.concat(recruit, ", ") end
+    if #upkeep > 0 then parts[#parts + 1] = "Upkeep: " .. table.concat(upkeep, ", ") .. " per cycle" end
+    local ok, en = pcall(function() return b:GetIsEnabled() end)
+    if ok and en == false then parts[#parts + 1] = "unavailable" end
+    return table.concat(parts, ". ") .. "."
+end
+
+-- Sickbay's Manage Patients tab: a table of patients (WBP_SickBayPatientInfo:
+-- PatientName, Conditions, RecoveryTime) and an EfficiencyReport, none of it
+-- focusable, so the tab said nothing but its name (VM, 2026-10-15).
+-- "3 patients: Tharin K'Vek, injured, 10 cycles to recover; ...", or nil
+-- when the tab is not showing.
+function M.patients_text()
+    local module = nil
+    for _, w in ipairs(FindAllOf("WBP_SickBay_ManagePatientsModule_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then module = w end
+    end
+    if not module then return nil end
+    local mp = path_of(module) .. "."
+    local rows = {}
+    for _, r in ipairs(FindAllOf("WBP_SickBayPatientInfo_C") or {}) do
+        local rp = r:IsValid() and path_of(r)
+        if rp and rp:sub(1, #mp) == mp and screen.shown(r) then
+            local i = 0
+            pcall(function() i = r:GetParent():GetChildIndex(r) end)
+            rows[#rows + 1] = { i = i, r = r }
+        end
+    end
+    table.sort(rows, function(a, b) return a.i < b.i end)
+    local items = {}
+    for _, row in ipairs(rows) do
+        local r = row.r
+        local name = plain(text_of(r.PatientName))
+        local cond = plain(text_of(r.Conditions)):lower()
+        local cycles = plain(text_of(r.RecoveryTime))
+        local item = name
+        if cond ~= "" then item = item .. ", " .. cond end
+        if cycles:match("^%d+$") then
+            item = item .. ", " .. cycles .. (cycles == "1" and " cycle" or " cycles") .. " to recover"
+        end
+        items[#items + 1] = item
+    end
+    local out = { #items == 0 and "No patients" or
+        (#items .. (#items == 1 and " patient: " or " patients: ") .. table.concat(items, "; ")) }
+    local report = plain(text_of(module.EfficiencyReport))
+    if report ~= "" then out[#out + 1] = (report:gsub("%.%s*$", "")) end
+    return table.concat(out, ". ") .. "."
+end
+
 -- Left and Right in a room window switch its tabs (Management, Warp Core,
 -- Heroes); the game only does that with a controller. The room window's own
 -- SelectPreviousTab and SelectNextTab are UFunctions. The selected tab is
@@ -427,6 +514,11 @@ end
 function M.switch_tab(dir)
     local w = open_window()
     if not w then return false end
+    -- Back on the Bridge's Combat Allies tab only "Combat Allies tab" was
+    -- said: focus had stayed on the ally the whole time, so nothing changed
+    -- to speak. The item is said again when focus did not move.
+    local okb, before = pcall(function() return require("focus").current_path() end)
+    M.tab_switched_at = os.clock()
     if dir < 0 then w:SelectPreviousTab() else w:SelectNextTab() end
     local wp = path_of(w) .. "."
     for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
@@ -437,6 +529,20 @@ function M.switch_tab(dir)
                 local name = plain(text_of(b.ButtonName))
                 name = (name ~= "" and name or "Tab"):gsub("^%l", string.upper)
                 require("speech").say(name .. " tab", true)
+                -- The tab's page is filled after the switch.
+                ExecuteInGameThreadWithDelay(300, function()
+                    pcall(function()
+                        local t = M.patients_text()
+                        if t then require("speech").say(t, false) end
+                    end)
+                    pcall(function()
+                        local f = require("focus")
+                        local label = f.current_label()
+                        if okb and before and f.current_path() == before and label and label ~= "" then
+                            require("speech").say(label, false)
+                        end
+                    end)
+                end)
                 return true
             end
         end
@@ -461,6 +567,9 @@ function M.window_text(path)
             if d ~= "" then out[#out + 1] = d end
         end
     end
+    -- Sickbay opens on Manage Patients.
+    local okp, patients = pcall(M.patients_text)
+    if okp and patients then out[#out + 1] = patients end
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
     return table.concat(out, ". ") .. "."
 end

@@ -14,6 +14,7 @@ local INTERVAL_MS = 100
 -- look them up again with resolve() each time.
 local current = nil          -- path of the focused button
 local ticks, focus_tick = 0, -100   -- focus polls so far, and the poll choices appeared
+local choice_seen_at = -100         -- os.clock() when the focused dialogue choice was last on screen
 local arrow_tick = -100              -- the poll the game was last given Up or Down
 local go_in_until = -100             -- polls until which a crossing in the main menu is allowed (Enter, Right, Left, Backspace, Escape)
 -- Paths of buttons Enter was pressed on, oldest first; Backspace returns to them.
@@ -533,20 +534,32 @@ restore_focus = function()
 end
 
 local PAUSE_CONFIRM = "WBP_PauseMenu_Confirms_C"
-local function pause_confirm_open()
-    for _, w in ipairs(FindAllOf(PAUSE_CONFIRM) or {}) do
-        if w:IsValid() and live(w) and require("screen").shown(w) then return true end
-    end
+-- Confirmations whose buttons never take focus. The main menu's Delete
+-- Profile warning is its own class (GXCommonInfoWidget), and focus went
+-- back to the menu behind it (VM, 2026-10-15).
+local CONFIRMS = { PAUSE_CONFIRM, "WBP_DeleteProfileWarning_C" }
+local function is_confirm(p)
+    for _, c in ipairs(CONFIRMS) do if p:find(c, 1, true) then return true end end
     return false
+end
+local function open_confirm()
+    for _, c in ipairs(CONFIRMS) do
+        for _, w in ipairs(FindAllOf(c) or {}) do
+            if w:IsValid() and live(w) and require("screen").shown(w) then return w end
+        end
+    end
+    return nil
+end
+local function pause_confirm_open()
+    return open_confirm() ~= nil
 end
 
 -- Windows whose buttons never take keyboard focus: the pause menu's
 -- confirmation, and the Q Trials warning (while its Warning page shows).
 -- Returns the open one's path, or nil.
 local function focusless_window()
-    for _, w in ipairs(FindAllOf(PAUSE_CONFIRM) or {}) do
-        if w:IsValid() and live(w) and require("screen").shown(w) then return path_of(w) end
-    end
+    local cw = open_confirm()
+    if cw then return path_of(cw) end
     for _, w in ipairs(FindAllOf("WBP_Sandbox_Setup_C") or {}) do
         if w:IsValid() and live(w) and require("screen").shown(w) then
             local warn = w.Warning
@@ -578,7 +591,7 @@ local function track_unfocused_window()
     local modal = nil
     for _, p in ipairs(windows) do
         if p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true)
-            or p:find(PAUSE_CONFIRM, 1, true) then modal = p end
+            or is_confirm(p) then modal = p end
     end
     if modal then windows = { modal } end
     if virtual then
@@ -664,7 +677,7 @@ function M.virtual_window_open()
 end
 
 function M.virtual_active()
-    if virtual and require("dialogue").active() and not virtual.window:find(PAUSE_CONFIRM, 1, true) then virtual = nil end
+    if virtual and require("dialogue").active() and not is_confirm(virtual.window) then virtual = nil end
     return virtual ~= nil
 end
 
@@ -695,6 +708,98 @@ function M.virtual_enter()
     end
 end
 
+-- "2 of 5" for buttons the game lists with no count. A forum player could
+-- not tell whether they had heard a whole menu (2026-10-15); the main
+-- menu, a room's buttons and the pause menu gave no count. Buttons are
+-- grouped by the nearest panel holding two or more of them, so a room's
+-- Power, Dismantle and Upgrade count together and its tab bar does not.
+local positions = {}   -- button path -> "2 of 5"
+function M.number_buttons(all, all_names)
+    -- Only buttons really on screen: a room's other tab pages are in the
+    -- tree too, and the Heroes tab's one slot was "6 of 6".
+    local list, names = {}, {}
+    for i, b in ipairs(all) do
+        if require("screen").shown(b) then
+            list[#list + 1] = b
+            names[#names + 1] = all_names[i]
+        else
+            positions[all_names[i]] = nil
+        end
+    end
+    local chains = {}
+    for i, b in ipairs(list) do
+        local chain, set = {}, {}
+        local node, hops = up_one(b), 0
+        while node and hops < 64 do
+            local p = path_of(node)
+            chain[#chain + 1] = p
+            set[p] = true
+            node, hops = up_one(node), hops + 1
+        end
+        chains[i] = { chain = chain, set = set }
+    end
+    for i = 1, #list do
+        positions[names[i]] = nil
+        -- An event's CONTINUE was counted with the HUD's own buttons
+        -- ("CONTINUE, 16 of 16", VM, 2026-10-15): a button that is not the
+        -- HUD's does not count the HUD's.
+        local in_hud = names[i]:find("WBP_HUD_C_", 1, true) ~= nil
+        for _, a in ipairs(chains[i].chain) do
+            local group = {}
+            for j = 1, #list do
+                if chains[j].set[a] and (in_hud or not names[j]:find("WBP_HUD_C_", 1, true)) then
+                    group[#group + 1] = j
+                end
+            end
+            if #group >= 2 then
+                -- Side-by-side columns (the main menu, its profiles and the
+                -- save window in one HorizontalBox) are not one list: "NEW
+                -- CAMPAIGN, 11 of 11". When another column has several
+                -- buttons, a button alone in its column gets no count.
+                local columns = false
+                local cls = "?"
+                pcall(function() cls = StaticFindObject(a):GetClass():GetFName():ToString() end)
+                if cls == "HorizontalBox" then
+                    local per = {}
+                    for _, j in ipairs(group) do
+                        local ch = chains[j].chain
+                        local below = nil
+                        for k, x in ipairs(ch) do if x == a then below = ch[k - 1] or names[j] end end
+                        per[below or names[j]] = (per[below or names[j]] or 0) + 1
+                    end
+                    for _, n in pairs(per) do if n >= 2 then columns = true end end
+                end
+                if #group <= 40 and not columns then
+                    for k, j in ipairs(group) do
+                        if j == i then positions[names[i]] = k .. " of " .. #group end
+                    end
+                end
+                break
+            end
+        end
+    end
+end
+
+-- The count for a focused button, or nil.
+function M.position_of(path)
+    return path and positions[path] or nil
+end
+
+-- The label with its count after the first sentence, before any long
+-- description ("Normal Food Rations, morale 0, selected, 2 of 3. 1 Food
+-- feeds ..."), when it has no count of its own.
+local function with_position(label, path)
+    -- An empty label is said later by its own module (ring segments after
+    -- the hover): a count alone came out as ", 1 of 6" (VM, 2026-10-15).
+    if not (label and positions[path]) or label == "" or label:find("%d+ of %d+") then return label end
+    -- Just after a room's tab switch the old page still counts as shown, and
+    -- the Heroes tab's one slot was "6 of 6": no count then.
+    if os.clock() - (require("rooms").tab_switched_at or -100) < 0.6 then return label end
+    local head, rest = label:match("^(.-)%.%s+(.+)$")
+    if head and rest then return head .. ", " .. positions[path] .. ". " .. rest end
+    return (label:gsub("[%.,]%s*$", "")) .. ", " .. positions[path]
+end
+
 local function wire_rows(path)
     BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
     USER_WIDGET = USER_WIDGET or StaticFindObject("/Script/UMG.UserWidget")
@@ -723,6 +828,9 @@ local function wire_rows(path)
     local names = {}
     for i, b in ipairs(list) do names[i] = path_of(b) end
     local key, sig = path_of(root), table.concat(names, "|")
+    -- Counted on every focus change: a room's tab pages switch without the
+    -- button list changing, and counts made as the window opened were stale.
+    pcall(function() M.number_buttons(list, names) end)
     if wired[key] == sig then return end
     wired[key] = sig
     -- A button is in a row when the nearest panel it shares with a
@@ -784,6 +892,8 @@ label_for = function(b, path)
         label = require("events").option_label(b)
     elseif require("combat").handles(b, path) then
         label = require("combat").button_label(b, path)
+    elseif b:GetClass():GetFName():ToString() == "WBP_CombatAllyButton_C" then
+        label = require("rooms").ally_label(b)
     elseif b:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C" then
         -- A side mission offer's options: the wording is rich text the
         -- plain label missed, so the options were silent (2026-10-14).
@@ -928,6 +1038,25 @@ local function poll()
     end
     local path = b and path_of(b) or nil
     ticks = ticks + 1
+    -- After an optional dialogue choice the choices come back on the same
+    -- button, focus never changes, and nothing was said; Enter then took the
+    -- next choice unheard, three in a row (distress call, VM, 2026-10-15).
+    -- A choice that shows again is read again, with the Enter guard.
+    -- Polls while the choice is hidden can return early above, so the test
+    -- is how long since it was last seen on screen.
+    local is_choice = path and require("dialogue").is_choice(path)
+    local shown_now = is_choice and b and require("screen").shown(b) or false
+    if path and path == current and is_choice then
+        if shown_now and os.clock() - choice_seen_at > 0.6 then
+            focus_tick = ticks
+            local label = label_for(b, path)
+            print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
+            if label then speech.say(label, true) end
+        end
+        if shown_now then choice_seen_at = os.clock() end
+        return
+    end
+    if shown_now then choice_seen_at = os.clock() end
     if path == current then return end
     -- In the full game the item whose panel was open stays selected after
     -- Backspace, with its panel still open beside the menu, and Down from
@@ -1045,6 +1174,7 @@ local function poll()
             end
         end
     end
+    label = with_position(label, path)
     if label then speech.say(label, true) end
 end
 
@@ -1235,6 +1365,25 @@ local function activate()
         return
     end
     print("[VoyagerAccess] enter: clicking " .. tostring(current) .. "\n")
+    -- The save window's Delete Profile only became "selected" on Enter; a
+    -- real click opened its warning (full game, VM, 2026-10-15). The
+    -- window's own TryDeleteCurrentProfile is called. (Restart Sector's
+    -- ordinary click does open its list of sector saves, checked in the
+    -- demo; ClickedSectorSaveButton did nothing.)
+    if current:find("SectorSaveWindow", 1, true) then
+        local name = current:match("([^%.]+)$")
+        local handler = name == "DeleteAllSavesButton" and "TryDeleteCurrentProfile" or nil
+        if handler then
+            for _, w in ipairs(FindAllOf("WBP_LoadSectorSaveWindow_C") or {}) do
+                if w:IsValid() and live(w) and require("screen").shown(w) then
+                    print("[VoyagerAccess] enter: save window " .. handler .. "\n")
+                    local ok, err = pcall(function() w[handler](w) end)
+                    if not ok then print("[VoyagerAccess] enter: " .. tostring(err) .. "\n") end
+                    return
+                end
+            end
+        end
+    end
     -- The room's hero when its hero list is opened: closing the list
     -- without a choice leaves the room with no hero (see go_back).
     if current:find("WBP_HeroModule_C_%d+%..*OpenSelectionButton$") then
@@ -1640,6 +1789,10 @@ local function edge(last)
 end
 
 -- For L (where am I): the focused button as the arrows read it, or nil.
+function M.current_path()
+    return current
+end
+
 function M.current_label()
     -- A window's mod button list (no real focus): its current item.
     if virtual then
@@ -1654,7 +1807,7 @@ function M.current_label()
     if not (b and require("screen").shown(b)) then return nil end
     if radial_said[current] then return radial_said[current] end
     local ok, label = pcall(label_for, b, current)
-    return ok and label or nil
+    return ok and with_position(label, current) or nil
 end
 
 -- "settings" or "menu" when an on-screen button has focus, else nil.

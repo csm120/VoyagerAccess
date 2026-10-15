@@ -76,6 +76,8 @@ local WATCH = {
     -- The pause menu's confirmations ("Exit to Main Menu. Are you sure? You
     -- will lose all progress..."): silent, with nothing focused (2026-10-14)
     "WBP_PauseMenu_Confirms_C",
+    -- The main menu's Delete Profile warning, its own class (2026-10-15)
+    "WBP_DeleteProfileWarning_C",
     -- Q Trials setup: its first page is a warning ("Q Trials is designed
     -- for experienced Captains..."), ABORT and ACCEPT (2026-10-14)
     "WBP_Sandbox_Setup_C",
@@ -510,14 +512,16 @@ local TUTORIAL_KEYS = {
     ["Basic Resources"] = "C reads your resources",
     ["Consequences"] = "Up and Down move between the options, and each says its outcome odds; Enter picks one",
     ["Engineering Office"] = "choose the Engineering Office in the ship view and press Enter to open it",
-    ["Help"] = "F1 lists the keys for the screen you are on, and I says where you are",
+    ["Help"] = "F1 lists the keys for the screen you are on, Control plus F1 lists every key, I says where you are, and R repeats what was last read",
     ["Life support"] = "rooms say on or off as you move through the decks; open Life support with Enter and press Enter on its power button",
     ["Morale"] = "press N, choose Overview, then press Right to reach the Morale tab",
     ["Points of Interest"] = "V switches to the System Map; Up and Down move through the points, nearest first, and Enter opens Scan and Set course",
+    ["Build Rooms"] = "in the ship view, move to an empty building space with the arrows and press Enter; Up and Down choose a category, Enter opens it, Up and Down choose a room and Enter builds it",
+    ["Replicator Food"] = "open the Mess Hall with Enter; on its Food Serving tab (Left and Right switch tabs), Up and Down choose the rations and Enter selects them",
     ["Repairing Rooms"] = "choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair",
     ["Scan"] = "on the System Map, choose a point with Up and Down, press Enter, then Enter on Scan",
     ["System Map Navigation"] = "V switches between the ship and the System Map; on the map, Up and Down move through the points and Enter opens Scan and Set course",
-    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero",
+    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission",
     -- The full game opens the room on its Warp Core tab; the demo on the
     -- first tab (2026-10-14), so the tab is named, not counted.
     ["Warp Core"] = "open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it",
@@ -537,13 +541,42 @@ local function tutorial_title()
     return nil
 end
 
+-- The game's mouse, controller and screen-position wording is left out of
+-- tutorials, and the keys follow instead (Casey, 2026-10-15: keyboard
+-- commands rather than the visual icon descriptions). "Click on the
+-- question mark icon on the left of the screen to revisit any tutorial
+-- screen (on controller press d-pad left two times)" and "in the lower
+-- left part of the ship" told a keyboard player nothing.
+function M.clean_tutorial(text)
+    -- Controller hints in brackets.
+    text = text:gsub("%s*%([^%)]*[Cc]ontroller[^%)]*%)", ""):gsub("%s*%([^%)]*[Gg]amepad[^%)]*%)", "")
+    -- Where something sits on the screen.
+    for _, pat in ipairs({ "%s+[io]n the [%a%s%-]-of the screen", "%s+in the [%a%s%-]-part of the ship",
+                           "%s+at the [%a%s%-]-of the screen", "%s+on the [%a%s%-]-side of the screen" }) do
+        text = text:gsub(pat, "")
+    end
+    -- Sentences that are only about the mouse or an icon.
+    local kept = {}
+    for s in (text .. " "):gmatch("(.-[%.!%?])%s+") do
+        local l = s:lower()
+        local mouse = l:find("%f[%a]click") or l:find("%f[%a]hover") or l:find("%f[%a]drag")
+            or l:find("%f[%a]mouse") or l:find("%f[%a]icon")
+        if not mouse then kept[#kept + 1] = s end
+    end
+    local tail = (text .. " "):gsub("^.*[%.!%?]%s+", "")
+    if tail:find("%S") then kept[#kept + 1] = tail end
+    return (table.concat(kept, " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
+end
+
 local function tutorial_page(parts)
     local out = {}
     for _, p in ipairs(parts) do out[#out + 1] = p.text end
-    local text = table.concat(out, ". ")
+    local text = M.clean_tutorial(table.concat(out, ". "))
     local title = tutorial_title()
     local keys = title and TUTORIAL_KEYS[title]
-    if keys then text = text .. ". With Voyager Access: " .. keys .. "." end
+    if keys then
+        text = (text ~= "" and (text:gsub("[%.%s]+$", "") .. ". ") or "") .. "With Voyager Access: " .. keys .. "."
+    end
     return text
 end
 
@@ -961,6 +994,8 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end,
     WBP_AwayMissionLoadout_C = function() return require("awaymission").window_text() end,
     WBP_AwayMissionOutcome_C = function(_, path) return require("awaymission").outcome_text(path) end }
+-- The main menu's Delete Profile warning has the same parts.
+LAYOUTS.WBP_DeleteProfileWarning_C = LAYOUTS.WBP_PauseMenu_Confirms_C
 
 -- True while an event window's text has changed since it was last read:
 -- the poll is about to read it and say the focused button after it. Focus
@@ -1154,6 +1189,7 @@ local function poll()
                     or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
                     or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
                     or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
+                    or p:find("WBP_DeleteProfileWarning_C", 1, true)
                     or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
                     or p:find("WBP_SandboxSectorResult_C", 1, true)
                     or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true))
@@ -1225,9 +1261,20 @@ local function poll()
                 -- Construction Report (VM, 2026-10-15).
                 local own_list = false
                 pcall(function() own_list = require("focus").virtual_active() end)
-                if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
-                    local okl, label = pcall(function() return require("focus").current_label() end)
-                    if okl and label and label ~= "" then speech.say(label, false) end
+                if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true)
+                    and not p:find("WBP_DeleteProfileWarning_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
+                    local function say_label()
+                        local okl, label = pcall(function() return require("focus").current_label() end)
+                        if okl and label and label ~= "" then speech.say(label, false) end
+                    end
+                    -- An event's options: the game's own chances are read
+                    -- first (events.sweep), then the focused option is said.
+                    if p:find("WBP_POIMultipleChoice_C", 1, true) then
+                        local oks = pcall(require("events").sweep, say_label)
+                        if not oks then say_label() end
+                    else
+                        say_label()
+                    end
                 end
                 end
                 spoken[#spoken + 1] = text

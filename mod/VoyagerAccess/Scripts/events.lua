@@ -76,11 +76,101 @@ local function option_for(b, wording)
     return nil
 end
 
+-- The chances the game really uses. Rooms add weight to outcomes (a Main
+-- Deflector made Good 40 into 44; a Torpedo Launch Bay could add a Good
+-- that had no base weight at all), and the BonusWeight entries' own fields
+-- were all zero, so the base weights said "60% excellent, 40% bad" and the
+-- result was "good" (Kazon wreck, VM, 2026-10-15). The game hands the
+-- adjusted weights to the window's OnPreSelectButton(Map, TotalWeight) only
+-- when the mouse hovers an option (keyboard focus does not), so the mod
+-- hooks that function and, when an event opens, sweeps the mouse down the
+-- option list once; whichever option IsHovered gets the weights.
+local captured = {}   -- key_of(button) -> { {outcome, weight}, ... }
+local hooked = false
+-- The button and its wording: a button object reused for another option
+-- must not keep the old numbers.
+local function key_of(b)
+    return path_of(b) .. "|" .. text_of(b.ChoiceButton_Text)
+end
+local HOOK = "/Game/STVoyager/Events/UI/WBP_POIMultipleChoice.WBP_POIMultipleChoice_C:OnPreSelectButton"
+local function ensure_hook()
+    if hooked then return end
+    if not StaticFindObject(HOOK) then return end   -- the widget class loads with the first event
+    local ok = pcall(RegisterHook, HOOK, function(_, map)
+        pcall(function()
+            local list = {}
+            map:get().Map:ForEach(function(k, v)
+                list[#list + 1] = { outcome = k:get(), weight = v:get() }
+            end)
+            for _, b in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+                if b:IsValid() and b:IsHovered() then captured[key_of(b)] = list end
+            end
+        end)
+    end)
+    hooked = ok
+end
+
+-- Options shown and not locked that have no captured weights yet.
+local function uncaptured()
+    local n = 0
+    for _, b in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+        if b:IsValid() and path_of(b):find("^/Engine/Transient%.") and require("screen").shown(b)
+            and not captured[key_of(b)] then
+            local ok, en = pcall(function() return b:GetIsEnabled() end)
+            if not (ok and en == false) then n = n + 1 end
+        end
+    end
+    return n
+end
+
+-- Sweeps the mouse down the right-hand panel where the options are, then
+-- calls done(). Does nothing but call done() when every option has its
+-- weights already.
+local sweeping = false
+function M.sweep(done)
+    local ok = pcall(ensure_hook)
+    if not (ok and hooked) or uncaptured() == 0 or sweeping then
+        if done then done() end
+        return
+    end
+    sweeping = true
+    local pc = FindFirstOf("PlayerController")
+    local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
+    local w, h = size.X, size.Y
+    local r = 350 / 1080 * h   -- the helper's ring radius
+    local x = 0.83 * w
+    local ys = {}
+    for y = 0.40 * h, 0.96 * h, 0.025 * h do ys[#ys + 1] = y end
+    local i = 0
+    local function step()
+        i = i + 1
+        if i > #ys or uncaptured() == 0 then
+            sweeping = false
+            print("[VoyagerAccess] events: chances read from the game, " .. uncaptured() .. " option(s) without\n")
+            if done then pcall(done) end
+            return
+        end
+        speech.ring_mouse((x - w / 2) / r, (ys[i] - h / 2) / r)
+        ExecuteInGameThreadWithDelay(80, function() pcall(step) end)
+    end
+    pcall(step)
+end
+
 -- "Good: 70% chance of a good outcome, 30% chance of a bad
--- outcome", or nil.
-local function chances(o)
+-- outcome", or nil. b is the option's button, for the game's own weights.
+local function chances(o, b)
     local list, total = {}, 0
+    local got = b and captured[key_of(b)]
     local ok = pcall(function()
+        if got then
+            for _, e in ipairs(got) do
+                if e.weight and e.weight > 0 then
+                    list[#list + 1] = { outcome = e.outcome, weight = e.weight }
+                    total = total + e.weight
+                end
+            end
+            return
+        end
         for k, v in pairs(o:GetOptionResults()) do
             local outcome = k:get()
             local weight = v:get().Weight
@@ -331,7 +421,7 @@ function M.option_label(b)
         if ok and RISKS[risk] and not (ok2 and leaving) then parts[#parts + 1] = RISKS[risk] end
     end
     crumb.at("events: chances")
-    local c = o and chances(o)
+    local c = o and chances(o, b)
     if c then parts[#parts + 1] = c:sub(1, 1):upper() .. c:sub(2) end
     crumb.at("events: room_names")
     local better = o and room_names(o) or {}

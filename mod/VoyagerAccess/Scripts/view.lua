@@ -173,9 +173,34 @@ function M.overview_tab(dir)
     return true
 end
 
+-- A call coming in shows the Incoming Calls button on the navigation bar
+-- and nothing else: the mod said nothing, the objective only said "Answer
+-- the incoming distress call", and a forum player could not find how to
+-- answer the array's hail in the first mission (2026-10-15). Said once when
+-- the button appears, while the bar is up (ship view or System Map).
+local call_waiting = false
+local function poll_calls()
+    if not find("ShowShipButton") and not find("ShowSystemButton") then return end   -- bar not up
+    local b = find("IncomingCallsButton")
+    local waiting = b ~= nil
+    if waiting then
+        local ok, en = pcall(function() return b:GetIsEnabled() end)
+        waiting = not (ok and en == false)
+    end
+    if waiting and not call_waiting then
+        print("[VoyagerAccess] view: incoming call waiting\n")
+        speech.say("Incoming call. To answer, press N and choose Incoming calls.", false)
+    end
+    call_waiting = waiting
+end
+
 function M.install()
     require("keys").on("v", M.toggle)
     require("keys").on("n", M.nav_toggle)
+    LoopInGameThreadWithDelay(1000, function()
+        local ok, err = pcall(poll_calls)
+        if not ok then print("[VoyagerAccess] view calls error: " .. tostring(err) .. "\n") end
+    end)
 end
 
 return M

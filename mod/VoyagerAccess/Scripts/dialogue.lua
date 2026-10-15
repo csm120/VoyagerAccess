@@ -332,6 +332,15 @@ function M.choice_label(path)
     end)
     local wording = ""
     pcall(function() wording = text_of(c.RightButton.Choice) end)
+    -- Costs drawn as an icon and a number ("Expander <img id="Duranium"/>
+    -- <ColorPositive>15</> <img id="Tritanium"/> <ColorPositive>10</>")
+    -- were read "Expander 15 10" (Kazon in need, VM, 2026-10-15).
+    local costs = {}
+    wording = wording:gsub('%s*<img id="(%w+)"%s*/>%s*<(%w+)>%s*([%d,]+)%s*</>', function(res, color, n)
+        costs[#costs + 1] = n .. " " .. (res:gsub("(%l)(%u)", "%1 %2")) .. (color == "ColorNegative" and ", not enough" or "")
+        return ""
+    end)
+    if #costs > 0 then wording = wording .. ". Costs " .. table.concat(costs, ", ") end
     wording = plain(wording):gsub("^%[Optional%]%s*", "Optional: ")
     if wording ~= "" then parts[#parts + 1] = wording end
     -- The requirement widget is not a named member, so find its text by path.

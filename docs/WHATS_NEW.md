@@ -2,6 +2,24 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.12
+
+Fixes from your forum reports and from replaying the first mission.
+
+- New: when someone calls the ship, you hear "Incoming call. To answer, press N and choose Incoming calls." The first mission's "Accept Tuvok's COMMS request" is one of these, and nothing used to tell you where to answer it.
+- New: menus and room buttons say where you are in them, for example "RESUME, 1 of 5" in the pause menu or "Dismantle, 2 of 3" in a room, so you know when you've heard the whole list.
+- Changed: event chances are now the ones the game really uses, room bonuses included. Before, a "60% excellent, 40% bad" option could come out "good", because a room you have was adding a chance the mod didn't know about.
+- Fixed: after an optional dialogue choice, the remaining choices came back without a word, and Enter could pick one you hadn't heard. They're read again now.
+- Fixed: dialogue choices with a cost read as "Expander 15 10". Now it's "Expander. Costs 15 Duranium, 10 Tritanium."
+- New: on an away mission, a hero with the trait a choice asks for says so, for example "Tom Paris, Command 25, 14 needed, enough, has the Pilot trait".
+- Changed: tutorials leave out the game's mouse and controller directions, such as "Click on the question mark icon on the left of the screen", and give the keys instead. Two more tutorials have keys: Replicator Food and Build Rooms.
+- New: Sickbay's Manage Patients tab reads each patient, what's wrong and how many cycles until they recover.
+- New: the Bridge's Combat Allies tab reads the ally, its combat power, what recruiting costs and the upkeep each cycle. It used to be a string of loose numbers.
+- New: the Workshop says when there are no blueprints to craft.
+- Fixed: Delete Profile in the main menu only got selected on Enter. It now opens its warning, which is read, with BACK and ACCEPT.
+
+## Thursday October 15th 2026
+
 Version 0.3.11
 
 More fixes from the full game's second sector, State of Flux.

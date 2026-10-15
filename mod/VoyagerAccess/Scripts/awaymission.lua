@@ -183,7 +183,21 @@ function M.slot_label(path)
     if not picker then return nil end
     local hero = plaque_text(picker.HeroPlaque)
     local head = string.format("%s %d of %d", slot_name, index, count)
-    if hero then return head .. ": " .. hero end
+    if hero then
+        -- Once every slot is filled the game starts the mission on Enter,
+        -- wherever focus is: Enter on a slot to change its hero started
+        -- "Kazon in need", and choosing the last hero started Phage
+        -- (VM, 2026-10-15). Said on every filled slot from then on.
+        local full = false
+        pcall(function()
+            local b = L.StartMissionButton
+            full = b ~= nil and b:IsValid() and screen.shown(b)
+        end)
+        if full and path:find("WBP_AwayMissionLoadout_C", 1, true) then
+            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete: Enter starts the mission."
+        end
+        return head .. ": " .. hero
+    end
     return head .. ", empty. Enter to choose a hero."
 end
 
@@ -426,6 +440,23 @@ local function hero_names()
     return names
 end
 
+-- A hero's trait ("Pilot", "Klingon - Innovator") from the mission
+-- window's team plaques, or "".
+local function trait_of(name)
+    local found = ""
+    pcall(function()
+        for _, h in ipairs(FindAllOf("STVAwayMissionHeroSelectionPlaque") or {}) do
+            if h:IsValid() and path_of(h):find("^/Engine/Transient%.") and path_of(h):find("HeroStatus%.")
+                and screen.shown(h) and plain(text_of(h.HeroNameText)) == name then
+                local sheet = h.HeroStatSheet
+                local t = plain(text_of(sheet and sheet.HeroTraits and sheet.HeroTraits.TraitText))
+                if t ~= "" then found = t end
+            end
+        end
+    end)
+    return found
+end
+
 local function build()
     local items, sig = {}, {}
     local names = hero_names()
@@ -582,6 +613,16 @@ local function item_label(it)
         if okf then
             for _, n in ipairs(tired) do if n == it.name then text = text .. ", fatigued" end end
         end
+        -- A choice that asks for a trait ("Trait: Pilot") helps the hero who
+        -- has it; nothing on the hero said so (Investigating the Array,
+        -- VM, 2026-10-15).
+        pcall(function()
+            local want = (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
+            local has = trait_of(it.name)
+            if want and has ~= "" and has:lower():find(want:lower(), 1, true) then
+                text = text .. ", has the " .. want .. " trait"
+            end
+        end)
         if is_active(c) and chosen(h) then text = text .. ", selected" end
         return text .. "."
     else
