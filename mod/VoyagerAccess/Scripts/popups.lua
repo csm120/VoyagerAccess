@@ -83,7 +83,7 @@ local WATCH = {
     -- Reload Save), No Way Back before the endgame (YES, NO), the Crafting
     -- Report, the generic Yes/No confirmation and Hero Lost.
     "WBP_GameOver_C", "WBP_NoWayBackWidget_C", "WBP_CraftingResult_C", "WBP_ConfirmationWidget_C",
-    "WBP_HeroUnavailableWidget_C", "WBP_SectorExitEventWidget_C",
+    "WBP_HeroUnavailableWidget_C", "WBP_SectorExitEventWidget_C", "WBP_CombatAutoResolve_C",
     -- Q Trials setup: its first page is a warning ("Q Trials is designed
     -- for experienced Captains..."), ABORT and ACCEPT (2026-10-14)
     "WBP_Sandbox_Setup_C",
@@ -602,6 +602,86 @@ local function overview(_, path)
 end
 
 M.ordered_texts = ordered_texts
+
+-- Auto Resolve's window (WBP_CombatAutoResolve, Q Trials ambush, VM,
+-- 2026-10-15) was silent but for "Proceed": "Combat autoresolve. Combat
+-- power 95 against 73. Hull 400. Survival chance 100%. Torpedoes added 0 of
+-- 7." Its buttons are the list (torpedoes, Manual Combat, Proceed).
+local function auto_resolve(_, path)
+    local w = StaticFindObject(path)
+    if not (w and w:IsValid()) then return "" end
+    local by = {}
+    for _, t in ipairs(ordered_texts(w, function(name, s) return name .. "=" .. s end)) do
+        local n, v = t:match("^([%w_]+)=(.*)$")
+        if n and not by[n] then by[n] = v end
+    end
+    local out = { "Combat autoresolve" }
+    if by.PlayerScoreText_ then out[#out + 1] = "Combat power " .. by.PlayerScoreText_ .. (by.EnemyScoreText_ and (" against " .. by.EnemyScoreText_) or "") end
+    if by.Voyager_Hull then out[#out + 1] = "Hull " .. by.Voyager_Hull end
+    if by.success_chance_value then out[#out + 1] = "Survival chance " .. by.success_chance_value:gsub("%%$", "") .. "%" end
+    if by.TorpedoCountText then out[#out + 1] = "Torpedoes added " .. by.TorpedoCountText .. (by.TorpedoCountMax and (" of " .. by.TorpedoCountMax) or "") end
+    return table.concat(out, ". ") .. "."
+end
+M.auto_resolve_text = function(path) return auto_resolve(nil, path) end
+
+-- A Q Trial's sector reward cards (WBP_MetaProgressionReward: technology,
+-- hero or resources). Their buttons have no text, so the results screen
+-- had nothing to choose and Confirm stayed disabled (VM, 2026-10-15).
+function M.meta_reward_label(b, path)
+    local cp = path:match("^(.-WBP_MetaProgressionReward_C_%d+)%.")
+    local card = cp and StaticFindObject(cp)
+    if not (card and card:IsValid()) then return nil end
+    local by, res = {}, {}
+    local pending = nil
+    for _, t in ipairs(ordered_texts(card, function(name, s) return name .. "=" .. s end)) do
+        local n, v = t:match("^([%w_]+)=(.*)$")
+        if n then
+            if n == "ResourceNameTextBlock" then pending = v
+            elseif n == "ResourceAmountTextBlock" and pending then res[#res + 1] = pending .. " +" .. v:gsub("^%+", "") pending = nil
+            elseif not by[n] then by[n] = v end
+        end
+    end
+    local out = {}
+    local kind = by.TypeText or "Reward"
+    if by.TechName then
+        out[#out + 1] = kind .. ": " .. by.TechName .. (by.NewText and ", new" or "")
+        local where = {}
+        if by.TechTreeName then where[#where + 1] = by.TechTreeName end
+        if by.TierNr_TXT then where[#where + 1] = (by.TierNr_TXT:gsub("0(%d)", "%1")) end
+        if #where > 0 then out[#out + 1] = table.concat(where, ", ") end
+        if by.TechDesc then out[#out + 1] = by.TechDesc end
+    elseif by.HeroName_TXT then
+        local head = kind .. ": " .. by.HeroName_TXT
+        if by.HeroLevel_TXT then head = head .. ", " .. by.HeroLevel_TXT:gsub("0(%d)", "%1"):lower() end
+        if by.TraitText then head = head .. ", " .. by.TraitText end
+        out[#out + 1] = head
+        local skills = ""
+        pcall(function() skills = require("rooms").skills_of(card.HeroStatSheet) end)
+        if skills ~= "" then out[#out + 1] = skills end
+        if by.HeroCombatAbility_TXT then out[#out + 1] = "Combat ability: " .. by.HeroCombatAbility_TXT end
+    elseif #res > 0 then
+        out[#out + 1] = kind .. ": " .. table.concat(res, ", ")
+    else
+        out[#out + 1] = kind
+    end
+    -- The game shows the choice only by a highlight and the "(01/01)"
+    -- count, so the mod remembers the card Enter was pressed on.
+    if M.meta_chosen == path and M.meta_reward_count():match("^[1-9]") then out[1] = out[1] .. ", chosen" end
+    for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
+-- "1 of 1" from the results screen's "(01/01)", or "".
+function M.meta_reward_count()
+    for _, w in ipairs(FindAllOf("WBP_SandboxSectorResult_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            local s = text_of_widget(w.RewardAmount_TXT)
+            local a, b = s:match("(%d+)%s*/%s*(%d+)")
+            if a then return tonumber(a) .. " of " .. tonumber(b) end
+        end
+    end
+    return ""
+end
 
 -- Tutorials describe the mouse and what is seen ("Open the OVERVIEW
 -- screen"). After a tutorial's page the mod says its own keys for the same
@@ -1163,7 +1243,7 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
     WBP_GameOver_C = without_buttons, WBP_NoWayBackWidget_C = without_buttons, WBP_CraftingResult_C = without_buttons,
     WBP_ConfirmationWidget_C = without_buttons, WBP_HeroUnavailableWidget_C = without_buttons,
-    WBP_SectorExitEventWidget_C = sector_exit_event,
+    WBP_SectorExitEventWidget_C = sector_exit_event, WBP_CombatAutoResolve_C = auto_resolve,
     WBP_SectorExitDetailView_C = function(parts) return M.sector_exit_detail(parts) or "" end,
     -- Heading, then the question, then the rest: creation order put "Are
     -- you sure?" last on the second opening (2026-10-14).
@@ -1435,7 +1515,8 @@ local function poll()
                     or p:find("WBP_ConfirmationWidget_C", 1, true) or p:find("WBP_HeroUnavailableWidget_C", 1, true)
                     or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
                     or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
-                    or p:find("WBP_BattleResultLCARS_C", 1, true)
+                    -- Inside the combat widget it is named CombatResultView.
+                    or p:find("WBP_BattleResultLCARS_C", 1, true) or p:find("CombatResultView", 1, true) or p:find("AutoResolveWidget", 1, true)
                     or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true))
                 -- An event's result replaces its options in the same window:
                 -- "CONTINUE" came before "Trading Station. We accepted their

@@ -915,6 +915,17 @@ label_for = function(b, path)
         label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
     elseif cls == "WBP_LeaveSectorEntry_C" then
         label = require("popups").leave_sector_entry(b)
+    elseif path:find("WBP_MetaProgressionReward_C_%d+%.WidgetTree_%d+%.Button$") then
+        label = require("popups").meta_reward_label(b, path)
+    elseif path:find("AutoResolveWidget%.WidgetTree_%d+%.Button_Torpedo%a+$") then
+        -- "+" and "-" beside the torpedo count; said with the count and the
+        -- survival chance they change (VM, 2026-10-15).
+        local win = path:match("^(.-AutoResolveWidget)%.")
+        local t = win and require("popups").auto_resolve_text(win) or ""
+        local tail = (t:match("(Survival chance [^%.]+)") or "") .. ". " .. (t:match("(Torpedoes added [^%.]+)") or "")
+        label = (path:find("Add$") and "Add torpedo" or "Remove torpedo") .. ". " .. tail
+    elseif cls == "WBP_AeroShuttleBay_TradeOffer_C" then
+        label = require("rooms").trade_offer_label(b)
     elseif cls == "WBP_ResourceSelectionButton_C" then
         -- A Cargo Bay's storage choice: only "+50" is text, the resource is
         -- its Icon (MI_UI_Duranium; VM, 2026-10-15). "Duranium, +50 storage".
@@ -1000,6 +1011,7 @@ label_for = function(b, path)
     -- Nor on dialogue choices: the first one is Selected by default and read
     -- "Destroy the Array, selected" before anything was picked (2026-10-14).
     if label and not label:find("selected", 1, true) and not require("rooms").is_module_button(path)
+        and not path:find("AutoResolveWidget", 1, true)
         and not require("dialogue").is_choice(path) then
         local ok, sel = pcall(function() return b:GetSelected() end)
         -- Only in a group: a lone story card CONTINUE is Selected too and
@@ -1234,7 +1246,8 @@ local function poll()
     -- And a battle's result: "Proceed" came before "Combat result:
     -- victory..." (Q Trials ambush, VM, 2026-10-15).
     for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C", "WBP_MultipleChoiceWidget_C",
-                           "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C", "WBP_BattleResultLCARS_C" }) do
+                           "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C", "WBP_BattleResultLCARS_C",
+                           "WBP_SandboxSectorResult_C", "WBP_CombatAutoResolve_C" }) do
         if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
             for _, w in ipairs(FindAllOf(cls) or {}) do
                 if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then
@@ -1432,6 +1445,45 @@ local function activate()
     if not b then
         print("[VoyagerAccess] enter: no focused button\n")
         return
+    end
+    -- An Aeroshuttle trade offer: its TRADE and DISMISS buttons cannot be
+    -- reached with the arrows (VM, 2026-10-15). Enter puts focus on TRADE,
+    -- or on DISMISS when the trade cannot be paid for.
+    if b:GetClass():GetFName():ToString() == "WBP_AeroShuttleBay_TradeOffer_C" then
+        local target = nil
+        pcall(function()
+            local t, d = b.TradeBtn, b.DismissBtn
+            if t and t:IsValid() and t:GetIsEnabled() then target = t
+            elseif d and d:IsValid() and d:GetIsEnabled() then target = d end
+        end)
+        if target then
+            if back_stack[#back_stack] ~= current then back_stack[#back_stack + 1] = current end
+            target:SetFocus()
+        else
+            speech.say("Nothing can be done with this offer", true)
+        end
+        return
+    end
+    -- A room button that cannot be used: Enter did nothing and said
+    -- nothing (Dismantle without life support, VM, 2026-10-15).
+    if require("rooms").is_module_button(current) then
+        local okl, l = pcall(label_for, b, current)
+        local why = okl and type(l) == "string" and l:match("Not possible: ([^%.]+)")
+        if why then
+            speech.say("Not possible: " .. why, true)
+            return
+        end
+    end
+    -- A Q Trial reward card: say that it was chosen and the count.
+    if current:find("WBP_MetaProgressionReward_C_%d+%.WidgetTree_%d+%.Button$") then
+        local popups = require("popups")
+        popups.meta_chosen = current
+        ExecuteInGameThreadWithDelay(300, function()
+            pcall(function()
+                local n = popups.meta_reward_count()
+                speech.say("Chosen" .. (n ~= "" and (", rewards selected " .. n) or "") .. ". Confirm is at the end of the list.", true)
+            end)
+        end)
     end
     print("[VoyagerAccess] enter: clicking " .. tostring(current) .. "\n")
     -- The save window's Delete Profile only became "selected" on Enter; a
@@ -1975,6 +2027,7 @@ function M.install()
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
         if require("qtrials").step(current, -1) then return end
+        if require("rooms").trade_offer_step(current, -1) then return end
         if require("whatsnew").open() then require("whatsnew").step(-1)
         elseif require("hotkeys").open() then require("hotkeys").step(-1)
         elseif require("credits").open() then require("credits").step(-1)
@@ -1993,6 +2046,7 @@ function M.install()
     end)
     keys.on("down", function()
         if require("qtrials").step(current, 1) then return end
+        if require("rooms").trade_offer_step(current, 1) then return end
         if require("whatsnew").open() then require("whatsnew").step(1)
         elseif require("hotkeys").open() then require("hotkeys").step(1)
         elseif require("credits").open() then require("credits").step(1)

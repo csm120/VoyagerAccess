@@ -170,10 +170,15 @@ local function poll()
     -- At the main menu the game is left: the next game loaded may be another
     -- save, and its objectives came out as "Done:" the old save's ones
     -- (Profile 03 to Profile 02, VM, 2026-10-15). It is read whole instead.
-    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
-        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
-            last_missions = nil
-            return
+    -- Likewise between Q Trial sectors: the results screen said "Done:
+    -- Leave Sector. Objective: Acquire at least 90 DURANIUM (10/90)" as the
+    -- exit spent the duranium (VM, 2026-10-15).
+    for _, cls in ipairs({ "WBP_MainMenu_C", "WBP_SandboxSectorResult_C", "WBP_Loading_Screen_C" }) do
+        for _, w in ipairs(FindAllOf(cls) or {}) do
+            if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+                last_missions = nil
+                return
+            end
         end
     end
     local now, missions = M.objective()

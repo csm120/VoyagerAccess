@@ -2,6 +2,20 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.16
+
+More from a second Q Trial, including a reward screen you couldn't get past.
+
+- Fixed: after finishing a Q Trials sector, the reward choice had nothing to select, so Confirm never became available. Each reward is read now, for example "Hero: B'Elanna, rank 1, Klingon - Innovator. Engineering 38, Science 22. Combat ability: Instant Shield Recharge." Enter chooses one and says so, and Confirm is at the end of the list.
+- New: Auto Resolve in a battle opens a window that was silent apart from "Proceed". It's read now: "Combat autoresolve. Combat power 95 against 73. Hull 400. Survival chance 100%. Torpedoes added 0 of 7." Add torpedo and Remove torpedo say the new count.
+- Fixed: a battle's result came after its "Proceed" button. The result is read first now.
+- New: Aeroshuttle trade offers are read, for example "Trade Offer 1. You give 1500 Deuterium. You get 17 Dilithium. Takes 24 cycles. Expires in 14 cycles." Enter on an offer moves to its Trade button, or Dismiss when you can't pay. The arrows couldn't reach either.
+- Fixed: a room without life support offered Dismantle and its power switch as if they worked, and Enter did nothing. They say "Not possible: no life support" now, and Enter on any room button that can't be used says why.
+- Fixed: salvage results said a resource twice, as in "TRITANIUM +30 tritanium". Now it's "+30 tritanium".
+- Fixed: locked event options no longer say "Left and Right choose a hero".
+
+## Thursday October 15th 2026
+
 Version 0.3.15
 
 Rooms and screens from a longer Q Trial, and one of your suggestions.

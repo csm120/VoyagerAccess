@@ -26,6 +26,9 @@ function M.prep(s)
     s = s:gsub(IMG .. "%s*([%+%-]?%d[%d,%.]*)", function(id, n) return n .. " " .. unit(id) end)
     -- Number then icon: "3 <img id="Cycles"/>".
     s = s:gsub("(%d)%s*" .. IMG, function(d, id) return d .. " " .. unit(id) end)
+    -- "per" then an icon: "-2 morale per <img id="Cycle"/>" read "-2 morale
+    -- per" (The Long Way Home, Q Trials, VM, 2026-10-15).
+    s = s:gsub("([Pp]er)%s*" .. IMG, function(p, id) return p .. " " .. (unit(id):gsub("s$", "")) end)
     -- A name already said before the number: "TRITANIUM +30 tritanium" and
     -- "FOOD -150 food" in event results (Q Trials, VM, 2026-10-15) read
     -- "+30 tritanium". Tags may still be around the name.

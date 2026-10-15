@@ -316,7 +316,11 @@ function M.button_label(path, label)
         end
     end
     for name, text in pairs(by) do
-        if name:find("ImpossibleReason") and text ~= "" then
+        -- Dismantle and the power button name theirs differently
+        -- (DestroyRoomInactiveReasonText, CantActivateReasonText): a room
+        -- without life support read "Dismantle" as if it could be done and
+        -- Enter did nothing (VM, 2026-10-15).
+        if (name:find("ImpossibleReason") or name:find("InactiveReason") or name:find("CantActivateReason")) and text ~= "" then
             parts[#parts + 1] = "Not possible: " .. text:lower()
         end
     end
@@ -574,7 +578,9 @@ function M.trading_text()
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and path_of(t)
             -- A CommonTextBlock is found as a TextBlock too: "4 slots" for 2.
-            if tp and not done[tp] and tp:sub(1, #mp) == mp and screen.shown(t) and not tp:find("Button", 1, true) then
+            -- Offers are read whole below, not as their loose parts.
+            if tp and not done[tp] and tp:sub(1, #mp) == mp and screen.shown(t) and not tp:find("Button", 1, true)
+                and not tp:find("TradeOff", 1, true) then
                 done[tp] = true
                 local s = plain(text_of(t))
                 if s ~= "" and s:sub(1, 1) ~= "#" then
@@ -584,6 +590,15 @@ function M.trading_text()
             end
         end
     end
+    local offers = 0
+    for _, o in ipairs(FindAllOf("WBP_AeroShuttleBay_TradeOffer_C") or {}) do
+        local op = o:IsValid() and path_of(o)
+        if op and op:sub(1, #mp) == mp and screen.shown(o) then offers = offers + 1 end
+    end
+    if offers > 0 then
+        out[#out + 1] = offers .. (offers == 1 and " offer" or " offers") .. "; Enter on an offer reaches Trade and Dismiss"
+        seen[out[#out]:lower()] = 1
+    end
     if #out == 0 then return nil end
     for i, s in ipairs(out) do
         local n = seen[s:lower()]
@@ -592,6 +607,87 @@ function M.trading_text()
         out[i] = (s:gsub("%.%s*$", "")) .. (n > 1 and (", " .. n .. " slots") or "")
     end
     return table.concat(out, ". ") .. "."
+end
+
+-- An Aeroshuttle trade offer (WBP_AeroShuttleBay_TradeOffer): its focus
+-- label was "TRADE, DISMISS, Offer, Trade Duration 24, Voyager, missing
+-- resources, 14, Expires in, Trade Offer 01" (VM, 2026-10-15). The two
+-- sides are WBP_AeroShuttleBay_TradeOffer_Resources widgets in its
+-- TradeOfferBox (what the trader gives) and VoyTradeOfferBox (what Voyager
+-- pays); they are found by climbing their parents to this offer.
+local function belongs_to(w, target)
+    local node = w
+    for _ = 1, 16 do
+        local okp, p = pcall(function() return node:GetParent() end)
+        if okp and p and p:IsValid() then
+            node = p
+        else
+            local oko, tree = pcall(function() return node:GetOuter() end)
+            if not (oko and tree and tree:IsValid()) then return false end
+            local okw, owner = pcall(function() return tree:GetOuter() end)
+            if not (okw and owner and owner:IsValid()) then return false end
+            node = owner
+        end
+        if node == target or (node:IsValid() and target:IsValid() and node:GetFullName() == target:GetFullName()) then return true end
+    end
+    return false
+end
+
+function M.trade_offer_label(offer)
+    local gives, pays = {}, {}
+    for _, r in ipairs(FindAllOf("WBP_AeroShuttleBay_TradeOffer_Resources_C") or {}) do
+        if r:IsValid() and screen.shown(r) and belongs_to(r, offer) then
+            local amount = plain(text_of(r.ResourceAmount)):gsub("[%s%+%-]", "")
+            local res = "resources"
+            pcall(function()
+                local ro = r.ResourceImage.Brush.ResourceObject
+                if ro and ro:IsValid() then res = ro:GetFName():ToString():match("^MI_UI_(%a-)_") or res end
+            end)
+            res = res:gsub("(%l)(%u)", "%1 %2")
+            local side = ""
+            pcall(function() side = r:GetParent():GetFName():ToString() end)
+            if amount ~= "" then
+                local list = side:find("^Voy") and pays or gives
+                list[#list + 1] = amount .. " " .. res
+            end
+        end
+    end
+    local out = { plain(text_of(offer.TradeOfferIndex)) ~= "" and plain(text_of(offer.TradeOfferIndex)) or "Trade offer" }
+    out[1] = out[1]:gsub(" 0(%d)$", " %1")
+    if #pays > 0 then out[#out + 1] = "You give " .. table.concat(pays, ", ") end
+    if #gives > 0 then out[#out + 1] = "You get " .. table.concat(gives, ", ") end
+    local dur = plain(text_of(offer.DurationText)):match("(%d+)")
+    if dur then out[#out + 1] = "Takes " .. dur .. (dur == "1" and " cycle" or " cycles") end
+    local exp = plain(text_of(offer.ExpireTimeTextBox))
+    if exp:match("^%d+$") then out[#out + 1] = "Expires in " .. exp .. (exp == "1" and " cycle" or " cycles") end
+    local blocked = plain(text_of(offer.TradeBlockedText))
+    if blocked ~= "" then out[#out + 1] = "Not possible: " .. blocked:lower() end
+    return table.concat(out, ". ") .. "."
+end
+
+-- Up and Down between trade offers: the game has no keyboard route from one
+-- offer to the next (two offers, VM, 2026-10-15). True when handled.
+function M.trade_offer_step(path, dir)
+    if not (path and path:find("WBP_AeroShuttleBay_TradeOff", 1, true)) then return false end
+    local cur = StaticFindObject(path)
+    if not (cur and cur:IsValid() and cur:GetClass():GetFName():ToString() == "WBP_AeroShuttleBay_TradeOffer_C") then return false end
+    local prefix = path:match("^(.+%.)[^%.]+$")
+    local list = {}
+    for _, o in ipairs(FindAllOf("WBP_AeroShuttleBay_TradeOffer_C") or {}) do
+        local op = o:IsValid() and path_of(o)
+        if op and op:sub(1, #prefix) == prefix and screen.shown(o) then list[#list + 1] = { o = o, p = op } end
+    end
+    table.sort(list, function(a, b)
+        return (tonumber(a.p:match("_(%d+)$")) or 0) < (tonumber(b.p:match("_(%d+)$")) or 0)
+    end)
+    for i, e in ipairs(list) do
+        if e.p == path then
+            local nxt = list[i + dir]
+            if nxt then nxt.o:SetFocus() else require("speech").say(M.trade_offer_label(cur), true) end
+            return true
+        end
+    end
+    return false
 end
 
 -- Left and Right in a room window switch its tabs (Management, Warp Core,
