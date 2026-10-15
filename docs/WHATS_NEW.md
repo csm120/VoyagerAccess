@@ -2,6 +2,33 @@
 
 ## Wednesday October 14th 2026
 
+Version 0.3.5
+
+Q Trials can now be played past the start, and the full game's DLC page and battles read properly.
+
+- Fixed: moving through an event's options could crash the game or stop Voyager Access. It happened most at a Repair Station in Q Trials.
+- New: in Q Trials, many event options can take a hero. Left and Right choose one, for example "Joe Carey, Engineering 33, 4 of 6", or No hero, and Enter carries the option out with them. Each option says which skill it tests.
+- New: options you can't afford, like a trade without enough Tritanium, are read as locked and say what's missing, for example "Not enough Tritanium". Before, they were skipped without a word.
+- New: Leave Sector is read. You hear how far you are from home, then each sector with its distance, its cost and whether it's locked. Enter on a locked sector says why. In Q Trials, Leave sector is also in the N list.
+- New: an event's result now reads what happened to your ship and crew, like "FOOD +200" or "5 CREW got Severely injured".
+- Fixed: scanning a second planet while the first one's details were still showing read nothing about the new planet, only its rewards as a list. A scan also no longer says "nothing found" when the planet has resources, and system names like "112 Vidiian System" are read properly.
+- Fixed: side mission offers with an option you can't take never read their message.
+- Fixed: in full game battles, the combat goal is read again (O, and when the battle starts), and pausing and resuming is announced. Shields and attacks are named bow, aft, port and starboard instead of Right and Left.
+- Fixed: "Halfway to" and "Arrived at" are no longer said over a battle that interrupts your trip.
+- New: on the Q Trials setup, choosing a captain, a Q Modifier or a Q Challenges level says what you chose. A full team says so instead of just "not chosen", and Start Game says when it isn't available yet. Down now reaches it.
+- Fixed: Backspace in a Q Trials list threw you back to the main menu and lost your setup. It now closes the list.
+- Fixed: after Start Game, the Q Trials setup was read over the loading screen and the trial itself.
+- Changed: Q's opening speech and the campaign's opening narration are voiced, so Voyager Access no longer reads them over the audio. R still repeats the last line.
+- Fixed: Voyager herself was listed as a point on the Q Trials map, and stations had names like "CustomPOILocation RepairStation". They're now Repair station and Trading station.
+- New: Enter on a DLC tile in the main menu reads the whole card: its description, and its new missions, heroes and technologies. Backspace closes the DLC panel.
+- Fixed: Up and Down on the full game's main menu wandered into the Campaign and Q Trials profiles and the DLC tiles.
+- Fixed: Backspace now closes the Credits, as Escape does.
+- Fixed: in away missions, Confirm names every hero you chose, not just the last one.
+- Fixed: windows read their message before their buttons. "System map" is no longer read over the Exit to Main Menu confirmation, over the room list, or while you move through the map.
+- Fixed: the Warp Core tutorial named the wrong tab for the full game, and "already scanned: scanned" is now just "already scanned".
+
+## Wednesday October 14th 2026
+
 Version 0.3.4
 
 Q Trials can now be set up and started from the keyboard.

@@ -19,7 +19,7 @@ local HELP = {
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
         .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship.",
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room.",
-    event = "Up and Down move between the options. Enter picks one. R reads the locked options.",
+    event = "Up and Down move between the options. Where an option can take a hero, Left and Right choose one first. Enter picks the option. R reads the locked options.",
     mission = "Up and Down move through the choices, their heroes and Confirm. Home and End go to the first and last. "
         .. "Enter picks a hero or confirms. After a result, Enter continues and R repeats it.",
     settings = "Up and Down move between settings. Left and Right change the value. "
@@ -154,6 +154,19 @@ local function view_poll()
     end
     local ctx = M.context()
     local v = (ctx == "ship" or ctx == "system") and ctx or "other"
+    -- A window with its own button list is up (Exit to Main Menu's
+    -- confirmation): "System map. Class M planet" broke into its BACK and
+    -- ACCEPT (Casey, 2026-10-14).
+    if require("focus").virtual_active() then v = "other" end
+    -- The confirmation opens before its button list exists (heard again in
+    -- the VM with the check above alone).
+    for _, cls in ipairs({ "WBP_PauseMenu_Confirms_C", "WBP_PauseMenu_C" }) do
+        for _, w in ipairs(FindAllOf(cls) or {}) do
+            if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+                v = "other"
+            end
+        end
+    end
     if v ~= candidate then
         candidate, candidate_polls = v, 1
         return
@@ -162,6 +175,13 @@ local function view_poll()
     if candidate_polls < 2 or v == stable_view then return end
     stable_view = v
     if v == "other" then return end
+    -- Not over one of the mod's own lists: "Ship view. Deck 2, Ruined room"
+    -- broke into the J room list (2026-10-14).
+    if require("ship").list_open() or require("resources").list_open() or require("view").nav_open()
+        or require("whatsnew").open() or require("hotkeys").open() then return end
+    -- Not while moving through the map: a tutorial closing made "System
+    -- map. Repair station, 3 of 12" repeat the point just heard (2026-10-14).
+    if v == "system" and os.clock() - (require("system").last_move or -100) < 2 then return end
     local here
     if v == "ship" then here = require("ship").where() or "No room selected"
     else here = require("system").where() or "Nothing selected" end

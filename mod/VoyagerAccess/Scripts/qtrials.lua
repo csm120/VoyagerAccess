@@ -319,7 +319,13 @@ local function setup_label(b, path)
         local desc = valid(picker) and text(picker.QChallengeDescr_TXT) or ""
         return { "Q Challenges: " .. name, desc }
     end
-    if path:find("%.ConfirmButton$") then return { "Start Game" } end
+    if path:find("%.ConfirmButton$") then
+        -- Disabled until the setup is complete (1 hero of 8 in the VM,
+        -- 2026-10-14); it was read as if it would start.
+        local okE, en = pcall(function() return b:GetIsEnabled() end)
+        if okE and en == false then return { "Start Game, not available yet" } end
+        return { "Start Game" }
+    end
     return { "Button" }
 end
 
@@ -417,9 +423,38 @@ end
 -- Enter on a hero: choose or remove them, and say which and the count.
 -- True when it handled the key.
 function M.enter(b, path)
-    if choice_kind(path) ~= "hero" then return false end
+    local kind = choice_kind(path)
+    -- A captain, Q Modifier or Q Challenges level: the list closes on the
+    -- click, and Casey heard nothing about the choice until he arrowed back
+    -- to it (2026-10-14). Say what was chosen, as heroes do.
+    if kind == "captain" or kind == "modifier" or kind == "challenge" then
+        local name = kind == "captain" and (valid(b.HeroPlaque) and text(b.HeroPlaque.HeroNameText) or "")
+            or text(b.Level_TXT)
+        -- Captain buttons have no IsLocked bool (it came back as an object
+        -- and every captain read "locked", VM 2026-10-14): only a real true.
+        local okL, locked = pcall(function() return b.IsLocked end)
+        if okL and locked == true then
+            speech.say(name .. " is locked", true)
+            return true
+        end
+        b:HandleButtonPressed()
+        b:HandleButtonReleased()
+        b:HandleButtonClicked()
+        local s = kind == "captain" and (name .. " is your captain")
+            or ((kind == "modifier" and "Q Modifier: " or "Q Challenges: ") .. name .. ", chosen")
+        ExecuteInGameThreadWithDelay(300, function()
+            pcall(function()
+                print("[VoyagerAccess] qtrials: " .. s .. "\n")
+                speech.say(s, true)
+            end)
+        end)
+        return true
+    end
+    if kind ~= "hero" then return false end
     local win = window_of_choice(b)
     local name = valid(b.HeroPlaque) and text(b.HeroPlaque.HeroNameText) or "Hero"
+    local okW, was_marked = pcall(function() return b.bIsMarked end)
+    was_marked = okW and was_marked == true
     b:HandleButtonPressed()
     b:HandleButtonReleased()
     b:HandleButtonClicked()
@@ -432,8 +467,69 @@ function M.enter(b, path)
             local n, max = counter_of(w)
             local s = name .. (marked and " chosen" or " not chosen")
             if n then s = s .. ", " .. n .. " of " .. max end
+            -- A full team ignores a new hero; "Maxwell Burke not chosen, 8
+            -- of 8" read like Enter not working (Casey, 2026-10-14).
+            if not marked and n and n >= max and not was_marked then
+                s = name .. " not chosen: the team is full, " .. n .. " of " .. max .. ". Enter on a chosen hero removes them"
+            end
             print("[VoyagerAccess] qtrials: " .. s .. "\n")
             speech.say(s, true)
+        end)
+    end)
+    return true
+end
+
+-- Up or Down onto a disabled item (Start Game before the setup is complete):
+-- the game never moves focus to a disabled button, so Down from Q
+-- Challenges did nothing (2026-10-14). The mod moves it. True when handled.
+function M.step(path, dir)
+    if not (path and M.handles(path)) then return false end
+    for i, p in ipairs(list) do
+        if p == path then
+            local t = list[i + dir] and StaticFindObject(list[i + dir])
+            local okE, en = pcall(function() return t:GetIsEnabled() end)
+            if valid(t) and okE and en == false then
+                t:SetFocus()
+                return true
+            end
+            return false
+        end
+    end
+    return false
+end
+
+-- Backspace in a selection list (captain, heroes, Q Modifier, Q Challenges):
+-- close it with its picker's CloseSelectionButton and focus the picker
+-- again. The picker counts as hidden while its list is open, so Backspace
+-- went on back to the main menu's NEW Q TRIAL behind the setup and the
+-- setup was lost (Casey, 2026-10-14). True when it handled the key.
+function M.back(path)
+    if not path then return false end
+    local b = StaticFindObject(path)
+    if not valid(b) then return false end
+    local win = nil
+    if M.is_confirm(path) then
+        win = StaticFindObject(path:match("^(.-WBP_Sandbox_Setup_HeroSelection_C_%d+)%."))
+    elseif choice_kind(path) then
+        win = window_of_choice(b)
+    end
+    if not valid(win) then return false end
+    -- The list's own CloseSelectionButton (its WidgetTree); the picker that
+    -- opened it is the list's outer's outer (VM, 2026-10-14).
+    local okC, close = pcall(function() return win.CloseSelectionButton end)
+    if not (okC and valid(close)) then return false end
+    local tree = win:GetOuter()
+    local picker = valid(tree) and tree:GetOuter() or nil
+    print("[VoyagerAccess] qtrials: closing the selection list\n")
+    close:HandleButtonPressed()
+    close:HandleButtonReleased()
+    close:HandleButtonClicked()
+    if not valid(picker) then return true end
+    local pp = path_of(picker)
+    ExecuteInGameThreadWithDelay(300, function()
+        pcall(function()
+            local np = StaticFindObject(pp)
+            if valid(np) and valid(np.OpenSelectionButton) then np.OpenSelectionButton:SetFocus() end
         end)
     end)
     return true

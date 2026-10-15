@@ -40,6 +40,8 @@ local NAV = {
     { "Sector map", "ShowSectorButton" }, { "Overview", "OverviewButton" },
     { "Research", "ResearchButton" }, { "Wait one cycle", "WaitOneCycleButton" },
     { "Incoming calls", "IncomingCallsButton" }, { "Sector switch", "SectorSwitchButton" },
+    -- Q Trials only: opens Leave Sector (missing from N, VM, 2026-10-14)
+    { "Leave sector", "SandboxExitSector" },
 }
 local nav_items, nav_index = nil, nil
 

@@ -16,6 +16,11 @@
 --     wording ("[Torpedo Launch Bay <ColorNegative>Lvl 1</>]").
 
 local M = {}
+local speech = require("speech")
+
+local function path_of(o)
+    return o:GetFullName():match("^%S+%s+(.+)$")
+end
 
 -- The option's own risk label (ESTVRiskType).
 local RISKS = { [0] = "No risk", [1] = "Low risk", [2] = "Medium risk", [3] = "High risk", [4] = "Extreme risk" }
@@ -33,19 +38,39 @@ local function text_of(w)
     return ok and s or ""
 end
 
+-- The button's own STVPOIEventOption (WBP_POISelectableOption.CurrentOption).
+-- Matching wording across every STVPOIEventOption asked options being torn
+-- down for their description: the game crashed or the mod stopped on a Q
+-- Trial's Repair Station, three times in four (VM, 2026-10-14).
 -- Wording without its bracketed requirement: the option's own text has an
 -- empty "[]" where the button shows "[Torpedo Launch Bay Lvl 1]".
 local function bare(s)
     return plain((s:gsub("%[[^%[%]]*%]", "")))
 end
 
--- The STVPOIEventOption whose wording matches the button's.
-local function option_for(wording)
+local has_current = nil   -- does the option button's class have CurrentOption
+local function option_for(b, wording)
+    if has_current == nil then
+        has_current = false
+        pcall(function()
+            b:GetClass():ForEachProperty(function(p)
+                if p:GetFName():ToString() == "CurrentOption" then has_current = true end
+            end)
+        end)
+    end
+    if has_current then
+        local ok, o = pcall(function() return b.CurrentOption end)
+        if ok and o and o:IsValid() then return o end
+        return nil
+    end
+    -- The demo's button has no CurrentOption (checked 2026-10-14), so there
+    -- the option is still matched by wording, as through the whole demo.
+    -- The full game always has the field and never scans.
     local want = bare(wording)
-    for _, o in ipairs(FindAllOf("STVPOIEventOption") or {}) do
-        if o:IsValid() and not o:GetFullName():find("Default__", 1, true) then
-            local ok, d = pcall(function() return o:GetOptionDescription():ToString() end)
-            if ok and bare(d) == want then return o end
+    for _, x in ipairs(FindAllOf("STVPOIEventOption") or {}) do
+        if x:IsValid() and not x:GetFullName():find("Default__", 1, true) then
+            local okd, d = pcall(function() return x:GetOptionDescription():ToString() end)
+            if okd and bare(d) == want then return x end
         end
     end
     return nil
@@ -132,8 +157,17 @@ local function rewards(b)
         b.MaxRewards:ForEach(function(_, e)
             local r = e:get()
             local amount = plain(text_of(r.RewardAmount_Text)):gsub("^%+", "")
-            local ok, icon = pcall(function() return r.Reward_Image.Brush.ResourceObject:GetFName():ToString() end)
-            local res = ok and icon:match("^MI_UI_(%a+)") or "resources"
+            -- Checked at each step: an unchecked brush read crashed the game
+            -- (access violation, pcall cannot catch it) on the Repair
+            -- Station's options in a Q Trial (VM, 2026-10-14).
+            local icon = nil
+            pcall(function()
+                local img = r.Reward_Image
+                if not (img and img:IsValid()) then return end
+                local ro = img.Brush.ResourceObject
+                if ro and ro:IsValid() then icon = ro:GetFName():ToString() end
+            end)
+            local res = icon and icon:match("^MI_UI_(%a+)") or "resources"
             if amount ~= "" then out[#out + 1] = "up to " .. amount .. " " .. res end
         end)
     end)
@@ -145,6 +179,96 @@ end
 local function unmet(b)
     local needs = text_of(b.ChoiceButton_Text):match("%[([^%[%]]-<ColorNegative>.-)%]")
     return needs and (plain(needs):gsub("Lvl", "level")) or nil
+end
+
+-- Heroes for an option (Q Trials points of interest, and wherever else an
+-- option has WBP_POIAssignableHero buttons). A sighted player hovers an
+-- option to open its row of portraits and clicks one, which carries the
+-- option out with that hero (VM, 2026-10-14: a click sent B'Elanna). The
+-- first button is "no hero". Left and Right choose one here; Enter on the
+-- option then clicks the chosen hero's button.
+local HERO_NAMES = { Char_Tom_Paris = "Tom Paris", Char_Neelix = "Neelix", Char_Carey = "Joe Carey",
+    Char_Marla_Gilmore = "Marla Gilmore", Char_Torres = "B'Elanna", Char_Janeway = "Kathryn Janeway",
+    Char_Kim = "Harry Kim", Char_Harry_Kim = "Harry Kim", Char_Doctor = "The Doctor", Char_The_Doctor = "The Doctor",
+    Char_Tuvok = "Tuvok", Char_Chakotay = "Chakotay", Char_Kes = "Kes" }
+local ATTR = nil
+local chosen = {}   -- option path -> index into its heroes (1 is no hero)
+
+local function attribute_of(o)
+    ATTR = ATTR or StaticFindObject("/Script/STVoyager.ESTVHeroAttribute")
+    local name = nil
+    pcall(function() name = ATTR:GetNameByValue(o.AssociatedAttribute):ToString():gsub("^ESTVHeroAttribute::", "") end)
+    return name
+end
+
+local function heroes_of(b)
+    local out = {}
+    pcall(function()
+        local used = b.NumUsedButtons or 0
+        b.HeroButtons:ForEach(function(i, e)
+            if #out >= used then return end
+            local h = e:get()
+            if not (h and h:IsValid()) then return end
+            local none = h.isNoHero == true
+            local id = ""
+            pcall(function() id = h.CurrentHeroId:ToString() end)
+            out[#out + 1] = { button = h, none = none,
+                name = none and "No hero" or (HERO_NAMES[id] or id:gsub("^Char_", ""):gsub("_", " ")),
+                value = text_of(h.AbilityValue_TXT):gsub("^0+(%d)", "%1"),
+                tired = h.isFatigued == true, usable = h.bHeroSelectable ~= false }
+        end)
+    end)
+    return out
+end
+
+local function hero_text(h, skill)
+    if h.none then return "No hero" end
+    local s = h.name .. ", " .. (skill or "skill") .. " " .. h.value
+    if h.tired then s = s .. ", fatigued" end
+    if not h.usable then s = s .. ", not available" end
+    return s
+end
+
+-- Left and Right on an option with heroes. True when it handled the key.
+function M.hero_step(path, dir)
+    local b = path and StaticFindObject(path)
+    if not (b and b:IsValid() and b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C") then return false end
+    local list = heroes_of(b)
+    if #list < 2 then return false end
+    local i = (chosen[path] or 1) + dir
+    if i < 1 then i = 1 elseif i > #list then i = #list end
+    chosen[path] = i
+    local o = option_for(b, text_of(b.ChoiceButton_Text))
+    speech.say(hero_text(list[i], o and attribute_of(o)) .. ", " .. i .. " of " .. #list, true)
+    return true
+end
+
+-- Enter on an option with a hero chosen: click that hero, which carries
+-- the option out with them. True when it handled the key.
+function M.enter(b, path)
+    local i = chosen[path]
+    if not (i and i > 1) then return false end
+    local h = heroes_of(b)[i]
+    if not (h and h.button:IsValid()) then return false end
+    if not h.usable then
+        speech.say(h.name .. " is not available for this", true)
+        return true
+    end
+    chosen[path] = nil
+    print("[VoyagerAccess] events: sending " .. h.name .. "\n")
+    h.button:HandleButtonPressed()
+    h.button:HandleButtonReleased()
+    h.button:HandleButtonClicked()
+    return true
+end
+
+-- An option that cannot be picked: a requirement not met, or disabled (a
+-- trade the ship cannot afford takes no focus and was never read, while the
+-- count said "1 of 4" and Down went to 4; Trading Station, VM, 2026-10-14).
+local function is_locked(row)
+    if unmet(row) then return true end
+    local ok, en = pcall(function() return row:GetIsEnabled() end)
+    return ok and en == false
 end
 
 -- "1 of 2" among the options that can be picked. Locked options take no
@@ -160,7 +284,7 @@ local function position(b)
         local row = list:GetChildAt(i)
         if row and row:IsValid() and row:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C"
             and screen.shown(row) then
-            if unmet(row) then
+            if is_locked(row) then
                 locked = locked + 1
             else
                 n = n + 1
@@ -176,26 +300,51 @@ end
 
 -- The spoken label for an option button. A locked option starts "Locked:".
 function M.option_label(b)
+    local crumb = require("crumb")
+    crumb.at("events: wording")
     local wording = text_of(b.ChoiceButton_Text)
+    crumb.at("events: unmet")
     local needs = unmet(b)
     local text = plain(wording:gsub("%s*%[[^%[%]]*%]%s*", " "))
-    local parts = { needs and ("Locked: " .. text) or text }
+    local parts = { is_locked(b) and ("Locked: " .. text) or text }
     if needs then parts[#parts + 1] = "Needs " .. needs end
+    -- A cost the ship cannot pay is shown in the negative color ("Pay
+    -- <ColorNegative>Tritanium 50</> to repair HULL"); it read like any
+    -- other cost (Repair Station, VM, 2026-10-14).
+    if not needs then
+        local short = wording:gsub("%[[^%[%]]*%]", ""):match("<ColorNegative>([^<]-)</>")
+        local res = short and plain(short):gsub("%s*[%d,]+$", "")
+        if res and res ~= "" then parts[#parts + 1] = "Not enough " .. res end
+    end
+    crumb.at("events: rewards")
     local r = rewards(b)
     if r ~= "" then parts[#parts + 1] = r:sub(1, 1):upper() .. r:sub(2) end
-    local o = option_for(wording)
+    crumb.at("events: option_for")
+    local o = option_for(b, wording)
     if o then
+        crumb.at("events: risk")
         local ok, risk = pcall(function() return o.Risk end)
         local ok2, leaving = pcall(function() return o.bLeaving end)
         if ok and RISKS[risk] and not (ok2 and leaving) then parts[#parts + 1] = RISKS[risk] end
     end
+    crumb.at("events: chances")
     local c = o and chances(o)
     if c then parts[#parts + 1] = c:sub(1, 1):upper() .. c:sub(2) end
+    crumb.at("events: room_names")
     local better = o and room_names(o) or {}
     if #better > 0 then parts[#parts + 1] = "Better with " .. table.concat(better, " or ") end
     -- Position among the event's options, so one option is not heard as
     -- running into the next ("Leave the storage alone..." is not "Leave for
     -- now"; Casey, 2026-10-11).
+    -- Heroes: the skill the option tests, and the way to choose one.
+    local heroes = heroes_of(b)
+    if #heroes > 1 then
+        local skill = o and attribute_of(o)
+        local i = chosen[path_of(b)] or 1
+        local h = (i > 1 and heroes[i]) and ("Hero: " .. heroes[i].name) or "Left and Right choose a hero"
+        parts[#parts + 1] = (skill and (skill .. " task. ") or "") .. h
+    end
+    crumb.at("events: position")
     local pos = position(b)
     if pos then parts[#parts + 1] = pos end
     for i, s in ipairs(parts) do parts[i] = s:gsub("%.$", "") end
@@ -208,7 +357,7 @@ function M.locked_summary()
     local out = {}
     for _, w in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
         local p = w:IsValid() and w:GetFullName():match("^%S+%s+(.+)$")
-        if p and p:find("^/Engine/Transient%.") and screen.shown(w) and unmet(w) then
+        if p and p:find("^/Engine/Transient%.") and screen.shown(w) and is_locked(w) then
             out[#out + 1] = M.option_label(w)
         end
     end

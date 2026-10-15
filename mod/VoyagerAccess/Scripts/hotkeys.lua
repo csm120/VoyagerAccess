@@ -51,6 +51,11 @@ local GROUPS = {
         "Enter: Scan and Set course. Backspace closes that list",
         "L: adds the trip's progress while Voyager is under way",
     } },
+    { "Events at a point of interest", {
+        "Up and Down: the options. R reads the locked ones",
+        "Left and Right: choose a hero, where the option can take one",
+        "Enter: pick the option, with the hero you chose",
+    } },
     { "Tech tree", {
         "Up and Down: tiers, then technologies. Left and Right: switch category",
         "Enter: open the item's panel. Enter again begins the research. Escape closes the panel, then the tree",

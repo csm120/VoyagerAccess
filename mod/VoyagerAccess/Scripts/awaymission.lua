@@ -535,16 +535,19 @@ local function item_label(it)
         -- happened (2026-10-11). So say who it confirms, or that a hero must
         -- be picked for this choice first.
         if not is_active(c) then return "Lock In: select a hero for this choice first." end
-        local who = nil
+        -- Several heroes can go together; only the last was named (2026-10-14:
+        -- "Confirm with Tom Paris" sent Harry Kim too).
+        local who = {}
         for _, o in ipairs(mission_items or {}) do
             if o.kind == "hero" and o.choice == it.choice then
                 local h = StaticFindObject(o.hero)
                 local sel = h and h:IsValid() and h.SelectedStateWidget
-                if sel and sel:IsValid() and screen.shown(sel) then who = o.name end
+                if sel and sel:IsValid() and screen.shown(sel) then who[#who + 1] = o.name end
             end
         end
-        if not who then return "Lock In: select a hero for this choice first." end
-        return "Confirm with " .. who .. "."
+        if #who == 0 then return "Lock In: select a hero for this choice first." end
+        local names = #who == 1 and who[1] or (table.concat(who, ", ", 1, #who - 1) .. " and " .. who[#who])
+        return "Confirm with " .. names .. "."
     end
 end
 

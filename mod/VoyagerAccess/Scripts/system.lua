@@ -78,7 +78,13 @@ local function name_of(actor)
     if NAMES[cls] then return NAMES[cls] end
     local class = cls:match("^BP_STVPlanet_Class(%w+)_C$")
     if class then return "Class " .. class .. " planet" end
-    return (cls:gsub("^BP_", ""):gsub("_C$", ""):gsub("_", " "))
+    -- Unknown classes: "BP_CustomPOILocation_RepairStation_C" was read as
+    -- "CustomPOILocation RepairStation" (Q Trial, VM, 2026-10-14); now
+    -- "Repair station".
+    local s = cls:gsub("^BP_", ""):gsub("_C$", ""):gsub("^STV", ""):gsub("^CustomPOILocation_", "")
+        :gsub("^Generic", ""):gsub("_", " "):gsub("(%l)(%u)", "%1 %2")
+    s = s:sub(1, 1) .. s:sub(2):lower()
+    return s
 end
 
 -- Scanned or not: the actor's IsEventExplored (proven 2026-10-10: true for
@@ -135,7 +141,10 @@ local function points()
                 -- The Sector Map lists star systems, the System Map the
                 -- rest (2026-10-14).
                 local want = (cls == "BP_STVSolarSystem_C") == M.sector()
-                if cls ~= "BP_SectorVoyager_C" and want then
+                -- Voyager herself; in Q Trials her class is
+                -- BP_SectorVoyager_Sandbox_C, listed as "SectorVoyager
+                -- Sandbox, scanned" (VM, 2026-10-14).
+                if not cls:find("^BP_SectorVoyager") and want then
                     local loc = a:K2_GetActorLocation()
                     local d = from and math.sqrt((loc.X - from.X) ^ 2 + (loc.Y - from.Y) ^ 2) or 0
                     list[#list + 1] = { poi = c, actor = a, path = path_of(a), dist = d }
@@ -229,8 +238,10 @@ local function select(list, i, prefix)
     if pw then pcall(function() pw:SetFocusPoint(p.actor) end) end
 end
 
+M.last_move = -100   -- os.clock() of the last Up or Down on the map (help.lua)
 function M.step(dir)
     crumb.at("system: step")
+    M.last_move = os.clock()
     local list = points()
     if #list == 0 then
         speech.say("No points of interest", true)
@@ -331,15 +342,19 @@ local function watch_arrival(name, target, start_d)
         if last and math.abs(d - last) <= 5 then still = still + 1 else still = 0 end
         last = d
         travel.d, travel.still = d, still
+        -- A battle that interrupts the trip: "Halfway to" and "Arrived at"
+        -- were said over the battle setup (Q Trial, VM, 2026-10-14).
+        local okb, battle = pcall(function() return require("combat").active() end)
+        battle = okb and battle
         if still >= 2 and (not start_d or d <= start_d * 0.9) then
             travel = nil
-            print("[VoyagerAccess] course: arrived at " .. name .. "\n")
-            speech.say("Arrived at " .. name, false)
+            print("[VoyagerAccess] course: arrived at " .. name .. (battle and " (in battle, not said)" or "") .. "\n")
+            if not battle then speech.say("Arrived at " .. name, false) end
             return
         end
         if start_d and start_d > 0 and not halfway and d <= start_d / 2 then
             halfway = true
-            speech.say("Halfway to " .. name, false)
+            if not battle then speech.say("Halfway to " .. name, false) end
         end
         left = left - 1
         if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
@@ -442,10 +457,14 @@ local function run(action, p)
     print("[VoyagerAccess] system: " .. action:lower() .. " " .. name .. "\n")
     if action == "Scan" then
         if explored(p.actor) then
-            speech.say(name .. " is already scanned: " .. status(p), true)
+            -- With no resources, status is just "scanned": "Caretaker's
+            -- array is already scanned: scanned" (2026-10-14).
+            local s = status(p)
+            speech.say(name .. " is already scanned" .. (s ~= "scanned" and (": " .. s) or ""), true)
             return
         end
         speech.say("Scanning " .. name, true)
+        require("popups").reread_for("POIDetailView")
         pw:TryToScanPOI(p.poi)
         -- The result shows at once (Ship revealed Deuterium within a second).
         -- Look the point up again by path: objects are never kept across
@@ -458,7 +477,10 @@ local function run(action, p)
                 if not q then return end
                 if explored(q.actor) then
                     local res = resources(q.poi)
-                    speech.say(res ~= "" and ("Found " .. res) or "Scan complete, nothing found", false)
+                    -- The full game's event IDs are not ResourceEvent_Generated_*,
+                    -- so "nothing found" followed a panel listing Tritanium
+                    -- (Q Trial, VM, 2026-10-14); the panel says what was found.
+                    speech.say(res ~= "" and ("Found " .. res) or "Scan complete", false)
                 else
                     speech.say("The scan did not finish", false)
                 end

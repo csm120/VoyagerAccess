@@ -82,6 +82,9 @@ local WATCH = {
     -- A ship room's action ring: its centre says what the room is
     -- (2026-10-14; focus.lua names the segments)
     "WBP_RadialMenu_C",
+    -- Leave Sector: choose the next sector (first met in a Q Trial, VM,
+    -- 2026-10-14); its entries are read by M.leave_sector_entry
+    "WBP_LeaveSector_C",
 }
 
 -- Text widget classes, listed separately in case FindAllOf does not
@@ -97,8 +100,25 @@ local TEXT_CLASSES = { "TextBlock", "CommonTextBlock", "RichTextBlock",
 local NOISE = { CLOSE = true, TUTORIAL = true, ["ENTER SHIP"] = true }
 
 local announced = {}   -- path -> true while it stays on screen
+local last_text = {}   -- path -> text last read, for windows read again on change
 
 -- True once the window at path has been read (focus.lua's window list).
+-- For a few seconds, read the windows whose path contains needle again when
+-- their text changes. A second scan reuses the open POIDetailView, so the
+-- new planet's event and its item rewards were never read, only the rewards
+-- as buttons (Casey, "Kazon Security Codes", 2026-10-14). system.lua calls
+-- this on Scan.
+local reread_until = {}   -- needle -> os.time() until which it is re-read
+function M.reread_for(needle, seconds)
+    reread_until[needle] = os.time() + (seconds or 4)
+end
+local function rereading(p)
+    for needle, t in pairs(reread_until) do
+        if os.time() <= t and p:find(needle, 1, true) then return true end
+    end
+    return false
+end
+
 function M.was_announced(path)
     return announced[path] == true
 end
@@ -174,8 +194,14 @@ local function poi_detail(parts)
         -- The system is named by a number such as "7,104.0"; the ".0" adds nothing.
         -- It is a name, so it is said the way a Starfleet officer would:
         -- digit by digit with zero as "oh", "7 1 oh 4" (Casey, 2026-10-11).
-        local system = by.SystemNameTextBlock and by.SystemNameTextBlock:gsub("%.0$", ""):gsub(",", "")
-            :gsub("%d", "%0 "):gsub("0 ", "oh "):gsub(" $", "")
+        -- The full game adds a name after the number ("112.0 Vidiian System"),
+        -- which came out "1 1 2 .oh  Vidiian System" (2026-10-14): only the
+        -- number is said digit by digit, then the name.
+        local raw = by.SystemNameTextBlock
+        local num, rest = nil, nil
+        if raw then num, rest = raw:gsub(",", ""):match("^(%d+)%.?%d*%s*(.-)%s*$") end
+        local system = num and (num:gsub("%d", "%0 "):gsub("0 ", "oh "):gsub(" $", "")
+            .. (rest ~= "" and (", " .. rest) or "")) or raw
         if system then place = place .. ", in system " .. system end
         out[#out + 1] = place
     end
@@ -197,13 +223,26 @@ end
 -- read one at a time as focus moves (events.lua).
 -- The resources named by the reward icons under path, in order
 -- ("MI_UI_Duranium_WhiteNoBG" -> Duranium).
+-- An image's brush asset name, or nil. Every step is checked: an unchecked
+-- brush read is an access violation that pcall cannot catch (it crashed the
+-- game on a Q Trial's Repair Station in events.lua, 2026-10-14).
+local function icon_name(img)
+    local name = nil
+    pcall(function()
+        if not (img and img:IsValid()) then return end
+        local ro = img.Brush.ResourceObject
+        if ro and ro:IsValid() then name = ro:GetFName():ToString() end
+    end)
+    return name
+end
+
 local function reward_resources(path)
     local out = {}
     for _, r in ipairs(FindAllOf("WBP_PoIMultipleChoice_Reward_C") or {}) do
         local rp = r:IsValid() and path_of(r)
         if rp and rp:sub(1, #path + 1) == path .. "." and screen.shown(r) then
-            local ok, icon = pcall(function() return r.Reward_Image.Brush.ResourceObject:GetFName():ToString() end)
-            out[#out + 1] = ok and icon:match("^MI_UI_(%a+)") or "resources"
+            local icon = icon_name(r.Reward_Image)
+            out[#out + 1] = icon and icon:match("^MI_UI_(%a+)") or "resources"
         end
     end
     return out
@@ -233,8 +272,8 @@ local function poi_result(parts, by, path)
             local line = txt(r.RewardDistribution_Text)
             local waste = ""
             pcall(function() if screen.shown(r.WasteAmount_Text) then waste = txt(r.WasteAmount_Text):gsub("^%-", "") end end)
-            local ok, icon = pcall(function() return r.Reward_Image.Brush.ResourceObject:GetFName():ToString() end)
-            local res = (ok and icon and icon:match("^MI_UI_(%a+)")) or "resources"
+            local icon = icon_name(r.Reward_Image)
+            local res = (icon and icon:match("^MI_UI_(%a+)")) or "resources"
             res = res:gsub("(%l)(%u)", "%1 %2"):lower()
             local stored = line:find("in total stored", 1, true) ~= nil
             local text
@@ -248,6 +287,17 @@ local function poi_result(parts, by, path)
     end
     table.sort(rows, function(a, b) return (not a.last) and b.last end)
     for _, r in ipairs(rows) do out[#out + 1] = r.text end
+    -- Consequences in their own rich text lines ("FOOD +200", "5 CREW got
+    -- Severely injured"), which were never read (Planet of Plenty, Q
+    -- Trial, VM, 2026-10-14). Unfilled templates ("{TechName} unlocked")
+    -- are skipped.
+    local said = {}
+    for _, p in ipairs(parts) do
+        if p.name == "CommonRichTextBlock" and not p.text:find("{", 1, true) and not said[p.text] then
+            said[p.text] = true
+            out[#out + 1] = p.text
+        end
+    end
     for k, s in ipairs(out) do out[k] = s:gsub("%.%s*$", ""):gsub("%s+,", ","):gsub("  +", " ") end
     return table.concat(out, ". ") .. "."
 end
@@ -469,7 +519,9 @@ local TUTORIAL_KEYS = {
     ["Scan"] = "on the System Map, choose a point with Up and Down, press Enter, then Enter on Scan",
     ["System Map Navigation"] = "V switches between the ship and the System Map; on the map, Up and Down move through the points and Enter opens Scan and Set course",
     ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero",
-    ["Warp Core"] = "open Main Engineering with Enter, press Right to reach the Warp Core tab, then Up and Down choose the tier",
+    -- The full game opens the room on its Warp Core tab; the demo on the
+    -- first tab (2026-10-14), so the tab is named, not counted.
+    ["Warp Core"] = "open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it",
     ["Fatigue"] = "a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes",
 }
 
@@ -620,7 +672,9 @@ local function multiple_choice(parts, path)
             for _, t in ipairs(FindAllOf("RichTextBlock") or {}) do
                 local tp = t:IsValid() and path_of(t)
                 if tp and tp:sub(1, #bp) == bp and screen.shown(t) then
-                    local s = plain(text_of(t)):gsub("%s+([%.,])", "%1")
+                    -- text_of does not exist here; this failed every poll and
+                    -- the offer's message was never read (Q Trial, VM, 2026-10-14).
+                    local s = text_of_widget(t):gsub("%s+([%.,])", "%1")
                     if s ~= "" then out[#out + 1] = "Not available: " .. s end
                 end
             end
@@ -668,7 +722,61 @@ local function without_buttons(parts, path)
     return #out > 0 and (table.concat(out, ". ") .. ".") or ""
 end
 
-local LAYOUTS = { WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
+-- Leave Sector: "Leave Sector: Vidiian Sector. Choose next sector. 70,000
+-- light years to home. Earth distance remaining 64,000 of 70,000 light
+-- years." The entries are the focusable list (M.leave_sector_entry).
+local function leave_sector(parts)
+    local by = {}
+    for _, p in ipairs(parts) do
+        if not p.path:find("WBP_LeaveSectorEntry_C", 1, true) and not by[p.name] then by[p.name] = p.text end
+    end
+    local out = {}
+    out[#out + 1] = (by.HeaderTextBlock or "Leave Sector") .. (by.SectorName and (": " .. by.SectorName) or "")
+    if by.TextBlock then out[#out + 1] = by.TextBlock end
+    if by.RemainingDistance_TXT_1 then out[#out + 1] = by.RemainingDistance_TXT_1 end
+    if by.RemainingDistance_TXT then
+        local total = (by.InitialDistance_TXT or ""):gsub("^%s*/%s*", "")
+        out[#out + 1] = "Earth distance remaining " .. by.RemainingDistance_TXT .. (total ~= "" and (" of " .. total) or "")
+    end
+    for i, s in ipairs(out) do out[i] = s:gsub("%.$", ""):gsub("(%d) ly", "%1 light years"):gsub("(%d) LY", "%1 light years") end
+    return table.concat(out, ". ") .. "."
+end
+
+-- One sector to go to: "Sector 01: Trading Sector. 6,000 light years.
+-- Costs 72 Tritanium, not enough." Its entry read "72, Select, Travel
+-- cost, Travel Distance, Sector 01" (VM, 2026-10-14).
+function M.leave_sector_entry(e)
+    local function t(w) return text_of_widget(w) end
+    local out = {}
+    local num, name = t(e.SectorNumber_TXT), t(e.SectorName_TextBlock)
+    if name == "" then name = t(e.SectorName_TextBlock_1) end
+    out[#out + 1] = (num ~= "" and num or "Sector") .. (name ~= "" and (": " .. name) or "")
+    local dist = t(e.DistanceTravelled_TextBlock):gsub("%s*[lL][yY]$", " light years")
+    if dist ~= "" then out[#out + 1] = dist end
+    local costs = {}
+    local prefix = path_of(e) .. "."
+    for _, c in ipairs(FindAllOf("WBP_CombatAllyCost_SingleResource_C") or {}) do
+        local cp = c:IsValid() and path_of(c)
+        if cp and cp:sub(1, #prefix) == prefix and screen.shown(c) then
+            local icon = icon_name(c.ResourceImage)
+            local res = icon and icon:match("^MI_UI_(%a+)") or "resources"
+            costs[#costs + 1] = t(c.ResourceAmount) .. " " .. res
+        end
+    end
+    local none = t(e.NoCosts_TXT)
+    if #costs > 0 then
+        local affordable = true
+        pcall(function() affordable = e.Affordable ~= false end)
+        out[#out + 1] = "Costs " .. table.concat(costs, ", ") .. (affordable and "" or ", not enough")
+    elseif none ~= "" then
+        out[#out + 1] = none
+    end
+    if screen.shown(e.Locked_IMG) then out[#out + 1] = "Locked" end
+    for i, s in ipairs(out) do out[i] = s:gsub("%.$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
+local LAYOUTS = { WBP_LeaveSector_C = leave_sector, WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
     -- Heading, then the question, then the rest: creation order put "Are
     -- you sure?" last on the second opening (2026-10-14).
@@ -743,8 +851,12 @@ end
 -- Watched widgets on screen now, outermost first, nested ones dropped.
 local function on_screen()
     local found, order = {}, {}
+    -- The Q Trials setup stays alive and "shown" behind a started trial:
+    -- its 30 buttons became a list read over the loading screen and the
+    -- game (Casey, 2026-10-14). With the game's HUD up it is not a window.
+    local in_game = shown_widget("WBP_HUD_C") or shown_widget("WBP_Loading_Screen_C")
     for i, cls in ipairs(WATCH) do
-        for _, w in ipairs(FindAllOf(cls) or {}) do
+        for _, w in ipairs((not (in_game and cls == "WBP_Sandbox_Setup_C")) and FindAllOf(cls) or {}) do
             if w:IsValid() then
                 local p = path_of(w)
                 if p and p:find("^/Engine/Transient%.") and screen.shown(w) then
@@ -824,7 +936,6 @@ local function load_announced()
     f:close()
 end
 
-local last_text = {}   -- path -> text last read, for windows read again on change
 local settle = {}      -- path -> { text, at }: a window read once it stops changing
 
 local function poll()
@@ -844,7 +955,7 @@ local function poll()
         -- complete" was read, 2026-10-14).
         local reread = announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
             or p:find("WBP_OverviewInfoWidget_C", 1, true) or p:find("WBP_AwayMissionOutcome", 1, true)
-            or p:find("WBP_Sandbox_Setup_C", 1, true))
+            or p:find("WBP_Sandbox_Setup_C", 1, true) or rereading(p))
         if not announced[p] or reread then
             crumb.at("popups: read " .. p)
             local text = M.text_under(p)
@@ -854,6 +965,15 @@ local function poll()
                 and os.clock() < (require("focus").quiet_start_warning_until or 0)
             -- The warning's buttons came first ("Continue. Return.
             -- Warning..."); they are in the button list, so leave them out.
+            -- Battle toasts name a ship's side as the screen draws it
+            -- ("Voyager Shield Down: Right"); L says bow, aft, port and
+            -- starboard, so the toasts do too (VM, 2026-10-14).
+            if p:find("Toast_Notification", 1, true) then
+                local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
+                text = text:gsub(":%s*(%a+)(%.?)$", function(w, dot)
+                    return SIDES[w] and (": " .. SIDES[w] .. dot) or nil
+                end)
+            end
             if p:find("FewerHeroesConfirmWidget", 1, true) then
                 text = text:gsub("^Continue%. Return%. ", ""):gsub("^Return%. Continue%. ", "")
             end
@@ -886,7 +1006,11 @@ local function poll()
                     or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
                     or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
                     or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
-                    or p:find("WBP_Sandbox_Setup_C", 1, true))
+                    or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true))
+                -- An event's result replaces its options in the same window:
+                -- "CONTINUE" came before "Trading Station. We accepted their
+                -- trade offer" (VM, 2026-10-14).
+                    or (announced[p] and last_text[p] ~= nil and p:find("WBP_POIMultipleChoice_C", 1, true) ~= nil)
                 speech.say_long(text, first_event and true or nil)
                 -- An offer that opened over the construction ring left focus
                 -- on the ring behind it, and its options could not be reached

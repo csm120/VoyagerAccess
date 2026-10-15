@@ -15,6 +15,7 @@ local INTERVAL_MS = 100
 local current = nil          -- path of the focused button
 local ticks, focus_tick = 0, -100   -- focus polls so far, and the poll choices appeared
 local arrow_tick = -100              -- the poll the game was last given Up or Down
+local go_in_until = -100             -- polls until which a crossing in the main menu is allowed (Enter, Right, Left, Backspace, Escape)
 -- Paths of buttons Enter was pressed on, oldest first; Backspace returns to them.
 local back_stack = {}
 local pending_click = nil    -- { button = path, menu = path, polls = n }
@@ -458,7 +459,11 @@ local function say_virtual()
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
     local label = label_for(b, virtual.buttons[virtual.index]) or "Button"
-    label = string.format("%s, %d of %d", label:gsub("%.$", ""), virtual.index, #virtual.buttons)
+    -- An event option already says its place ("1 of 2, 2 locked, 1 of 2",
+    -- VM, 2026-10-14).
+    if not label:find("%d+ of %d+") then
+        label = string.format("%s, %d of %d", label:gsub("%.$", ""), virtual.index, #virtual.buttons)
+    end
     print("[VoyagerAccess] window button: " .. label .. "\n")
     speech.say(label, false)
 end
@@ -613,8 +618,10 @@ local function track_unfocused_window()
         -- button waits until popups.lua has read the message (it came first,
         -- "BACK, 1 of 2" before "Exit to Main Menu", 2026-10-14), and is said
         -- by the check above once it has.
-        local says_own = first:find(PAUSE_CONFIRM, 1, true) or first:find("WBP_Sandbox_Setup_C", 1, true)
-        if not says_own or require("popups").was_announced(first) then say_virtual()
+        -- Every window now: a side mission offer said "Acknowledged, 1 of 1"
+        -- before its message (Q Trial, VM, 2026-10-14). popups.lua marks
+        -- every open window on its first pass, so this never waits for long.
+        if require("popups").was_announced(first) then say_virtual()
         else virtual.unsaid = true end
     end
 end
@@ -731,6 +738,8 @@ label_for = function(b, path)
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
         label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
+    elseif cls == "WBP_LeaveSectorEntry_C" then
+        label = require("popups").leave_sector_entry(b)
     elseif cls == "WBP_RadialButton_C" then
         -- Said after the hover, with the centre's details (radial_focus);
         -- the cached text here was said a second time (2026-10-14).
@@ -873,9 +882,30 @@ local function poll()
     -- went out to EXIT (demo and full game, 2026-10-14). Navigation rules
     -- were ignored, so focus is taken back: Up and Down never cross between
     -- the main menu and its panel. Enter and Right still go in.
-    local MAIN = "WBP_MainMenu_C_%d+%.WidgetTree_%d+%.[%w_]+$"
-    if path and current and ticks - arrow_tick <= 2 and resolve(current)
-            and (current:find(MAIN) ~= nil) ~= (path:find(MAIN) ~= nil)
+    -- The part of the main menu a button belongs to. Campaign and Q Trials
+    -- profiles sit straight in the menu's own tree like its buttons, so Down
+    -- from EXIT went into "Q Trial 01" and on to the DLC tiles (Casey,
+    -- 2026-10-14); they are a part of their own.
+    local function zone(p)
+        local first = p:match("WBP_MainMenu_C_%d+%.WidgetTree_%d+%.([%w_]+)")
+        if not first then return "outside" end
+        -- Only in the full game: the demo's profiles are the top of the
+        -- main menu itself (Down stopped at Profile 3, VM, 2026-10-14).
+        if first:find("^WBP_Button_SaveProfile_C") then
+            local tree = p:match("^(.-WBP_MainMenu_C_%d+%.WidgetTree_%d+)%.")
+            if tree and resolve(tree .. ".CampaignButton") then return "profiles" end
+        end
+        if p:find("WBP_MainMenu_C_%d+%.WidgetTree_%d+%.[%w_]+$") then return "main" end
+        return first
+    end
+    -- The game can move focus on Down before the mod reads that Down from
+    -- keys.txt, so a crossing did not look like an arrow (1 run in 3 in the
+    -- VM, 2026-10-14). Inside the menu's own tree a crossing is allowed only
+    -- just after Enter, Right, Left, Backspace or Escape.
+    local inside = zone(current or "") ~= "outside" and zone(path or "") ~= "outside"
+    local by_arrow = ticks - arrow_tick <= 2 or (inside and ticks > go_in_until)
+    if path and current and by_arrow and resolve(current)
+            and zone(current) ~= zone(path)
             and (current:find("WBP_MainMenu", 1, true) or current:find("LCARS_Button_MainMenu", 1, true)) then
         print("[VoyagerAccess] focus: arrow left the menu, staying\n")
         resolve(current):SetFocus()
@@ -1161,6 +1191,44 @@ local function activate()
     else
         -- A Q Trials hero is chosen or removed with its own announcement.
         if require("qtrials").enter(b, current) then return end
+        -- An event option with a hero chosen (Left and Right).
+        if require("events").enter(b, current) then return end
+        -- A locked sector in Leave Sector: holding it did nothing but say
+        -- "Holding" (VM, 2026-10-14). Say why instead.
+        if b:GetClass():GetFName():ToString() == "WBP_LeaveSectorEntry_C" then
+            local okl, locked = pcall(function() return require("screen").shown(b.Locked_IMG) or b.Affordable == false end)
+            if okl and locked then
+                speech.say("Cannot leave for this sector yet. " .. require("popups").leave_sector_entry(b), true)
+                return
+            end
+        end
+        -- Main menu DLC tiles (WBP_Button_Entitlement_C) are cards: an owned
+        -- one does nothing on a click, and its description and new content
+        -- are rich text, which the focus label skips. Casey: "none of the
+        -- dlc menu items work when pressing enter" (2026-10-14). Enter reads
+        -- the card; one not installed is also clicked (Visit Store Page).
+        if b:GetClass():GetFName():ToString() == "WBP_Button_Entitlement_C" then
+            local function plain(x)
+                local ok, s = pcall(function() return x:GetText():ToString() end)
+                if not ok or not s then return "" end
+                return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+            end
+            local parts = { plain(b.DLCTitleText), plain(b.DLCEntitlementState), plain(b.DLCDescription) }
+            pcall(function()
+                local box = b.FeatureItemParent
+                for i = 0, box:GetChildrenCount() - 1 do
+                    local f = box:GetChildAt(i)
+                    if f and f:IsValid() and require("screen").shown(f) then parts[#parts + 1] = plain(f.Text) end
+                end
+            end)
+            local said = {}
+            for _, p in ipairs(parts) do
+                if p ~= "" then said[#said + 1] = p:gsub("[%.%s]+$", "") .. "." end
+            end
+            speech.say(table.concat(said, " "), true)
+            if plain(b.DLCEntitlementState) ~= "Installed" then click(b) end
+            return
+        end
         local before = label_for(b, current)
         local path = current
         -- A hold button (Custom difficulty's Start Game, bRequiresHold)
@@ -1217,7 +1285,9 @@ local function activate()
                 end)
                 if not done and tries > 1 then ExecuteInGameThreadWithDelay(200, function() dismiss(tries - 1) end) end
             end
-            ExecuteInGameThreadWithDelay(150, function() dismiss(5) end)
+            -- About 2 s: in battle setup the warning once came after the
+            -- old 1 s of tries and stayed up (Q Trial, VM, 2026-10-14).
+            ExecuteInGameThreadWithDelay(150, function() dismiss(10) end)
         end
         -- The power button's text changed later than 400 ms (Switch Off on
         -- Life Support, 2026-10-11), so check every 300 ms for 2.4 s.
@@ -1259,9 +1329,15 @@ end
 -- has no keyboard Back of its own (Escape does not close the save panel).
 local function go_back()
     crumb.at("key: backspace")
+    if require("qtrials").back(current) then return end
     while #back_stack > 0 do
         local path = table.remove(back_stack)
         local b = path ~= current and resolve(path) or nil
+        -- Never back into the main menu behind the Q Trials setup: focus
+        -- went to NEW Q TRIAL under it (2026-10-14). Escape leaves the setup.
+        if b and current and current:find("WBP_Sandbox_Setup_C_", 1, true) and path:find("WBP_MainMenu_C_", 1, true) then
+            b = nil
+        end
         if b and b:IsVisible() then
             print("[VoyagerAccess] back: " .. path .. "\n")
             b:SetFocus()
@@ -1290,6 +1366,27 @@ local function go_back()
                 return
             end
         end
+    end
+    -- In the main menu's DLC panel, close it as Escape does (its back
+    -- button) and return to the DLC button ("Nothing to go back to",
+    -- Casey, 2026-10-14).
+    if current and current:find("%.DLCContentPanel%.") then
+        local menu_path = current:match("^(.-WBP_MainMenu_C_%d+)")
+        local panel = resolve(current:match("^(.-%.DLCContentPanel)"))
+        print("[VoyagerAccess] back: closing the DLC panel\n")
+        if panel and panel.CloseButton and panel.CloseButton:IsValid() then click(panel.CloseButton) end
+        ExecuteInGameThreadWithDelay(300, function()
+            pcall(function()
+                if current and not current:find("%.DLCContentPanel%.") and resolve(current) then return end
+                local b = nil
+                for _, x in ipairs(FindAllOf("CommonButtonBase") or {}) do
+                    local p = x:IsValid() and live(x) and path_of(x)
+                    if p and menu_path and p:sub(1, #menu_path) == menu_path and p:find("%.DLCButton$") then b = x end
+                end
+                if b then b:SetFocus() end
+            end)
+        end)
+        return
     end
     speech.say("Nothing to go back to", true)
 end
@@ -1343,6 +1440,7 @@ function M.current_label()
         local vb = resolve(virtual.buttons[virtual.index])
         local ok, l = pcall(label_for, vb, virtual.buttons[virtual.index])
         if ok and l then
+            if l:find("%d+ of %d+") then return l end
             return string.format("%s, %d of %d", (l:gsub("%.$", "")), virtual.index, #virtual.buttons)
         end
     end
@@ -1385,6 +1483,7 @@ function M.install()
     -- walks them (awaymission.lua).
     local away = require("awaymission")
     keys.on("enter", function()
+        go_in_until = ticks + 30   -- a panel animates open first
         if require("popups").close_tutorial() then return end
         if require("whatsnew").open() then return require("whatsnew").close() end
         if require("hotkeys").open() then return require("hotkeys").repeat_item() end
@@ -1405,8 +1504,10 @@ function M.install()
         activate()
     end)
     keys.on("backspace", function()
+        go_in_until = ticks + 5
         if require("whatsnew").close() then return end
         if require("hotkeys").close() then return end
+        if require("credits").close() then return end
         if ship.list_close() then return end
         if require("resources").close() then return end
         if require("view").nav_close() then return end
@@ -1436,6 +1537,7 @@ function M.install()
         ExecuteInGameThreadWithDelay(100, function() pcall(check) end)
     end
     keys.on("escape", function()
+        go_in_until = ticks + 5
         local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
             or require("view").nav_close() or (map_mode() and system.menu_close())
         if closed then undo_pause() end
@@ -1443,6 +1545,7 @@ function M.install()
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
+        if require("qtrials").step(current, -1) then return end
         if require("whatsnew").open() then require("whatsnew").step(-1)
         elseif require("hotkeys").open() then require("hotkeys").step(-1)
         elseif require("credits").open() then require("credits").step(-1)
@@ -1458,6 +1561,7 @@ function M.install()
         else last_dir = -1 arrow_tick = ticks end
     end)
     keys.on("down", function()
+        if require("qtrials").step(current, 1) then return end
         if require("whatsnew").open() then require("whatsnew").step(1)
         elseif require("hotkeys").open() then require("hotkeys").step(1)
         elseif require("credits").open() then require("credits").step(1)
@@ -1474,14 +1578,18 @@ function M.install()
     end)
     local rooms = require("rooms")
     keys.on("left", function()
+        go_in_until = ticks + 5
         if require("qtrials").switch_ship(current, -1) then return end
+        if require("events").hero_step(current, -1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(-1) end
         if require("view").overview_tab(-1) then return end
         if rooms.window_open() then rooms.switch_tab(-1)
         elseif ship_mode() then ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
+        go_in_until = ticks + 5
         if require("qtrials").switch_ship(current, 1) then return end
+        if require("events").hero_step(current, 1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(1) end
         if require("view").overview_tab(1) then return end
         if rooms.window_open() then rooms.switch_tab(1)

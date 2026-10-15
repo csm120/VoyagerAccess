@@ -17,7 +17,29 @@ local function run()
     -- no command runs within 10 seconds of a key press in the game (five
     -- minutes at first; Casey asked for it shorter).
     -- A plain reload of the mod is allowed: it ran safely many times that day.
+    -- Except with a window or one of the mod's lists open: that stopped the
+    -- mod's Lua with a room window (three times), the Construction Report,
+    -- and the credits list on Casey's machine (2026-10-14). The check lives
+    -- here so every reload path meets it; "RELOAD FORCE" skips it.
     if code:match("^%s*RELOAD%s*$") then
+        local why = nil
+        pcall(function()
+            for _, p in ipairs(require("popups").open_windows()) do
+                if not p:find("WBP_PoiEventWidget_C", 1, true) then why = p:match("([%w_]+)$") end
+            end
+            if require("credits").open() then why = "credits list" end
+            if require("ship").list_open() then why = "room list" end
+            if require("resources").list_open() then why = "resources list" end
+            if require("view").nav_open() then why = "navigation list" end
+            if require("whatsnew").open() then why = "what's new list" end
+            if require("hotkeys").open() then why = "key list" end
+        end)
+        if why then
+            print("[VoyagerAccess] cmd reload refused: " .. why .. " is open\n")
+            return
+        end
+    end
+    if code:match("^%s*RELOAD%s*$") or code:match("^%s*RELOAD FORCE%s*$") then
         print("[VoyagerAccess] cmd reload\n")
         RestartCurrentMod()
         return

@@ -64,6 +64,17 @@ function M.edge(last)
     say_item(true)
 end
 
+-- Backspace closes the credits as the game's Escape does: WBP_Credits_C is
+-- an activatable widget with no back button of its own ("Nothing to go back
+-- to", Casey, 2026-10-14).
+function M.close()
+    if not items then return false end
+    local w = credits_widget()
+    if not w then return false end
+    w:DeactivateWidget()
+    return true
+end
+
 function M.repeat_item()
     say_item(true)
 end

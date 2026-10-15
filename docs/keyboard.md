@@ -64,7 +64,10 @@ follows them.
    while you move through it (it re-sorts nearest first after 15 seconds
    without a move). Set course says "Under way to", "Halfway to" and
    "Arrived at"; L adds the trip's progress and says "not moving" if the
-   ship has stopped short.
+   ship has stopped short. In an event at a point of interest, Up and Down
+   move through the options; where an option can take a hero (Q Trials),
+   Left and Right choose one ("No hero" first) and Enter carries the option
+   out with that hero.
 7. Main menu Credits: a list, one heading with its names per item; Escape
    closes it.
 8. Tech tree (Science Laboratory, Research): a list of the five tiers, then

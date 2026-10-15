@@ -136,9 +136,24 @@ end
 function M.objective()
     local w = main()
     if not w then return nil end
-    local ok, t = pcall(function() return w.WBP_CombatObjectives.EndingConditionText end)
-    local s = ok and plain(text_of(t)) or ""
-    return s ~= "" and s or nil
+    -- The demo's goal is EndingConditionText; a Q Trial battle's is
+    -- OptionalConditionText ("Defeat the enemy"), and O said "No objective
+    -- shown" (VM, 2026-10-14). All three, in that order, when shown.
+    local out = {}
+    for _, name in ipairs({ "EndingConditionText", "RequiredConditionText", "OptionalConditionText" }) do
+        local ok, t = pcall(function() return w.WBP_CombatObjectives[name] end)
+        if ok and t and t:IsValid() and screen.shown(t) then
+            local s = plain(text_of(t))
+            if s ~= "" then out[#out + 1] = s end
+        end
+    end
+    -- The demo's EndingConditionText was read without a shown check.
+    if #out == 0 then
+        local ok, t = pcall(function() return w.WBP_CombatObjectives.EndingConditionText end)
+        local s = ok and plain(text_of(t)) or ""
+        if s ~= "" then out[1] = s end
+    end
+    return #out > 0 and table.concat(out, ". ") or nil
 end
 
 local function seconds(t)
@@ -185,13 +200,20 @@ function M.paused_text(w)
     for _, t in ipairs(FindAllOf("TextBlock") or {}) do
         local tp = t:IsValid() and path_of(t)
         if tp and tp:sub(1, #prefix) == prefix then
+            -- Found by its words: the full game names them TextBlock_69 and
+            -- CombatPauseText, the demo TextBlock and TextBlock_1 (VM,
+            -- 2026-10-14: a Q Trial battle paused without a word).
             local name = tp:sub(#prefix + 1):match("^WidgetTree_%d+%.([%w_]+)$")
-            if (name == "TextBlock" or name == "TextBlock_1") and screen.shown(t) then by[name] = plain(text_of(t)) end
+            if name and screen.shown(t) then
+                local s = plain(text_of(t))
+                if s:lower():find("^combat is paused") then by.head = s
+                elseif s ~= "" and (name == "TextBlock_1" or name == "CombatPauseText") then by.detail = s end
+            end
         end
     end
-    if not by.TextBlock or by.TextBlock == "" then return nil end
-    local s = by.TextBlock:gsub("!$", "")
-    if by.TextBlock_1 and by.TextBlock_1 ~= "" and by.TextBlock_1 ~= "Toggle Pause" then s = s .. ". " .. by.TextBlock_1 end
+    if not by.head then return nil end
+    local s = by.head:gsub("!$", "")
+    if by.detail and by.detail ~= "Toggle Pause" then s = s .. ". " .. by.detail end
     return s
 end
 
@@ -226,6 +248,10 @@ function M.status()
     local enemies = M.enemies()
     if enemies then parts[#parts + 1] = enemies end
     local order = plain(text_of(w.txt_selectedManeuver)):gsub("%s*/+%s*$", ""):gsub("%s*/+%s*", ", ")
+    -- "ATTACK // Right": the side as bow, aft, port or starboard, as the
+    -- shields are read (VM, 2026-10-14).
+    local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
+    order = order:gsub(", (%a+)$", function(s) return SIDES[s] and (", " .. SIDES[s]) or nil end)
     if order ~= "" then parts[#parts + 1] = "Order: " .. title(order) end
     local okt, ammo = pcall(function() return plain(text_of(w.FireControlWidget.CT_TorpedoAmmo)) end)
     if okt and ammo ~= "" then parts[#parts + 1] = ammo .. " torpedoes" end

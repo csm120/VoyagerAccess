@@ -4,8 +4,8 @@
 -- Janeway breezes into my cozy penal colony..."), and it was silent while
 -- the mod announced the System Map behind it (2026-10-14, VM).
 --
--- Each line is spoken whole from the typewriter's TargetText, as
--- dialogue.lua does, and queued so a line does not cut off the one before.
+-- Each line is taken whole from the typewriter's TargetText, as
+-- dialogue.lua does, for R to repeat; the lines are voiced, so not spoken.
 local speech = require("speech")
 local screen = require("screen")
 
@@ -55,7 +55,9 @@ local function poll()
                 if s ~= "" and s ~= last_line then
                     last_line = s
                     print("[VoyagerAccess] story: " .. s .. "\n")
-                    speech.say(s, false)
+                    -- Not spoken: the overlay's lines are voiced (Q's opening,
+                    -- Casey, 2026-10-14: "we hear the dialog so we don't need
+                    -- the audio to be spoken via NVDA"). R still repeats one.
                     require("dialogue").remember(s)
                 end
             end
