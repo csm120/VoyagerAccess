@@ -2,6 +2,15 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.17
+
+From playing the campaign on into its third sector.
+
+- Fixed: at the start of the third sector, a personal log opens over the map with a page for each officer. Only "Close" was read, and while it stayed open Set course didn't work. The log is read now ("Personal Log, Lieutenant Tuvok..."), Left and Right switch between the officers' logs, and Enter on Close closes it.
+- Fixed: story cards said "CONTINUE" before their text. The card is read first now, then "Continue".
+
+## Thursday October 15th 2026
+
 Version 0.3.16
 
 More from a second Q Trial, including a reward screen you couldn't get past.

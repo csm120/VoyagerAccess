@@ -1029,6 +1029,11 @@ label_for = function(b, path)
         end)
         if ok and sel and grouped then label = label:gsub("%.$", "") .. ", selected" end
     end
+    -- The order wheel's repair page put the system's health first with no
+    -- word for it: "49, Repair Weapons" (VM, 2026-10-15).
+    if label and path:find("Radial", 1, true) then
+        label = label:gsub("^(%d+), (Repair [%a ]+)", "%2, health %1")
+    end
     -- Surrender's cost shows only while the mouse is over it
     -- (WBP_SurrenderCost in the loadout's ResourceRewardBundle, "40
     -- Duranium", Q Trials ambush, VM, 2026-10-15).
@@ -1226,6 +1231,8 @@ local function poll()
         print("[VoyagerAccess] focus: held until the event result is read\n")
         return
     end
+    -- A story card's Continue: dialogue.lua says "Continue" after the card.
+    if path:find("WBP_Dialogue_Popup%.WidgetTree_%d+%.ContinueButtonStory$") then return end
     -- While the game's chances are being read, the option waits: it was
     -- said with the mod's own chances, then again with the game's (Looted
     -- Wreckage, Q Trials, VM, 2026-10-15). The sweep says it at the end.
@@ -2069,6 +2076,7 @@ function M.install()
         if require("qtrials").switch_ship(current, -1) then return end
         if require("events").hero_step(current, -1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(-1) end
+        if require("popups").log_tab(-1) then return end
         if require("view").overview_tab(-1) then return end
         if rooms.window_open() then rooms.switch_tab(-1)
         elseif ship_mode() then ship.step(-1) elseif not map_mode() then adjust(true) end
@@ -2078,6 +2086,7 @@ function M.install()
         if require("qtrials").switch_ship(current, 1) then return end
         if require("events").hero_step(current, 1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(1) end
+        if require("popups").log_tab(1) then return end
         if require("view").overview_tab(1) then return end
         if rooms.window_open() then rooms.switch_tab(1)
         elseif ship_mode() then ship.step(1) elseif not map_mode() then adjust(false) end

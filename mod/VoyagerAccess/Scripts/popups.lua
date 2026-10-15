@@ -38,7 +38,7 @@ local WATCH = {
     "WBP_ConstructionActionReportWidget_C", "WBP_ConstructionActionErrorInfo_C",
     "WBP_SideMissionFinished_C", "WBP_EndOfGameMissionInfo_01_C",
     "WBP_EmergencyFoodActivationInfo_C", "WBP_AM_ConfirmStart_C", "WBP_RoomPrompt_C",
-    "WBP_LogEventWidget_C",
+    "WBP_LogEventWidget_C", "WBP_LogEventWidget_Multitab_C",
     -- A side mission offer ("Pursuit of Happiness", Neelix, 2026-10-14):
     -- title, speaker, request and time limit; its options are
     -- WBP_MultipleChoice_Button widgets, read as the window's button list.
@@ -602,6 +602,65 @@ local function overview(_, path)
 end
 
 M.ordered_texts = ordered_texts
+
+-- A personal log with a tab per officer (WBP_LogEventWidget_Multitab:
+-- Header, TextBlock; tabs WBP_CommonButton_RoomMgmt_V2 with Previous and
+-- NextTabButton). Only "Close" was read, and the open log kept Set course
+-- from working (Maneuvers, VM, 2026-10-15). Left and Right switch tabs.
+local function log_multitab(_, path)
+    local w = StaticFindObject(path)
+    if not (w and w:IsValid()) then return "" end
+    local by = {}
+    for _, t in ipairs(ordered_texts(w, function(name, s) return name .. "=" .. s end)) do
+        local n, v = t:match("^([%w_]+)=(.*)$")
+        if n and not by[n] then by[n] = v end
+    end
+    local tabs, cur = 0, nil
+    for _, b in ipairs(FindAllOf("WBP_CommonButton_RoomMgmt_V2_C") or {}) do
+        local bp = b:IsValid() and path_of(b)
+        if bp and bp:sub(1, #path + 1) == path .. "." and screen.shown(b) then
+            tabs = tabs + 1
+            local ok, sel = pcall(function() return b:GetSelected() end)
+            if ok and sel then pcall(function() cur = b.ButtonName:GetText():ToString() end) end
+        end
+    end
+    local out = {}
+    local body = by.TextBlock or ""
+    -- The body starts with the header again ("Personal Log, Lieutenant Tuvok.").
+    if by.Header and body:sub(1, #by.Header) == by.Header then body = body:sub(#by.Header + 1):gsub("^[%.%s]+", "") end
+    if by.Header then out[#out + 1] = by.Header end
+    if tabs > 1 then out[#out + 1] = (cur and (cur .. " tab") or "Tab") .. ", Left and Right switch logs" end
+    if body ~= "" then out[#out + 1] = body end
+    for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
+-- Left and Right on an open multitab log. True when handled.
+function M.log_tab(dir)
+    for _, w in ipairs(FindAllOf("WBP_LogEventWidget_Multitab_C") or {}) do
+        local wp = w:IsValid() and path_of(w)
+        if wp and wp:find("^/Engine/Transient%.") and screen.shown(w) then
+            local want = dir < 0 and "PreviousTabButton" or "NextTabButton"
+            for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+                local bp = b:IsValid() and path_of(b)
+                if bp and bp:sub(1, #wp + 1) == wp .. "." and bp:find("%." .. want .. "$") then
+                    b:HandleButtonPressed()
+                    b:HandleButtonReleased()
+                    b:HandleButtonClicked()
+                end
+            end
+            ExecuteInGameThreadWithDelay(300, function()
+                pcall(function()
+                    local t = log_multitab(nil, wp)
+                    last_text[wp] = t
+                    speech.say_long(t, true)
+                end)
+            end)
+            return true
+        end
+    end
+    return false
+end
 
 -- Auto Resolve's window (WBP_CombatAutoResolve, Q Trials ambush, VM,
 -- 2026-10-15) was silent but for "Proceed": "Combat autoresolve. Combat
@@ -1244,6 +1303,7 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_GameOver_C = without_buttons, WBP_NoWayBackWidget_C = without_buttons, WBP_CraftingResult_C = without_buttons,
     WBP_ConfirmationWidget_C = without_buttons, WBP_HeroUnavailableWidget_C = without_buttons,
     WBP_SectorExitEventWidget_C = sector_exit_event, WBP_CombatAutoResolve_C = auto_resolve,
+    WBP_LogEventWidget_Multitab_C = log_multitab,
     WBP_SectorExitDetailView_C = function(parts) return M.sector_exit_detail(parts) or "" end,
     -- Heading, then the question, then the rest: creation order put "Are
     -- you sure?" last on the second opening (2026-10-14).
@@ -1316,6 +1376,21 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_AwayMissionOutcome_C = function(_, path) return require("awaymission").outcome_text(path) end }
 -- The main menu's Delete Profile warning has the same parts.
 LAYOUTS.WBP_DeleteProfileWarning_C = LAYOUTS.WBP_PauseMenu_Confirms_C
+-- A main mission's end (WBP_MissionInfoWidget): "Leaving the sector will
+-- cause... Travel Now. Stay Here. State of Flux. Congratulations!..."
+-- (VM, 2026-10-15). Mission name, title, message, then the warning; the
+-- buttons are the list.
+LAYOUTS.WBP_MissionInfoWidget_C = function(parts, path)
+    local rank = { HeaderTextBlock_1 = 1, HeaderTextBlock_2 = 1, Title = 2, Content = 3, Description = 4, HeaderTextBlock = 5 }
+    local kept = {}
+    for i, p in ipairs(parts) do p.i = i kept[#kept + 1] = p end
+    table.sort(kept, function(a, b)
+        local ra, rb = rank[a.name] or 9, rank[b.name] or 9
+        if ra ~= rb then return ra < rb end
+        return a.i < b.i
+    end)
+    return without_buttons(kept, path)
+end
 for _, c in ipairs(SAVE_WARNINGS) do LAYOUTS[c] = LAYOUTS.WBP_PauseMenu_Confirms_C end
 
 -- True while an event window's text has changed since it was last read:

@@ -173,7 +173,9 @@ local function poll()
     -- Likewise between Q Trial sectors: the results screen said "Done:
     -- Leave Sector. Objective: Acquire at least 90 DURANIUM (10/90)" as the
     -- exit spent the duranium (VM, 2026-10-15).
-    for _, cls in ipairs({ "WBP_MainMenu_C", "WBP_SandboxSectorResult_C", "WBP_Loading_Screen_C" }) do
+    -- Not the loading screen: away missions show it too, and every
+    -- objective change after one read the whole list again (VM, 2026-10-15).
+    for _, cls in ipairs({ "WBP_MainMenu_C", "WBP_SandboxSectorResult_C" }) do
         for _, w in ipairs(FindAllOf(cls) or {}) do
             if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
                 last_missions = nil

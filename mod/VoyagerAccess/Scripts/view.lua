@@ -45,7 +45,7 @@ local NAV = {
     { "Ship view", "ShowShipButton" }, { "System map", "ShowSystemButton" },
     { "Sector map", "ShowSectorButton" }, { "Overview", "OverviewButton" },
     { "Research", "ResearchButton" }, { "Wait one cycle", "WaitOneCycleButton" },
-    { "Incoming calls", "IncomingCallsButton" }, { "Sector switch", "SectorSwitchButton" },
+    { "Incoming calls", "IncomingCallsButton" }, { "Sector switch, leave for the next sector", "SectorSwitchButton" },
     -- Q Trials only: opens Leave Sector (missing from N, VM, 2026-10-14)
     { "Leave sector", "SandboxExitSector" },
 }
@@ -119,8 +119,20 @@ function M.nav_close()
     return true
 end
 
+-- Sector switch leaves the sector at once: active missions were cancelled
+-- with no warning heard (State of Flux, VM, 2026-10-15). The game's own
+-- warning is on its hover; the first Enter says it and a second Enter
+-- within a few seconds leaves.
+local switch_armed_until = -100
+
 function M.nav_enter()
     local it = nav_items[nav_index]
+    if it[2] == "SectorSwitchButton" and os.clock() > switch_armed_until then
+        switch_armed_until = os.clock() + 8
+        speech.say("Leaving the sector cancels all active missions, and heroes marked unavailable are lost. "
+            .. "Press Enter again to leave.", true)
+        return
+    end
     nav_items = nil
     local b = find(it[2])
     if not b then

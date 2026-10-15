@@ -108,6 +108,9 @@ local function poll_popup(w)
     if body == "" or card == last_popup then return end
     last_popup = card
     speak_story(card)
+    -- Its button is said after it (focus.lua does not say it): "CONTINUE"
+    -- came before "Hull breach on deck four!" (VM, 2026-10-15).
+    speech.say("Continue", false)
 end
 
 local crumb = require("crumb")
