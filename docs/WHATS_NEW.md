@@ -1,5 +1,18 @@
 # New in Voyager Access
 
+## Thursday October 15th 2026
+
+Version 0.3.8
+
+Fixes from the full game's second sector, State of Flux.
+
+- Changed: places on the System Map now use the game's own names, the same ones a sighted player sees when pointing at them. You'll hear "Vidiian Interceptor" or "Kazon Carrier" instead of just "Ship", and the story planet is "Class L Planet with Potential Food Sources" instead of a long made-up name.
+- Changed: O and new objectives name each mission with its own goals, for example "State of Flux: Visit the Class L Planet. Quarters Crisis, 37 cycles left: Build 2 new Crew Quarters". Before, side mission goals were read as if they belonged to the main story.
+- Fixed: the objective is no longer read again every cycle just because a side mission's countdown went down.
+- Fixed: the Energy loss report was read in bits ("Phaser. Control. Room"). It now says what happened, the energy before and after, and which rooms were switched off and how much energy each one used.
+- Fixed: the Research Report now says what you got, for example "Rewards: 100 Food. New craftable item: Apples & Roots", and isn't read twice.
+- Fixed: pressing I while the N list is open names the item you're on instead of the map behind the list.
+
 ## Wednesday October 14th 2026
 
 Version 0.3.7

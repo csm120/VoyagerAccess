@@ -19,6 +19,12 @@ local function find(name)
 end
 
 function M.toggle()
+    -- Not behind a window: V switched the map behind an open Research
+    -- Report (VM, 2026-10-15).
+    if require("focus").virtual_active() then
+        speech.say("Close the window first", true)
+        return
+    end
     local to_map = require("ship").active()
     local b = find(to_map and "ShowSystemButton" or "ShowShipButton")
     if not b then
@@ -56,6 +62,15 @@ end
 function M.nav_open()
     if nav_items and not nav_place() then nav_items = nil end
     return nav_items ~= nil
+end
+
+-- For I (where am I) while N is open: it described the map behind the
+-- list (VM, 2026-10-14).
+function M.nav_where()
+    if not M.nav_open() then return nil end
+    local it = nav_items[nav_index]
+    if not it then return "Navigation list" end
+    return string.format("Navigation list. %s, %d of %d", it[1], nav_index, #nav_items)
 end
 
 local function say_nav()

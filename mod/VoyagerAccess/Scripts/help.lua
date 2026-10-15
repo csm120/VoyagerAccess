@@ -57,6 +57,10 @@ function M.context()
         end
     end
     local focus = require("focus").context()
+    -- A window read as the mod's own button list (a Research Report over
+    -- the map): I said "System map" and N and V worked on the map behind it
+    -- (full game, VM, 2026-10-15).
+    if not focus and require("focus").virtual_active() then focus = "menu" end
     if require("ship").active() and not focus then return "ship" end
     if require("system").active() and not focus then return "system" end
     return focus or "none"
@@ -80,7 +84,7 @@ local PLACES = { cutscene = "Cutscene", story = "Story", dialogue = "Dialogue", 
 function M.say_where()
     local away = require("awaymission")
     local parts = {}
-    local tree = require("techtree").where()
+    local tree = require("techtree").where() or require("view").nav_where()
     if tree then
         parts[1] = tree
     elseif away.mission_active() then

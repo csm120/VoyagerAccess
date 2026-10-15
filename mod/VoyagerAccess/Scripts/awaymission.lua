@@ -187,6 +187,40 @@ function M.slot_label(path)
     return head .. ", empty. Enter to choose a hero."
 end
 
+-- Home and End on a team screen: the first slot, or Start Mission (the last
+-- slot while it is hidden). Each slot's button sits in its own picker, so
+-- the general Home and End, which look in the focused button's own list,
+-- did nothing (full game, VM, 2026-10-14). True when it handled the key.
+function M.loadout_edge(path, last)
+    local L = path and loadout_of(path)
+    if not L then
+        -- Start Mission is the loadout's own button, not a slot.
+        local lp = path and path:match("^(.-WBP_AwayMissionLoadout_C_%d+)%.WidgetTree_%d+%.StartMissionButton$")
+        L = lp and StaticFindObject(lp)
+        if not (L and L:IsValid()) then return false end
+    end
+    local pickers = {}
+    pcall(function() L.HeroPickers:ForEach(function(_, e) pickers[#pickers + 1] = e:get() end) end)
+    local want = nil
+    if last then
+        local lp = path_of(L) .. "."
+        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+            local bp = b:IsValid() and path_of(b)
+            if bp and bp:sub(1, #lp) == lp and bp:find("%.StartMissionButton$") and screen.shown(b) then want = b end
+        end
+    end
+    local picker = last and pickers[#pickers] or pickers[1]
+    if not want and picker and picker:IsValid() then
+        local pp = path_of(picker) .. "."
+        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+            local bp = b:IsValid() and path_of(b)
+            if bp and bp:sub(1, #pp) == pp and bp:find("%.OpenSelectionButton$") then want = b end
+        end
+    end
+    if want then want:SetFocus() end
+    return true
+end
+
 -- A hero in the list a slot opens.
 -- The battle's list is WBP_CombatHeroSelectionButton (seen 2026-10-14 in
 -- the Val Jean test fight): a HeroPlaque with HeroNameText and a stat

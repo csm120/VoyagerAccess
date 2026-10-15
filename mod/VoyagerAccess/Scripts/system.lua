@@ -75,6 +75,13 @@ local function name_of(actor)
         local marks = system_marks(actor)
         return "Star system" .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
     end
+    -- The game's own name, as its hover label shows it: "Class L Planet
+    -- with Potential Food Sources" was read from the class as "Planet story
+    -- yellow greenish eco zone planet", and ships as "Ship" where the game
+    -- says "Vidiian Interceptor" (full game, VM, 2026-10-14). The class is
+    -- the fallback.
+    local ok, tip = pcall(function() return actor:GetTooltipWidgetText():ToString() end)
+    if ok and type(tip) == "string" and tip ~= "" then return tip end
     if NAMES[cls] then return NAMES[cls] end
     local class = cls:match("^BP_STVPlanet_Class(%w+)_C$")
     if class then return "Class " .. class .. " planet" end
@@ -341,6 +348,15 @@ local function watch_arrival(name, target, start_d)
         if not (ok and d) then travel = nil return end
         if last and math.abs(d - last) <= 5 then still = still + 1 else still = 0 end
         last = d
+        -- A mission offer (WBP_MultipleChoiceWidget) pauses the trip, and
+        -- the stopped ship was taken for an arrival: "Arrived" was said 5 s
+        -- into an 8-cycle trip (full game, VM, 2026-10-14). The game still
+        -- reports the trip as under way then.
+        local okj, moving = pcall(function()
+            local j = FindFirstOf("STVJourneySubsystem")
+            return j and j:IsValid() and j:IsTravelling()
+        end)
+        if okj and moving == true then still = 0 end
         travel.d, travel.still = d, still
         -- A battle that interrupts the trip: "Halfway to" and "Arrived at"
         -- were said over the battle setup (Q Trial, VM, 2026-10-14).
@@ -533,6 +549,14 @@ local function aim_at(actor)
             if len < 1 then dx, dy, len = 1, 0, 1 end
             tx, ty = st.X + dx / len * 12, st.Y + dy / len * 12
         end
+        -- Under the top status bar (bottom edge about 100 of 1080): the click
+        -- hit the bar and opened its CYCLES tip, which then covered the map
+        -- below it, and no course was set. The camera stays on Voyager here
+        -- (forced follow after the story), so aim at the planet's lower
+        -- edge, below the bar; that set the course (full game, State of
+        -- Flux planet at y 106, VM, 2026-10-14).
+        local bar = 0.11 * h
+        if ty < bar and ty > bar - 30 / 1080 * h then ty = bar + 4 / 1080 * h end
         local r = 350 / 1080 * h   -- the helper's ring radius
         print(string.format("[VoyagerAccess] course: aiming at %.0f,%.0f\n", tx, ty))
         speech.ring_mouse((tx - w / 2) / r, (ty - h / 2) / r)

@@ -556,24 +556,50 @@ end
 local function energy_loss(_, path)
     local w = StaticFindObject(path)
     if not (w and w:IsValid()) then return "" end
-    local t = ordered_texts(w)
+    -- "Deuterium depleted\nEntering gray mode" is one block, its line break
+    -- gone by now: a capital after a lowercase word starts the next
+    -- sentence. Only in that block: applied to every text it read "Phaser.
+    -- Control. Room" (full game, VM, 2026-10-14). The deactivated rooms
+    -- ("Phaser Control Room -9, Sickbay -7") say what energy each used.
+    local t = ordered_texts(w, function(name, s)
+        if name == "EnergyLossReason" then return (s:gsub("(%l) (%u)", "%1. %2")) end
+        if name == "RoomsLost" then return (s:gsub(" %-%s*(%d+)", " %1 energy")) end
+        return false
+    end)
     local out, rows = {}, {}
+    local reason_at = nil
     local i = 1
     while i <= #t do
         local a, label, b = t[i], t[i + 1], t[i + 2]
         if a and label and b and a:match("^%-?%d+$") and b:match("^%-?%d+$") and not label:match("^%-?%d+$") then
             local l = label:sub(1, 1):upper() .. label:sub(2)
+            -- "max. activatable " is the first line of "Max. activatable
+            -- warp core tier"; the rest is drawn, not text.
+            l = l:gsub("activatable%s*$", "activatable warp core tier")
             rows[#rows + 1] = string.format("%s %s, was %s", l, b, a)
             i = i + 3
+        elseif t[i] == "Deck" then
+            -- The deck number is a digit per box: "Deck. 0. 5".
+            local digits = ""
+            i = i + 1
+            while t[i] and t[i]:match("^%d$") do digits, i = digits .. t[i], i + 1 end
+            out[#out + 1] = "Deck " .. (tonumber(digits) or digits)
+            if t[i] and not t[i]:match("^%-?%d+$") then
+                out[#out] = out[#out] .. ": " .. t[i]
+                i = i + 1
+            end
         else
-            -- "Deuterium depleted\nEntering gray mode" is one block, its
-            -- line break gone by now: a capital after a lowercase word
-            -- starts the next sentence.
-            if not t[i]:find("State$") then out[#out + 1] = t[i]:gsub("(%l) (%u)", "%1. %2") end
+            if not t[i]:find("State$") then
+                out[#out + 1] = t[i]
+                if not reason_at and t[i]:find("%. %u") then reason_at = #out end
+            end
             i = i + 1
         end
     end
-    for _, r in ipairs(rows) do out[#out + 1] = r end
+    -- The before and after numbers belong with the reason, before the
+    -- list of rooms switched off.
+    local at = (reason_at or #out) + 1
+    for k, r in ipairs(rows) do table.insert(out, at + k - 1, r) end
     for k, s in ipairs(out) do out[k] = s:gsub("%.%s*$", "") end
     return table.concat(out, ". ") .. "."
 end
@@ -582,13 +608,55 @@ end
 -- ("Items researched. rewards. Research Report. CLOSE REPORT. ENTER SHIP.
 -- Transporter signal amplifier", 2026-10-14). Visual order instead; the
 -- rewards themselves are a second window (WBP_ResearchReport) read next.
+-- The rewards (WBP_ResearchReport): "Rewards: 100 Food. New craftable item:
+-- Apples & Roots". A resource is an icon and a number; it was read as
+-- "Resources. +100" with no name, twice over (full game, VM, 2026-10-14).
+local function research_rewards()
+    local report = shown_widget("WBP_ResearchReport_C")
+    if not report then return "" end
+    local prefix = path_of(report) .. "."
+    local res, items = {}, {}
+    for _, r in ipairs(FindAllOf("WBP_ResourceReward_ResearchReport_C") or {}) do
+        local rp = r:IsValid() and path_of(r)
+        if rp and rp:sub(1, #prefix) == prefix and screen.shown(r) then
+            local icon = icon_name(r.ResourceImage)
+            local name = icon and icon:match("^MI_UI_(%a+)") or "resources"
+            local amount = text_of_widget(r.ResourceAmountTextBlock):gsub("^%+", "")
+            if amount ~= "" then res[#res + 1] = amount .. " " .. name end
+        end
+    end
+    for _, r in ipairs(FindAllOf("WBP_ItemReward_ResourceReport_C") or {}) do
+        local rp = r:IsValid() and path_of(r)
+        if rp and rp:sub(1, #prefix) == prefix and screen.shown(r) then
+            local item = text_of_widget(r.ItemNameTextBlock)
+            if item ~= "" then items[#items + 1] = item end
+        end
+    end
+    local out = {}
+    if #res > 0 then out[#out + 1] = "Rewards: " .. table.concat(res, ", ") end
+    if #items > 0 then
+        out[#out + 1] = (#items == 1 and "New craftable item: " or "New craftable items: ") .. table.concat(items, ", ")
+    end
+    return table.concat(out, ". ")
+end
+
 local function research_info(_, path)
     local w = StaticFindObject(path)
     if not (w and w:IsValid()) then return "" end
-    local t = ordered_texts(w)
-    if t[#t] and t[#t]:lower() == "rewards" then t[#t] = nil end
-    local text = table.concat(t, ". "):gsub("Items researched%. ", "Items researched: ")
-    return text ~= "" and (text .. ".") or ""
+    local head = text_of_widget(w.HeaderTextBlock)
+    local title = ""
+    pcall(function() title = text_of_widget(w.ContentWidget.Title) end)
+    local out = { head ~= "" and head or "Research Report" }
+    if title ~= "" then out[#out + 1] = "Items researched: " .. title end
+    local rewards = research_rewards()
+    if rewards ~= "" then out[#out + 1] = rewards end
+    -- The demo's report: what it has beyond the above, in layout order.
+    if title == "" then
+        local t = ordered_texts(w)
+        if t[#t] and t[#t]:lower() == "rewards" then t[#t] = nil end
+        return (table.concat(t, ". "):gsub("Items researched%. ", "Items researched: ")) .. "."
+    end
+    return table.concat(out, ". ") .. "."
 end
 
 -- The battle result (WBP_BattleResultLCARS) read in layout order: "Injuries.
@@ -864,6 +932,11 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_MultipleChoiceWidget_C = multiple_choice,
     WBP_AwayMissionDetailView_C = away_detail, WBP_BattleResultLCARS_C = battle_result,
     WBP_EnergyLossInfoWidget_C = energy_loss, WBP_ResearchInfoWidget_C = research_info,
+    -- Read with the report above, which includes it.
+    WBP_ResearchReport_C = function()
+        if shown_widget("WBP_ResearchInfoWidget_C") then return "" end
+        return research_rewards()
+    end,
     WBP_TUT_CenterView_C = tutorial_page, WBP_TUT_CharacterView_C = tutorial_page,
     WBP_TUT_ColumnView_C = tutorial_page,
     WBP_OverviewInfoWidget_C = overview,

@@ -1664,6 +1664,7 @@ function M.install()
         if ship_mode() then return ship.edge(last) end
         if require("difficulty").edge(current, last) then return end
         if require("qtrials").edge(current, last) then return end
+        if away.loadout_edge(current, last) then return end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end
             return system.edge(last)
