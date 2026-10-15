@@ -28,6 +28,7 @@ local RISKS = { [0] = "No risk", [1] = "Low risk", [2] = "Medium risk", [3] = "H
 local OUTCOMES = { [0] = "excellent", [1] = "good", [2] = "average", [3] = "bad", [4] = "terrible" }
 
 local function plain(s)
+    s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", "\""):gsub("&#39;", "'")
     return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
@@ -128,15 +129,31 @@ end
 -- weights already.
 local sweeping = false
 function M.sweep(done)
+    -- Fresh for each reading: a station met again after a room was built
+    -- would keep the old odds under the same button and wording.
+    if not sweeping then captured = {} end
     local ok = pcall(ensure_hook)
     if not (ok and hooked) or uncaptured() == 0 or sweeping then
         if done then done() end
         return
     end
+    -- Any failure ends the sweep and still says the option: a sweep left
+    -- marked as running would skip every later one (review, 2026-10-15).
+    local finished = false
+    local function finish()
+        if finished then return end
+        finished = true
+        sweeping = false
+        print("[VoyagerAccess] events: chances read from the game, " .. uncaptured() .. " option(s) without\n")
+        if done then pcall(done) end
+    end
+    local okv, w, h = pcall(function()
+        local pc = FindFirstOf("PlayerController")
+        local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
+        return size.X, size.Y
+    end)
+    if not (okv and w and h and h > 0) then return finish() end
     sweeping = true
-    local pc = FindFirstOf("PlayerController")
-    local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
-    local w, h = size.X, size.Y
     local r = 350 / 1080 * h   -- the helper's ring radius
     local x = 0.83 * w
     local ys = {}
@@ -144,16 +161,13 @@ function M.sweep(done)
     local i = 0
     local function step()
         i = i + 1
-        if i > #ys or uncaptured() == 0 then
-            sweeping = false
-            print("[VoyagerAccess] events: chances read from the game, " .. uncaptured() .. " option(s) without\n")
-            if done then pcall(done) end
-            return
-        end
+        if i > #ys or uncaptured() == 0 then return finish() end
         speech.ring_mouse((x - w / 2) / r, (ys[i] - h / 2) / r)
-        ExecuteInGameThreadWithDelay(80, function() pcall(step) end)
+        ExecuteInGameThreadWithDelay(80, function()
+            if not pcall(step) then finish() end
+        end)
     end
-    pcall(step)
+    if not pcall(step) then finish() end
 end
 
 -- "Good: 70% chance of a good outcome, 30% chance of a bad
@@ -401,6 +415,16 @@ function M.option_label(b)
     text = (text:gsub("%s*:%s*$", ""))
     local parts = { is_locked(b) and ("Locked: " .. text) or text }
     if needs then parts[#parts + 1] = "Needs " .. needs end
+    -- Bracketed notes other than room levels were dropped with the
+    -- brackets: "[Shuttles: 2]", "[Science - Hero will be permanently
+    -- lost]", "[3 CYCLES]", "[Original exits remain]" (scan of the game's
+    -- text, 2026-10-15). Unmet ones are already said as "Needs".
+    for inner in wording:gmatch("%[([^%[%]]*)%]") do
+        if not inner:find("ColorNegative", 1, true) then
+            local note = plain(inner)
+            if note ~= "" and not note:find("Lvl%s*%d") then parts[#parts + 1] = note end
+        end
+    end
     -- A cost the ship cannot pay is shown in the negative color ("Pay
     -- <ColorNegative>Tritanium 50</> to repair HULL"); it read like any
     -- other cost (Repair Station, VM, 2026-10-14).

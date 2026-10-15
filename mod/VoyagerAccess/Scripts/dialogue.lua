@@ -56,6 +56,7 @@ end
 
 -- "Gentlemen, welcome to <italic>Voyager</>. " -> "Gentlemen, welcome to Voyager."
 local function plain(s)
+    s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", "\""):gsub("&#39;", "'")
     return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
@@ -341,7 +342,7 @@ function M.choice_label(path)
         return ""
     end)
     if #costs > 0 then wording = wording .. ". Costs " .. table.concat(costs, ", ") end
-    wording = plain(wording):gsub("^%[Optional%]%s*", "Optional: ")
+    wording = plain(wording):gsub("^%[[Oo][Pp][Tt][Ii][Oo][Nn][Aa][Ll]%]%s*", "Optional: ")
     if wording ~= "" then parts[#parts + 1] = wording end
     -- The requirement widget is not a named member, so find its text by path.
     local req = ""

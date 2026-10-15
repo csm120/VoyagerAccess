@@ -167,6 +167,15 @@ local last_missions = nil   -- the list behind last, once read this session
 
 local function poll()
     crumb.at("quest: poll")
+    -- At the main menu the game is left: the next game loaded may be another
+    -- save, and its objectives came out as "Done:" the old save's ones
+    -- (Profile 03 to Profile 02, VM, 2026-10-15). It is read whole instead.
+    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+            last_missions = nil
+            return
+        end
+    end
     local now, missions = M.objective()
     -- A side mission's countdown changes every cycle; only a change in
     -- the objectives themselves is announced (VM, 2026-10-14). Progress

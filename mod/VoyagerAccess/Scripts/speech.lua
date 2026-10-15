@@ -25,16 +25,22 @@ end
 -- queued instead. os.time has 1 s resolution, so the hold is 1 to 2 s.
 local HOLD_SECONDS = 2
 local hold_until = 0
+local last_text, last_at = nil, -100
 
 function M.say(text, interrupt)
     if type(text) ~= "string" then return end
     text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     -- Parts joined with ". " after text that already ended a sentence read
     -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
-    text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ",")
+    text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ","):gsub("%s+([;:!%?%)])", "%1")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
     if text == "" then return end
     if interrupt and os.time() < hold_until then interrupt = false end
+    -- The same line queued again right after itself is dropped: the demo's
+    -- first event option was read twice in a row (VM, 2026-10-15). A key
+    -- press repeating a line interrupts, and is still said.
+    if not interrupt and text == last_text and os.clock() - last_at < 2 then return end
+    last_text, last_at = text, os.clock()
     write("a", (interrupt and "I|" or "Q|") .. text .. "\n")
 end
 

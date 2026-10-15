@@ -28,6 +28,7 @@ local function text_of(w)
 end
 
 local function plain(s)
+    s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
@@ -188,10 +189,14 @@ function M.slot_label(path)
         -- wherever focus is: Enter on a slot to change its hero started
         -- "Kazon in need", and choosing the last hero started Phage
         -- (VM, 2026-10-15). Said on every filled slot from then on.
-        local full = false
+        -- Every slot filled: Start Mission can show with one hero of three
+        -- (Meeting the Kazon & Kes, Neelix in slot 1, VM, 2026-10-15).
+        local full = true
         pcall(function()
-            local b = L.StartMissionButton
-            full = b ~= nil and b:IsValid() and screen.shown(b)
+            L.HeroPickers:ForEach(function(_, e)
+                local p = e:get()
+                if not (p:IsValid() and plaque_text(p.HeroPlaque)) then full = false end
+            end)
         end)
         if full and path:find("WBP_AwayMissionLoadout_C", 1, true) then
             return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete: Enter starts the mission."
@@ -477,6 +482,17 @@ function M.mission_active()
     return #choices() > 0
 end
 
+-- The arrows and Enter go to the choices only while the pause menu is not
+-- over them: both the pause menu and the choices moved on one Down (VM,
+-- 2026-10-15).
+function M.keys_active()
+    if not M.mission_active() then return false end
+    for _, w in ipairs(FindAllOf("WBP_PauseMenu_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then return false end
+    end
+    return true
+end
+
 local function choice_skill(c)
     local skill = "skill"
     pcall(function()
@@ -727,14 +743,22 @@ function M.mission_enter()
             -- Tom Paris while the game sent Harry Kim, and Confirm named Tom
             -- (VM, 2026-10-14). Choosing another hero replaces the choice,
             -- so a chosen hero is not pressed again.
-            local c = StaticFindObject(it.choice)
-            if c and c:IsValid() and is_active(c) and chosen(h) then
-                require("speech").say(it.name .. " is already chosen for this", true)
-                return
-            end
+            -- Heroes can now be stacked on one challenge, and a chosen one
+            -- could not be taken back off ("Neelix is already chosen for
+            -- this", VM, 2026-10-15): Enter presses it again (the game
+            -- toggles it), and the hero is said with its new state.
             print("[VoyagerAccess] mission: select " .. it.name .. "\n")
             press(h.Button)
-            ExecuteInGameThreadWithDelay(600, function() pcall(say_item) end)
+            -- Picked, the hero is said with where to go next.
+            ExecuteInGameThreadWithDelay(600, function()
+                pcall(function()
+                    local cur = mission_items[mission_index]
+                    local label = cur and item_label(cur)
+                    if not label then return end
+                    if label:find(", selected%.$") then label = label .. " Confirm is after the heroes." end
+                    require("speech").say(label, true)
+                end)
+            end)
         end
     else
         -- A hold button: press, wait out the hold, then release. Untested
@@ -818,7 +842,12 @@ local function result_poll()
                 -- Fatigue: the window's HeroStatus_Choices plaques show
                 -- "Fatigued" in the same hero order as HeroStatus.
                 local tired = fatigued(rp:match("^(.-WBP_Dialogue_Window_AwayMission_C_%d+)"))
-                if #tired > 0 then parts[#parts + 1] = table.concat(tired, " and ") .. (#tired == 1 and " is" or " are") .. " fatigued" end
+                -- "Neelix, Tuvok and Chakotay", not "Neelix and Tuvok and Chakotay".
+                if #tired > 0 then
+                    local names = #tired == 1 and tired[1]
+                        or (table.concat(tired, ", ", 1, #tired - 1) .. " and " .. tired[#tired])
+                    parts[#parts + 1] = names .. (#tired == 1 and " is" or " are") .. " fatigued"
+                end
                 local text = sentences(parts)
                 print("[VoyagerAccess] mission result: " .. text .. "\n")
                 require("speech").say_long(text)
@@ -898,6 +927,13 @@ function M.outcome_text(path)
     return sentences(parts)
 end
 
+-- How a choice is made, said once per game session after the first
+-- choice: a forum player was stuck on the first mission's "Look for any
+-- footprints" with a hero picked, and below the skill needed (2026-10-15).
+local hinted = false
+local HINT = "To choose: Down to a hero and press Enter, then Down to Confirm and press Enter. "
+    .. "A hero below the skill needed can still succeed, with less chance."
+
 -- When a new set of choices comes up, read the first one.
 function M.mission_poll()
     result_poll()
@@ -912,6 +948,10 @@ function M.mission_poll()
         if label then
             print("[VoyagerAccess] mission: " .. label .. "\n")
             require("speech").say(label, false)
+            if not hinted and it.kind == "choice" then
+                hinted = true
+                require("speech").say(HINT, false)
+            end
         end
     end
 end

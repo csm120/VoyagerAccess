@@ -604,16 +604,19 @@ local function aim_at(actor, click)
     if not ok then speech.center_mouse() end
 end
 
--- Whether the actor is on screen now.
+-- Whether the actor is on screen now; nil when that cannot be told, which
+-- must not count as off screen (it would zoom out every time).
 local function on_screen(actor)
     local ok, yes = pcall(function()
         local pc = FindFirstOf("PlayerController")
         local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
         local st = {}
         pc:ProjectWorldLocationToScreen(actor:K2_GetActorLocation(), st, false)
-        return st.X ~= nil and st.X >= 0 and st.Y >= 0 and st.X <= size.X and st.Y <= size.Y
+        if st.X == nil or st.Y == nil then return nil end
+        return st.X >= 0 and st.Y >= 0 and st.X <= size.X and st.Y <= size.Y
     end)
-    return ok and yes
+    if not ok then return nil end
+    return yes
 end
 
 fire_course = function(name, path, attempt, zooms)
@@ -633,7 +636,7 @@ fire_course = function(name, path, attempt, zooms)
             -- player zooms out; so does the mod, until the point is on
             -- screen (TargetZoom 29297 to 70000 brought Sikaris in).
             zooms = zooms or 0
-            if a and a:IsValid() and zooms < 3 and not on_screen(a) then
+            if a and a:IsValid() and zooms < 3 and on_screen(a) == false then
                 local okz = pcall(function() q.TargetZoom = math.min((q.TargetZoom or 30000) * 2, 250000) end)
                 if okz then
                     print("[VoyagerAccess] course: zooming out, target off screen\n")

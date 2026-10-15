@@ -78,6 +78,12 @@ local WATCH = {
     "WBP_PauseMenu_Confirms_C",
     -- The main menu's Delete Profile warning, its own class (2026-10-15)
     "WBP_DeleteProfileWarning_C",
+    -- From the coverage list (every widget in the game, 2026-10-15), each
+    -- created in the VM to check its parts: Game Over (Return to Main Menu,
+    -- Reload Save), No Way Back before the endgame (YES, NO), the Crafting
+    -- Report, the generic Yes/No confirmation and Hero Lost.
+    "WBP_GameOver_C", "WBP_NoWayBackWidget_C", "WBP_CraftingResult_C", "WBP_ConfirmationWidget_C",
+    "WBP_HeroUnavailableWidget_C", "WBP_SectorExitEventWidget_C",
     -- Q Trials setup: its first page is a warning ("Q Trials is designed
     -- for experienced Captains..."), ABORT and ACCEPT (2026-10-14)
     "WBP_Sandbox_Setup_C",
@@ -90,6 +96,20 @@ local WATCH = {
     -- Q Trials results (sector end or game over): sandbox_result
     "WBP_SandboxSectorResult_C",
 }
+
+-- The save window's warnings, laid out like the Delete Profile warning
+-- (heading, ReportContent, BACK and ACCEPT). Restart Sector's "Overwrite
+-- Savegame" was silent and focus stayed on the menu behind it (VM,
+-- 2026-10-15); the others are from the coverage list.
+local SAVE_WARNINGS = { "WBP_OverrideSavegameInfoWidget_C", "WBP_OldSavegameInfoWidget_C",
+    "WBP_SavegameInfoWidget_Dependency_Hard_C", "WBP_SavegameInfoWidget_Dependency_Soft_C",
+    "WBP_SavegameInfoWidget_Dependency_Sandbox_C" }
+M.SAVE_WARNINGS = SAVE_WARNINGS
+for _, c in ipairs(SAVE_WARNINGS) do WATCH[#WATCH + 1] = c end
+local function is_save_warning(p)
+    for _, c in ipairs(SAVE_WARNINGS) do if p:find(c, 1, true) then return true end end
+    return false
+end
 
 -- Text widget classes, listed separately in case FindAllOf does not
 -- return subclasses. Never add EditableText or EditableTextBox: GetText on
@@ -135,6 +155,7 @@ end
 -- "unknown", and a lone symbol ("+", an icon's label) dropped. Heard
 -- 2026-10-10: "+. ???. Deuterium. ... Upgrade [Stellar Cartography]".
 local function plain(s)
+    s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     s = s:gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%?%?%?", "unknown")
     -- Text escapes the game leaves in ("Duranium &amp; Tritanium", 2026-10-11).
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", "\""):gsub("&#39;", "'")
@@ -172,6 +193,8 @@ end
 -- (names read 2026-10-10): "Ship Wreck, System 7,104.0. Resources:
 -- Deuterium, amount unknown. Upgrade ...". Unnamed extras go last.
 local function poi_detail(parts)
+    local exit = M.sector_exit_detail(parts)
+    if exit then return exit end
     local by = {}
     for _, p in ipairs(parts) do
         if not by[p.name] then by[p.name] = p.text end
@@ -279,7 +302,10 @@ local function poi_result(parts, by, path)
             local stored = line:find("in total stored", 1, true) ~= nil
             local text
             local pct = line:match("(%d+)%% reward distribution")
-            if pct then text = amount .. " " .. res .. ", " .. pct .. "% of the possible reward"
+            -- The game's "65% reward distribution" is the outcome's rate, and
+            -- "of the possible reward" contradicted the option's "Up to 447"
+            -- when 447 came (demo, VM, 2026-10-15); the outcome says it.
+            if pct then text = amount .. " " .. res
             elseif stored then text = amount .. " " .. res .. " stored"
             else text = amount .. " " .. res .. (line ~= "" and (", " .. line) or "") end
             if waste ~= "" and waste ~= "0" then text = text .. ". " .. waste .. " " .. res .. " lost, storage full" end
@@ -505,27 +531,59 @@ M.ordered_texts = ordered_texts
 -- screen"). After a tutorial's page the mod says its own keys for the same
 -- thing (Casey, 2026-10-11). Keyed by the tutorial's title.
 local TUTORIAL_KEYS = {
+    -- Every tutorial in the game's DT_TutorialLibraryData (51, dumped
+    -- 2026-10-15); Combat Camera and Replacement Characters have nothing to
+    -- press. The full game opens Main Engineering on its Warp Core tab and
+    -- the demo on the first tab, so the tab is named, not counted.
     ["Activate Room"] = "in the ship view, choose the room with the arrows or from the J room list, press Enter, then Enter on its power button",
-    ["Clear Debris"] = "ruined rooms are not in the J room list; in the ship view, move to one with the arrows, press Enter, then Enter on Clear debris",
-    ["Away Mission"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
-    ["Away Mission - Advanced"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
-    ["Basic Resources"] = "C reads your resources",
-    ["Consequences"] = "Up and Down move between the options, and each says its outcome odds; Enter picks one",
-    ["Engineering Office"] = "choose the Engineering Office in the ship view and press Enter to open it",
     ["Help"] = "F1 lists the keys for the screen you are on, Control plus F1 lists every key, I says where you are, and R repeats what was last read",
-    ["Life support"] = "rooms say on or off as you move through the decks; open Life support with Enter and press Enter on its power button",
-    ["Morale"] = "press N, choose Overview, then press Right to reach the Morale tab",
-    ["Points of Interest"] = "V switches to the System Map; Up and Down move through the points, nearest first, and Enter opens Scan and Set course",
-    ["Build Rooms"] = "in the ship view, move to an empty building space with the arrows and press Enter; Up and Down choose a category, Enter opens it, Up and Down choose a room and Enter builds it",
-    ["Replicator Food"] = "open the Mess Hall with Enter; on its Food Serving tab (Left and Right switch tabs), Up and Down choose the rations and Enter selects them",
-    ["Repairing Rooms"] = "choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair",
-    ["Scan"] = "on the System Map, choose a point with Up and Down, press Enter, then Enter on Scan",
     ["System Map Navigation"] = "V switches between the ship and the System Map; on the map, Up and Down move through the points and Enter opens Scan and Set course",
-    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission",
-    -- The full game opens the room on its Warp Core tab; the demo on the
-    -- first tab (2026-10-14), so the tab is named, not counted.
+    ["Sector Map"] = "press N and choose Sector map; Up and Down move through the star systems, the one with the main mission says so, and Enter opens Scan and Set course",
+    ["Scan"] = "on the System Map, choose a point with Up and Down, press Enter, then Enter on Scan",
+    ["Points of Interest"] = "Up and Down move between the options, and each says its rewards and its chances of a good or bad outcome; Enter picks one",
+    ["Basic Resources"] = "C reads your resources",
     ["Warp Core"] = "open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it",
+    ["Gray Mode"] = "C reads your Deuterium and energy",
+    ["Repairing Rooms"] = "choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair",
+    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission",
+    ["Away Mission"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
     ["Fatigue"] = "a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes",
+    ["Away Mission Risks"] = "a dangerous choice says its danger level, out of 3; Up and Down walk the choices and Enter on Confirm confirms",
+    ["Away Mission - Advanced"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
+    ["Consequences"] = "Up and Down move between the options, and each says its outcome odds; a major decision says so, and Enter holds it for you",
+    ["Morale"] = "press N, choose Overview, then press Right to reach the Morale tab",
+    ["Life Support"] = "rooms say on or off as you move through the decks; open Life support with Enter and press Enter on its power button",
+    ["Engineering Office"] = "choose the Engineering Office in the ship view and press Enter to open it",
+    ["Clear Debris"] = "ruined rooms are not in the J room list; in the ship view, move to one with the arrows, press Enter, then Enter on Clear debris",
+    ["Build Rooms"] = "in the ship view, move to an empty building space with the arrows and press Enter; Up and Down choose a category, Enter opens it, Up and Down choose a room and Enter builds it",
+    ["Crew"] = "C reads your crew along with your resources",
+    ["Science Lab"] = "open the Science Lab with Enter and press Enter on Research, or press N and choose Research; Up and Down choose a technology, Enter opens it and Enter again begins the research",
+    ["Sickbay"] = "open Sickbay with Enter; its Manage Patients tab (Left and Right switch tabs) reads each patient with their condition and the cycles to recover",
+    ["Batteries"] = "C reads your energy and battery; to build a Battery Compartment, move to an empty building space in the ship view and press Enter",
+    ["Workshop"] = "open the Workshop with Enter; on its Crafting tab (Left and Right switch tabs), Up and Down move through the items and buttons and Enter uses one",
+    ["Tech Tree"] = "press N and choose Research; Up and Down move through the tiers, then the technologies; Left and Right switch category; Enter opens an item and Enter again begins the research",
+    ["Hull"] = "C reads your hull; to repair it, open the Engineering Office in the ship view with Enter",
+    ["Upgrade Room"] = "choose the Mess Hall in the ship view or from the J room list, press Enter, then Enter on Upgrade",
+    ["Replicator Food"] = "open the Mess Hall with Enter; on its Food Serving tab (Left and Right switch tabs), Up and Down choose the rations and Enter selects them",
+    ["Normal Food rations"] = "open the Mess Hall with Enter; on its Food Serving tab (Left and Right switch tabs), Up and Down choose normal rations and Enter selects them",
+    ["Assign Hero"] = "open the room with Enter and press Enter on its hero slot; Up and Down choose a hero and Enter assigns them; Backspace closes the hero list",
+    ["Combat Hero Selection"] = "Up and Down move between the hero slots; Enter on a slot opens the hero list, and Enter chooses a hero",
+    ["Start of Combat"] = "Enter opens Orders, where Up and Down move and Enter picks; Shift fires a torpedo; I reads both ships",
+    ["Open Command Menu"] = "Enter opens Orders; in the order wheel, Up and Down move, Enter picks, and Back is last",
+    ["Command Menu"] = "in the Orders wheel, Up and Down move between the orders and Enter picks one; Back is last",
+    ["Attack Movement"] = "I reads both ships; in the Orders wheel, Up and Down move through the offensive actions and Enter picks one",
+    ["Hero Abilities"] = "the number keys use the heroes' abilities; abilities turning active or ready are said as they happen, and I reads them",
+    ["Torpedoes"] = "Shift fires a torpedo; I reads the torpedoes left",
+    ["Defensive Movement"] = "Enter opens Orders; choose the defensive actions with Up and Down and Enter; I reads both ships",
+    ["Combat Repairs"] = "Enter opens Orders; choose the repair action with Up and Down and Enter, then choose the system the same way",
+    ["Energy Management"] = "Left and Right pick a system, and Up and Down move energy to it",
+    ["Cargo Bay"] = "C reads each resource with its storage limit",
+    ["Trading"] = "open the Aeroshuttle Bay with Enter; Up and Down move through its buttons and Enter uses one",
+    ["Combat Allies"] = "open the Bridge with Enter; on its Combat Allies tab (Left and Right switch tabs), Up and Down move through the allies, each read with its combat power, recruitment cost and upkeep, and Enter chooses one",
+    ["Ex-Borg"] = "C reads your crew; to build alcoves, move to an empty building space in the ship view and press Enter",
+    ["Heroes"] = "Up and Down move between the options; Left and Right choose a hero, No hero first, and Enter picks the option with that hero",
+    ["Sector Goals and Exits"] = "O reads the sector goal; in Q Trials, press N and choose Leave sector to pick an exit",
+    ["Q-Modifiers"] = "on the Q Trials setup, Up and Down move to Q Modifier and Enter opens its choices; Up and Down choose one and Enter picks it",
 }
 
 local function tutorial_title()
@@ -551,16 +609,34 @@ function M.clean_tutorial(text)
     -- Controller hints in brackets.
     text = text:gsub("%s*%([^%)]*[Cc]ontroller[^%)]*%)", ""):gsub("%s*%([^%)]*[Gg]amepad[^%)]*%)", "")
     -- Where something sits on the screen.
-    for _, pat in ipairs({ "%s+[io]n the [%a%s%-]-of the screen", "%s+in the [%a%s%-]-part of the ship",
-                           "%s+at the [%a%s%-]-of the screen", "%s+on the [%a%s%-]-side of the screen" }) do
-        text = text:gsub(pat, "")
+    -- Only exact position phrases: a loose pattern from the first "in the"
+    -- to "of the screen" would have taken real words with it (review,
+    -- 2026-10-15).
+    for _, prep in ipairs({ "in the", "on the", "at the" }) do
+        for _, pos in ipairs({ "left", "right", "top", "bottom", "middle", "center", "upper left", "upper right",
+                               "lower left", "lower right", "top left", "top right", "bottom left", "bottom right" }) do
+            for _, tail in ipairs({ "of the screen", "part of the screen", "side of the screen", "corner of the screen",
+                                    "part of the ship", "side of the ship" }) do
+                local phrase = " " .. prep .. " " .. pos .. " " .. tail
+                local at = text:find(phrase, 1, true)
+                while at do
+                    text = text:sub(1, at - 1) .. text:sub(at + #phrase)
+                    at = text:find(phrase, 1, true)
+                end
+            end
+        end
     end
     -- Sentences that are only about the mouse or an icon.
     local kept = {}
     for s in (text .. " "):gmatch("(.-[%.!%?])%s+") do
         local l = s:lower()
+        -- Also controller and colour wording the scan of every tutorial
+        -- found ("On controller use RB/LB", "a blue countdown", "marked with
+        -- a golden outline", "white question marks", 2026-10-15).
         local mouse = l:find("%f[%a]click") or l:find("%f[%a]hover") or l:find("%f[%a]drag")
-            or l:find("%f[%a]mouse") or l:find("%f[%a]icon")
+            or l:find("%f[%a]mouse") or l:find("%f[%a]icon") or l:find("%f[%a]controller")
+            or l:find("%f[%a]gamepad") or l:find("golden outline", 1, true) or l:find("question mark", 1, true)
+            or l:find("%f[%a]colou?rs?%f[%A]") or l:find("%f[%a]blue%f[%A]") or l:find("%f[%a]green%f[%A]")
         if not mouse then kept[#kept + 1] = s end
     end
     local tail = (text .. " "):gsub("^.*[%.!%?]%s+", "")
@@ -862,6 +938,87 @@ local function leave_sector(parts)
     return table.concat(out, ". ") .. "."
 end
 
+-- The resource costs shown under the widget at path ("72 Tritanium"), each
+-- named by its icon.
+local function costs_under(path)
+    local costs = {}
+    local prefix = path .. "."
+    for _, c in ipairs(FindAllOf("WBP_CombatAllyCost_SingleResource_C") or {}) do
+        local cp = c:IsValid() and path_of(c)
+        if cp and cp:sub(1, #prefix) == prefix and screen.shown(c) then
+            local icon = icon_name(c.ResourceImage)
+            local res = icon and icon:match("^MI_UI_(%a+)") or "resources"
+            costs[#costs + 1] = text_of_widget(c.ResourceAmount) .. " " .. res
+        end
+    end
+    return costs
+end
+
+local function light_years(s)
+    return (s:gsub("^#", ""):gsub("(%d)%s*[lL][yY]%.?$", "%1 light years"))
+end
+
+-- Leaving a campaign sector (WBP_SectorExitEventWidget, created in the VM
+-- from the coverage list, 2026-10-15): "Next Sector: Hirogen-Controlled
+-- Sector. Travel distance 9,999 light years. Travel cost 99 Deuterium.
+-- Earth distance remaining ... Leaving the sector will cause all active
+-- missions to be canceled...". SET COURSE HOME, STAY FOR NOW and the bonus
+-- fuel offer are the button list (M.bonus_fuel_label).
+local function sector_exit_event(parts, path)
+    local by = {}
+    for _, p in ipairs(parts) do
+        if not p.path:find("_BTN.", 1, true) and not p.path:find("Button.", 1, true) and not by[p.name] then by[p.name] = p.text end
+    end
+    local out = {}
+    out[#out + 1] = (by.HeaderTextBlock or "Next Sector") .. (by.HeaderTextBlock_1 and (": " .. by.HeaderTextBlock_1) or "")
+    if by.Distance_TXT then out[#out + 1] = "Travel distance " .. light_years(by.Distance_TXT) end
+    local costs = costs_under(path)
+    if #costs > 0 then out[#out + 1] = "Travel cost " .. table.concat(costs, ", ") end
+    if by.RemainingDistance_TXT then
+        local total = light_years((by.InitialDistance_TXT or ""):gsub("^%s*#?%s*/%s*", ""))
+        out[#out + 1] = "Earth distance remaining " .. light_years(by.RemainingDistance_TXT) .. (total ~= "" and (" of " .. total) or "")
+    end
+    if by.WarningText then out[#out + 1] = by.WarningText end
+    for i, s in ipairs(out) do out[i] = s:gsub("%s+$", ""):gsub("%.$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
+-- The bonus fuel offer on the sector exit: "Use Crystalline Nucleogenic
+-- Compound: costs 99, 9,999 light years bonus distance."
+function M.bonus_fuel_label(b)
+    local function t(w) return text_of_widget(w) end
+    local out = { "Use " .. (t(b.ItemName_TXT) ~= "" and t(b.ItemName_TXT) or "bonus fuel") }
+    local cost = t(b.BonusFuelCost_TXT):gsub("^#", "")
+    if cost ~= "" then out[#out + 1] = "costs " .. cost end
+    local dist = t(b.BonusDistance_TXT)
+    dist = light_years(dist)
+    if dist:match("^[%d,%.]+$") then dist = dist .. " light years" end
+    if dist ~= "" then out[#out + 1] = dist .. " bonus distance" end
+    return table.concat(out, ", ")
+end
+
+-- The sector exit on the map, a page of the point detail window: "Sector
+-- Exit. Next Sector: ... Travel distance ... Travel cost ...".
+function M.sector_exit_detail(parts)
+    local by, page = {}, nil
+    for _, p in ipairs(parts) do
+        local pp = p.path:match("^(.-WBP_SectorExitDetailView[%w_]*)%.")
+        if pp then
+            page = pp
+            if not by[p.name] then by[p.name] = p.text end
+        end
+    end
+    if not page then return nil end
+    local out = { by.SectorExit_TXT or "Sector Exit" }
+    local name = by.SectorName_TextBlock or by.SectorName_TextBlock_1
+    out[#out + 1] = (by.TextBlock_85 or "Next Sector") .. (name and (": " .. name) or "")
+    if by.DistanceTravelled_TextBlock then out[#out + 1] = "Travel distance " .. light_years(by.DistanceTravelled_TextBlock) end
+    local costs = costs_under(page)
+    if #costs > 0 then out[#out + 1] = "Travel cost " .. table.concat(costs, ", ") end
+    for i, s in ipairs(out) do out[i] = s:gsub("%s+$", ""):gsub("%.$", "") end
+    return table.concat(out, ". ") .. "."
+end
+
 -- One sector to go to: "Sector 01: Trading Sector. 6,000 light years.
 -- Costs 72 Tritanium, not enough." Its entry read "72, Select, Travel
 -- cost, Travel Distance, Sector 01" (VM, 2026-10-14).
@@ -873,16 +1030,7 @@ function M.leave_sector_entry(e)
     out[#out + 1] = (num ~= "" and num or "Sector") .. (name ~= "" and (": " .. name) or "")
     local dist = t(e.DistanceTravelled_TextBlock):gsub("%s*[lL][yY]$", " light years")
     if dist ~= "" then out[#out + 1] = dist end
-    local costs = {}
-    local prefix = path_of(e) .. "."
-    for _, c in ipairs(FindAllOf("WBP_CombatAllyCost_SingleResource_C") or {}) do
-        local cp = c:IsValid() and path_of(c)
-        if cp and cp:sub(1, #prefix) == prefix and screen.shown(c) then
-            local icon = icon_name(c.ResourceImage)
-            local res = icon and icon:match("^MI_UI_(%a+)") or "resources"
-            costs[#costs + 1] = t(c.ResourceAmount) .. " " .. res
-        end
-    end
+    local costs = costs_under(path_of(e))
     local none = t(e.NoCosts_TXT)
     if #costs > 0 then
         local affordable = true
@@ -925,6 +1073,10 @@ end
 
 local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C = leave_sector, WBP_POIDetailView_C = poi_detail, WBP_POIMultipleChoice_C = poi_event,
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
+    WBP_GameOver_C = without_buttons, WBP_NoWayBackWidget_C = without_buttons, WBP_CraftingResult_C = without_buttons,
+    WBP_ConfirmationWidget_C = without_buttons, WBP_HeroUnavailableWidget_C = without_buttons,
+    WBP_SectorExitEventWidget_C = sector_exit_event,
+    WBP_SectorExitDetailView_C = function(parts) return M.sector_exit_detail(parts) or "" end,
     -- Heading, then the question, then the rest: creation order put "Are
     -- you sure?" last on the second opening (2026-10-14).
     -- The warning page: its heading and message.
@@ -996,6 +1148,7 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_AwayMissionOutcome_C = function(_, path) return require("awaymission").outcome_text(path) end }
 -- The main menu's Delete Profile warning has the same parts.
 LAYOUTS.WBP_DeleteProfileWarning_C = LAYOUTS.WBP_PauseMenu_Confirms_C
+for _, c in ipairs(SAVE_WARNINGS) do LAYOUTS[c] = LAYOUTS.WBP_PauseMenu_Confirms_C end
 
 -- True while an event window's text has changed since it was last read:
 -- the poll is about to read it and say the focused button after it. Focus
@@ -1189,9 +1342,11 @@ local function poll()
                     or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
                     or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
                     or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
-                    or p:find("WBP_DeleteProfileWarning_C", 1, true)
+                    or p:find("WBP_DeleteProfileWarning_C", 1, true) or p:find("WBP_GameOver_C", 1, true)
+                    or p:find("WBP_NoWayBackWidget_C", 1, true) or p:find("WBP_CraftingResult_C", 1, true)
+                    or p:find("WBP_ConfirmationWidget_C", 1, true) or p:find("WBP_HeroUnavailableWidget_C", 1, true)
                     or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
-                    or p:find("WBP_SandboxSectorResult_C", 1, true)
+                    or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
                     or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true))
                 -- An event's result replaces its options in the same window:
                 -- "CONTINUE" came before "Trading Station. We accepted their
@@ -1232,7 +1387,16 @@ local function poll()
                     -- Held until the result is read: focus moved about 3 s
                     -- after the choice once (Icy Planetoid), so 10 s is only
                     -- a safety limit.
-                    M.result_pending_until = os.clock() + 10
+                    -- Only while no options are left: a stage that keeps
+                    -- options must let the focused one be said (review,
+                    -- 2026-10-15).
+                    local options_left = false
+                    for _, ob in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+                        if ob:IsValid() and path_of(ob):find("^/Engine/Transient%.") and screen.shown(ob) then
+                            options_left = true
+                        end
+                    end
+                    M.result_pending_until = (not options_left) and (os.clock() + 10) or nil
                 else
                 M.result_pending_until = nil
                 speech.say_long(say, first_event and true or nil)
@@ -1262,7 +1426,8 @@ local function poll()
                 local own_list = false
                 pcall(function() own_list = require("focus").virtual_active() end)
                 if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true)
-                    and not p:find("WBP_DeleteProfileWarning_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
+                    and not p:find("WBP_DeleteProfileWarning_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true)
+                    and not is_save_warning(p) then
                     local function say_label()
                         local okl, label = pcall(function() return require("focus").current_label() end)
                         if okl and label and label ~= "" then speech.say(label, false) end

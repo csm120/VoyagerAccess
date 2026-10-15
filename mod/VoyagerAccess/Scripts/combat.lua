@@ -34,6 +34,7 @@ local function text_of(w)
 end
 
 local function plain(s)
+    s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 

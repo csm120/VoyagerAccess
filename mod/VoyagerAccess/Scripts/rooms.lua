@@ -23,6 +23,7 @@ local function text_of(w)
 end
 
 local function plain(s)
+    s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     -- "[MAIN ENGINEERING]" marks a highlighted name; drop the brackets.
     return (s:gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
@@ -532,7 +533,9 @@ function M.switch_tab(dir)
                 -- The tab's page is filled after the switch.
                 ExecuteInGameThreadWithDelay(300, function()
                     pcall(function()
-                        local t = M.patients_text()
+                        -- Only on that tab: just after leaving it, its page
+                        -- still counts as shown (review, 2026-10-15).
+                        local t = name:lower():find("patient", 1, true) and M.patients_text()
                         if t then require("speech").say(t, false) end
                     end)
                     pcall(function()

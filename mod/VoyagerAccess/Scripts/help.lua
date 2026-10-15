@@ -21,7 +21,8 @@ local HELP = {
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room.",
     event = "Up and Down move between the options. Where an option can take a hero, Left and Right choose one first. Enter picks the option. R reads the locked options.",
     mission = "Up and Down move through the choices, their heroes and Confirm. Home and End go to the first and last. "
-        .. "Enter picks a hero or confirms. After a result, Enter continues and R repeats it.",
+        .. "Enter on a hero picks them for that choice, then Enter on its Confirm makes the choice. "
+        .. "A hero below the skill needed can still succeed. After a result, Enter continues and R repeats it.",
     settings = "Up and Down move between settings. Left and Right change the value. "
         .. "Home and End go to the first and last. Backspace goes back.",
     menu = "Up and Down move. Home and End go to the first and last. Enter selects. Backspace goes back.",
@@ -44,16 +45,17 @@ function M.context()
     -- Narration over a scene: the map behind it was announced as if it
     -- were in front (2026-10-14).
     if require("story").active() then return "story" end
-    if dialogue.active() then return "dialogue" end
-    if require("combat").active() then return "combat" end
     local screen = require("screen")
     -- The pause menu over a room: I said "Main Engineering, level 1,
-    -- active. GAMMA" (demo, VM, 2026-10-15).
+    -- active. GAMMA" (demo, VM, 2026-10-15). Over an away mission it said
+    -- "Dialogue" (VM, 2026-10-15), so it comes before dialogue.
     for _, w in ipairs(FindAllOf("WBP_PauseMenu_C") or {}) do
         if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(w) then
             return "menu"
         end
     end
+    if dialogue.active() then return "dialogue" end
+    if require("combat").active() then return "combat" end
     -- Event and room windows (2026-10-11): Escape closing a room is the
     -- game's own, tried with a real key press.
     for _, w in ipairs(FindAllOf("WBP_POIMultipleChoice_C") or {}) do
@@ -74,7 +76,7 @@ function M.context()
 end
 
 function M.say_help()
-    local ctx = require("awaymission").mission_active() and "mission" or M.context()
+    local ctx = require("awaymission").keys_active() and "mission" or M.context()
     speech.say((HELP[ctx] or HELP.none) .. " Control F1 lists every key.", true)
 end
 
@@ -94,7 +96,7 @@ function M.say_where()
     local tree = require("techtree").where() or require("view").nav_where()
     if tree then
         parts[1] = tree
-    elseif away.mission_active() then
+    elseif away.keys_active() then
         parts[1] = "Away mission"
         parts[2] = away.mission_where()
     else

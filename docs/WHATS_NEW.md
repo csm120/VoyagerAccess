@@ -2,6 +2,22 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.13
+
+More fixes from the forum, and from replaying the campaign's start.
+
+- New: away missions explain how to choose. The first time choices come up, you hear "To choose: Down to a hero and press Enter, then Down to Confirm and press Enter." After you pick a hero, they say "Confirm is after the heroes." A forum player was stuck on the cornfield's "Look for any footprints" with a hero already picked.
+- New: you also hear that a hero below the skill needed can still succeed, with less chance. At the start of the campaign nobody meets those numbers, and Tom Paris still found the path with Command 25 of 29.
+- Fixed: with the pause menu open during an away mission, the arrows moved the pause menu and the mission's choices at the same time. They only move the pause menu now, and I says "Menu".
+- Fixed: after loading a different save, your objectives came out as "Done:" followed by the last save's objectives. The new save's objectives are read in full now.
+- New: Restart Sector's "Overwrite Savegame" warning is read, with BACK and ACCEPT. It was silent, and the arrows stayed on the menu behind it.
+- New: the Game Over screen is read, then its buttons, such as "Return to Main Menu, 1 of 2".
+- Fixed: "Team complete: Enter starts the mission" was said with only one hero of three picked. It now waits for every slot.
+- Fixed: an event's first option was sometimes read twice in a row.
+- Changed: every tutorial with something to press now gives its keys, not just the ones met so far.
+
+## Thursday October 15th 2026
+
 Version 0.3.12
 
 Fixes from your forum reports and from replaying the first mission.

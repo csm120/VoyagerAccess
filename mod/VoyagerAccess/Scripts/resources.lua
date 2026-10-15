@@ -56,6 +56,16 @@ local function lines()
         end)
         if ok and text ~= "Hull " then parts[#parts + 1] = text end
     end
+    -- Sector Threat, a bar in the header beside the hull (WBP_ThreatLevel:
+    -- Current and max, both 0 in the first sector; found from the game's
+    -- widget list, 2026-10-15).
+    local threat = shown_widgets("WBP_ThreatLevel_C")[1]
+    if threat then
+        local ok, cur, max = pcall(function() return threat.Current, threat.max end)
+        if ok and type(max) == "number" and max > 0 then
+            parts[#parts + 1] = "Sector threat " .. cur .. " of " .. max
+        end
+    end
     -- Storage limits: events said "storage full" and C never said how much
     -- fits (State of Flux, VM, 2026-10-15). Science points (9999) have none
     -- worth saying.

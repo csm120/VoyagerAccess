@@ -538,6 +538,8 @@ local PAUSE_CONFIRM = "WBP_PauseMenu_Confirms_C"
 -- Profile warning is its own class (GXCommonInfoWidget), and focus went
 -- back to the menu behind it (VM, 2026-10-15).
 local CONFIRMS = { PAUSE_CONFIRM, "WBP_DeleteProfileWarning_C" }
+-- The save window's other warnings (Overwrite Savegame and the like).
+for _, c in ipairs(require("popups").SAVE_WARNINGS) do CONFIRMS[#CONFIRMS + 1] = c end
 local function is_confirm(p)
     for _, c in ipairs(CONFIRMS) do if p:find(c, 1, true) then return true end end
     return false
@@ -796,7 +798,10 @@ local function with_position(label, path)
     -- the Heroes tab's one slot was "6 of 6": no count then.
     if os.clock() - (require("rooms").tab_switched_at or -100) < 0.6 then return label end
     local head, rest = label:match("^(.-)%.%s+(.+)$")
-    if head and rest then return head .. ", " .. positions[path] .. ". " .. rest end
+    -- Not after a short abbreviation such as "Lvl." (review, 2026-10-15).
+    if head and rest and not head:match("%f[%a]%u%l?%l?$") then
+        return head .. ", " .. positions[path] .. ". " .. rest
+    end
     return (label:gsub("[%.,]%s*$", "")) .. ", " .. positions[path]
 end
 
@@ -884,6 +889,8 @@ label_for = function(b, path)
         label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
     elseif cls == "WBP_LeaveSectorEntry_C" then
         label = require("popups").leave_sector_entry(b)
+    elseif cls == "WBP_SectorExitBonusFuel_Button_C" then
+        label = require("popups").bonus_fuel_label(b)
     elseif cls == "WBP_RadialButton_C" then
         -- Said after the hover, with the centre's details (radial_focus);
         -- the cached text here was said a second time (2026-10-14).
@@ -1851,7 +1858,7 @@ function M.install()
         if ship.list_open() then return ship.list_enter() end
         if require("resources").list_open() then return require("resources").close() end
         if require("view").nav_open() then return require("view").nav_enter() end
-        if away.mission_active() then return away.mission_enter() end
+        if away.keys_active() then return away.mission_enter() end
         if M.virtual_active() then return M.virtual_enter() end
         -- In battle with no wheel open, Enter opens Orders (combat.lua).
         if require("combat").active() then
@@ -1913,7 +1920,7 @@ function M.install()
         elseif ship.list_open() then ship.list_step(-1)
         elseif require("resources").list_open() then require("resources").step(-1)
         elseif require("view").nav_open() then require("view").nav_step(-1)
-        elseif away.mission_active() then away.mission_step(-1)
+        elseif away.keys_active() then away.mission_step(-1)
         elseif M.virtual_active() then M.virtual_step(-1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif require("dialogue").choice_step(current, -1) then last_dir = -1 arrow_tick = ticks
@@ -1930,7 +1937,7 @@ function M.install()
         elseif ship.list_open() then ship.list_step(1)
         elseif require("resources").list_open() then require("resources").step(1)
         elseif require("view").nav_open() then require("view").nav_step(1)
-        elseif away.mission_active() then away.mission_step(1)
+        elseif away.keys_active() then away.mission_step(1)
         elseif M.virtual_active() then M.virtual_step(1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif require("dialogue").choice_step(current, 1) then last_dir = 1 arrow_tick = ticks
@@ -1971,7 +1978,7 @@ function M.install()
         if ship.list_open() then return ship.list_edge(last) end
         if require("resources").list_open() then return require("resources").edge(last) end
         if require("view").nav_open() then return require("view").nav_edge(last) end
-        if away.mission_active() then return away.mission_edge(last) end
+        if away.keys_active() then return away.mission_edge(last) end
         if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
         if require("difficulty").edge(current, last) then return end
