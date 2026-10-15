@@ -62,6 +62,9 @@ local function system_marks(actor)
                         end)
                         if ok and r == "MI_UI_Voyager_Icon" then marks[#marks + 1] = "Voyager is here" end
                         if ok and r and r:find("MainMission", 1, true) then marks[#marks + 1] = "main mission" end
+                        -- The Planetoid's blue badge, MID_MI_UI_SideMission_...,
+                        -- was never mentioned (State of Flux, VM, 2026-10-15).
+                        if ok and r and r:find("SideMission", 1, true) then marks[#marks + 1] = "side mission" end
                     end
                 end
             end
@@ -70,11 +73,40 @@ local function system_marks(actor)
     return marks
 end
 
+-- A system's number said the way a Starfleet officer would: digit by digit
+-- with zero as "oh", "7 1 oh 4" (Casey, 2026-10-11), and ".0" left out.
+-- The full game adds a name after the number ("112.0 Vidiian System",
+-- 2026-10-14). A sector's systems can differ only after the point
+-- (3,520.0 to 3,520.3, State of Flux, 2026-10-15), so any other decimal is
+-- said: "3 5 2 oh point 1".
+function M.spoken_number(raw)
+    local num, dec, rest = raw:gsub(",", ""):match("^(%d+)%.?(%d*)%s*(.-)%s*$")
+    if not num then return raw end
+    local function digits(s) return (s:gsub("%d", "%0 "):gsub("0 ", "oh "):gsub(" $", "")) end
+    local out = digits(num)
+    if dec ~= "" and tonumber(dec) ~= 0 then out = out .. " point " .. digits(dec) end
+    if rest ~= "" then out = out .. ", " .. rest end
+    return out
+end
+
 local function name_of(actor)
     local cls = actor:GetClass():GetFName():ToString()
     if cls == "BP_STVSolarSystem_C" then
         local marks = system_marks(actor)
-        return "Star system" .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
+        -- Its hover label names it ("System 3,520.1"); four systems all
+        -- read "Star system" (State of Flux, VM, 2026-10-15). A warning
+        -- the game gives the system is said too.
+        local name = "Star system"
+        pcall(function()
+            local tip = actor:GetTooltipWidgetText():ToString()
+            local n = tip:match("^System%s+(.+)$")
+            if n then name = "System " .. M.spoken_number(n) elseif tip ~= "" then name = tip end
+        end)
+        pcall(function()
+            local warn = actor.SystemWarning:ToString()
+            if warn ~= "" then marks[#marks + 1] = warn end
+        end)
+        return name .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
     end
     -- The game's own name, as its hover label shows it: "Class L Planet
     -- with Potential Food Sources" was read from the class as "Planet story
@@ -572,7 +604,19 @@ local function aim_at(actor, click)
     if not ok then speech.center_mouse() end
 end
 
-fire_course = function(name, path, attempt)
+-- Whether the actor is on screen now.
+local function on_screen(actor)
+    local ok, yes = pcall(function()
+        local pc = FindFirstOf("PlayerController")
+        local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
+        local st = {}
+        pc:ProjectWorldLocationToScreen(actor:K2_GetActorLocation(), st, false)
+        return st.X ~= nil and st.X >= 0 and st.Y >= 0 and st.X <= size.X and st.Y <= size.Y
+    end)
+    return ok and yes
+end
+
+fire_course = function(name, path, attempt, zooms)
     local q0 = pawn()
     local actor = StaticFindObject(path)
     if q0 and actor and actor:IsValid() then pcall(function() q0:SetFocusPoint(actor) end) end
@@ -582,6 +626,21 @@ fire_course = function(name, path, attempt)
             local q = pawn()
             if not q then return end
             local a = StaticFindObject(path)
+            -- After a story scene the camera is held on Voyager (bForceFollow)
+            -- and SetFocusPoint does not move it: Sikaris was below the
+            -- screen, the cursor went to the centre, hit Voyager, and no
+            -- course was set twice (State of Flux, VM, 2026-10-15). A sighted
+            -- player zooms out; so does the mod, until the point is on
+            -- screen (TargetZoom 29297 to 70000 brought Sikaris in).
+            zooms = zooms or 0
+            if a and a:IsValid() and zooms < 3 and not on_screen(a) then
+                local okz = pcall(function() q.TargetZoom = math.min((q.TargetZoom or 30000) * 2, 250000) end)
+                if okz then
+                    print("[VoyagerAccess] course: zooming out, target off screen\n")
+                    ExecuteInGameThreadWithDelay(600, function() fire_course(name, path, attempt, zooms + 1) end)
+                    return
+                end
+            end
             local click = attempt > 1
             if a and a:IsValid() then aim_at(a, click) end
             -- The helper's click takes about 150 ms (hover, press, release).

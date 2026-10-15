@@ -84,16 +84,76 @@ function M.objective()
             end
         end
     end
-    local out = {}
+    local out, missions = {}, {}
     for _, l in ipairs(lines) do
         if #l.goals > 0 then
             local goals = words(table.concat(l.goals, ". "))
             out[#out + 1] = l.name ~= "" and (quest_name(l.name) .. ": " .. goals) or goals
+            local m = { name = l.name ~= "" and quest_name(l.name) or "", goals = {} }
+            for i, g in ipairs(l.goals) do m.goals[i] = words(g) end
+            missions[#missions + 1] = m
         end
     end
-    if #loose > 0 then out[#out + 1] = words(table.concat(loose, ". ")) end
+    if #loose > 0 then
+        out[#out + 1] = words(table.concat(loose, ". "))
+        local m = { name = "", goals = {} }
+        for i, g in ipairs(loose) do m.goals[i] = words(g) end
+        missions[#missions + 1] = m
+    end
     if #out == 0 then return nil end
-    return table.concat(out, ". ")
+    return table.concat(out, ". "), missions
+end
+
+-- Countdowns and progress counts change on their own every cycle; they are
+-- not a change of objective.
+local function bare(s) return (s:gsub(", %d+ cycles? left", ""):gsub("%s*%(%d+/%d+%)", "")) end
+
+-- What changed between two mission lists, as words: "Done: Assign Neelix
+-- to the Mess Hall." Every step re-read the whole list, five missions long,
+-- when one goal was ticked off (State of Flux, VM, 2026-10-15). nil when
+-- nothing but counts changed.
+function M.changes(old, new)
+    local function index(list)
+        local missions, goals = {}, {}
+        for _, m in ipairs(list) do
+            local key = bare(m.name)
+            missions[key] = true
+            for _, g in ipairs(m.goals) do goals[key .. "\0" .. bare(g)] = true end
+        end
+        return missions, goals
+    end
+    local old_m, old_g = index(old)
+    local new_m, new_g = index(new)
+    local parts = {}
+    local done, ended = {}, {}
+    for _, m in ipairs(old) do
+        local key = bare(m.name)
+        if not new_m[key] then
+            ended[#ended + 1] = m.name ~= "" and m.name:gsub(", %d+ cycles? left", "") or table.concat(m.goals, ". ")
+        else
+            for _, g in ipairs(m.goals) do
+                if not new_g[key .. "\0" .. bare(g)] then done[#done + 1] = bare(g) end
+            end
+        end
+    end
+    if #done > 0 then parts[#parts + 1] = "Done: " .. table.concat(done, ". ") end
+    if #ended > 0 then parts[#parts + 1] = (#ended == 1 and "Mission ended: " or "Missions ended: ") .. table.concat(ended, ", ") end
+    for _, m in ipairs(new) do
+        local key = bare(m.name)
+        local added = {}
+        for _, g in ipairs(m.goals) do
+            if not old_g[key .. "\0" .. bare(g)] then added[#added + 1] = g end
+        end
+        if #added > 0 then
+            local goals = table.concat(added, ". ")
+            local head = (not old_m[key] and m.name ~= "") and ("New mission: " .. m.name .. ": ")
+                or (m.name ~= "" and ("Objective: " .. m.name .. ": ") or "Objective: ")
+            parts[#parts + 1] = head .. goals
+        end
+    end
+    if #parts == 0 then return nil end
+    for i, s in ipairs(parts) do parts[i] = s:gsub("%s*%.%s*$", "") end
+    return table.concat(parts, ". ") .. "."
 end
 
 function M.say_objective()
@@ -103,21 +163,26 @@ function M.say_objective()
     speech.say(M.objective() or "No objective shown", true)
 end
 
+local last_missions = nil   -- the list behind last, once read this session
+
 local function poll()
     crumb.at("quest: poll")
-    local now = M.objective()
+    local now, missions = M.objective()
     -- A side mission's countdown changes every cycle; only a change in
     -- the objectives themselves is announced (VM, 2026-10-14). Progress
     -- counts too: "Store DEUTERIUM (552/900)" drops every cycle as fuel
     -- burns, and the objective was read four times in one trip (VM,
     -- 2026-10-15). O reads the current counts.
-    local function bare(s) return (s:gsub(", %d+ cycles? left", ""):gsub("%(%d+/%d+%)", "")) end
     if now and (not last or bare(now) ~= bare(last)) then
         print("[VoyagerAccess] objective: " .. now .. "\n")
-        speech.say("Objective: " .. now, false)
+        -- After the first reading, only what changed is said; the whole
+        -- list is the first reading (and after a reload) and O.
+        local change = last_missions and M.changes(last_missions, missions)
+        speech.say(change or ("Objective: " .. now), false)
         last = now
         write_last(now)
     end
+    if now then last_missions = missions end
 end
 
 function M.install()

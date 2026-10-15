@@ -273,7 +273,11 @@ end
 local function radial_details(menu)
     local by, order = {}, {}
     local center = nil
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+    -- Clear Debris shows what it gives back as "+16" in a DuraniumDisplay
+    -- (WBP_RadialMenuCenter_ClearDebris, VM, 2026-10-15); every display's
+    -- number is named AmountText, so the resource is the display's name.
+    local gives, gave = {}, {}
+    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and path_of(t)
             -- The centre is not inside the ring's path; any shown one counts.
@@ -283,7 +287,13 @@ local function radial_details(menu)
                 center = center or tp:match("^(.-WBP_RadialMenuCenter_[%w_]-_C_%d+)%.")
                 local ok, s = pcall(function() return t:GetText():ToString() end)
                 s = (ok and s) and s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "") or ""
-                if s ~= "" and not by[name] then by[name] = s; order[#order + 1] = name end
+                local res = tp:match("%.(%w+)Display%.WidgetTree_%d+%.AmountText$")
+                if res then
+                    if s:match("%d") and not s:find("#", 1, true) and not gave[res] then
+                        gave[res] = true
+                        gives[#gives + 1] = (s:gsub("^%+", "")) .. " " .. (res:gsub("(%l)(%u)", "%1 %2")):lower()
+                    end
+                elseif s ~= "" and not by[name] then by[name] = s; order[#order + 1] = name end
             end
         end
     end
@@ -295,6 +305,8 @@ local function radial_details(menu)
     local parts = { by.CenterText }
     if by.ErrorText then parts[#parts + 1] = by.ErrorText end
     if by.RoomDescriptionText then parts[#parts + 1] = by.RoomDescriptionText end
+    if by.DescriptionText then parts[#parts + 1] = by.DescriptionText end
+    if #gives > 0 then parts[#parts + 1] = "Gives " .. table.concat(gives, ", ") end
     local op = {}
     if by.EnergyValue then op[#op + 1] = "energy " .. by.EnergyValue end
     if by.CrewValue then op[#op + 1] = "crew " .. by.CrewValue end
@@ -791,6 +803,23 @@ label_for = function(b, path)
         label = table.concat(texts, ". ")
         if label == "" then label = nil end
         if label and not b:GetIsEnabled() then label = label:gsub("%.$", "") .. ", unavailable" end
+        -- "1 of 2": two offer options sounded like one going on (Excess
+        -- Power, VM, 2026-10-15).
+        if label then
+            pcall(function()
+                local list = b:GetParent()
+                local n, index = 0, nil
+                for i = 0, list:GetChildrenCount() - 1 do
+                    local c = list:GetChildAt(i)
+                    if c and c:IsValid() and c:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C"
+                        and require("screen").shown(c) then
+                        n = n + 1
+                        if c:GetFullName() == b:GetFullName() then index = n end
+                    end
+                end
+                if index and n > 1 then label = label:gsub("%.$", "") .. ", " .. index .. " of " .. n end
+            end)
+        end
     elseif require("warpcore").handles(path) then
         label = require("warpcore").label(path)
     elseif require("awaymission").is_slot(path) then
@@ -982,6 +1011,17 @@ local function poll()
         section_prefix = nil
     end
     print(string.format("[VoyagerAccess] focus: %s | %s\n", tostring(label), path))
+    -- The pause menu that Escape opened behind a closing mod list is
+    -- resumed at once; "Closed. RESUME" was said anyway (VM, 2026-10-15).
+    if path:find("WBP_PauseMenu_C", 1, true) and os.clock() < (M.undo_pause_until or 0) then return end
+    -- go_back is putting a room's hero back and says the result itself.
+    if os.clock() < (M.hush_focus_until or 0) then return end
+    -- An event between its choice and its result (popups.lua).
+    if path:find("WBP_POIMultipleChoice_C", 1, true)
+        and (os.clock() < (require("popups").result_pending_until or 0) or require("popups").event_unread(path)) then
+        print("[VoyagerAccess] focus: held until the event result is read\n")
+        return
+    end
     -- A room window or event that has just opened: popups.lua reads the
     -- window and then says this button. Said here as well, it came three
     -- times over: "Life Support off. Life Support, inactive. ... Life
@@ -990,7 +1030,13 @@ local function poll()
     -- not under the window's path, so any such window still unread counts.
     local popups = require("popups")
     local okm, map = pcall(function() return require("system").active() end)
-    for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C" }) do
+    -- A side mission offer too: its button came before its text ("Good
+    -- idea, let's build a BATTERY COMPARTMENT..." then Excess Power, VM,
+    -- 2026-10-15).
+    -- And the first-launch screens: "CONFIRM" came before "Performance
+    -- Selection" when focus was polled first (demo, VM, 2026-10-15).
+    for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C", "WBP_MultipleChoiceWidget_C",
+                           "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C" }) do
         if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
             for _, w in ipairs(FindAllOf(cls) or {}) do
                 if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then
@@ -1189,6 +1235,12 @@ local function activate()
         return
     end
     print("[VoyagerAccess] enter: clicking " .. tostring(current) .. "\n")
+    -- The room's hero when its hero list is opened: closing the list
+    -- without a choice leaves the room with no hero (see go_back).
+    if current:find("WBP_HeroModule_C_%d+%..*OpenSelectionButton$") then
+        local okl, l = pcall(label_for, b, current)
+        M.room_hero_before = okl and type(l) == "string" and l:match("^Assigned hero: ([^%.]+)") or nil
+    end
     -- Enter on a settings row opens nothing, so it is not a place to go back to.
     if not is_setting(b) and back_stack[#back_stack] ~= current then
         back_stack[#back_stack + 1] = current
@@ -1421,8 +1473,55 @@ local function go_back()
         pcall(function()
             local w, d = resolve(current), 0
             while w and w:IsValid() and d < 10 do
-                if w:GetClass():GetFName():ToString():find("HeroPickerSelection_C$") then
+                local cls = w:GetClass():GetFName():ToString()
+                if cls:find("HeroPickerSelection_C$") then
+                    -- Closing a room's list without a choice takes its hero
+                    -- out of the room, with the game's Escape too, and
+                    -- clicking that hero in the list takes him out as well:
+                    -- Neelix left the Mess Hall on Backspace (VM,
+                    -- 2026-10-15). The room has no close button. So the list
+                    -- is closed, opened again and the hero chosen again,
+                    -- quietly, and the slot is said at the end.
+                    local keep = cls:find("Room", 1, true) and M.room_hero_before
                     w:CallBackAction()
+                    if keep then
+                        print("[VoyagerAccess] back: choosing " .. keep .. " again\n")
+                        M.hush_focus_until = os.clock() + 4
+                        local function shown_slot()
+                            for _, sb in ipairs(FindAllOf("CommonButtonBase") or {}) do
+                                if sb:IsValid() and sb:GetFName():ToString() == "OpenSelectionButton" and live(sb)
+                                    and sb:GetFullName():find("WBP_HeroModule_C", 1, true) and require("screen").shown(sb) then
+                                    return sb
+                                end
+                            end
+                        end
+                        local function finish()
+                            M.hush_focus_until = 0
+                            local okl, l = pcall(M.current_label)
+                            speech.say(okl and l or ("Assigned hero: " .. keep), true)
+                        end
+                        ExecuteInGameThreadWithDelay(400, function()
+                            local ok = pcall(function()
+                                local sb = shown_slot()
+                                if not sb then return finish() end
+                                click(sb)
+                                ExecuteInGameThreadWithDelay(500, function()
+                                    pcall(function()
+                                        for _, hb in ipairs(FindAllOf("WBP_RoomHeroSelectionButton_C") or {}) do
+                                            local okn, nm = pcall(function() return hb.HeroPlaque.HeroNameText:GetText():ToString() end)
+                                            if okn and hb:IsValid() and live(hb) and require("screen").shown(hb)
+                                                and nm:match("^%s*(.-)%s*$") == keep then
+                                                click(hb)
+                                                break
+                                            end
+                                        end
+                                    end)
+                                    ExecuteInGameThreadWithDelay(500, function() pcall(finish) end)
+                                end)
+                            end)
+                            if not ok then M.hush_focus_until = 0 end
+                        end)
+                    end
                     closed = true
                     return
                 end
@@ -1628,6 +1727,7 @@ function M.install()
     -- ask for (the next keys went into Settings, 2026-10-14): when Escape
     -- closed a mod list, a pause menu that opens right after is resumed.
     local function undo_pause()
+        M.undo_pause_until = os.clock() + 1.5
         local tries = 0
         local function check()
             tries = tries + 1

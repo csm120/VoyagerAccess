@@ -2,6 +2,26 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.11
+
+More fixes from the full game's second sector, State of Flux.
+
+- Changed: when your objectives change, you hear only what changed, for example "Done: Assign Neelix to the Mess Hall" or "New mission: Final Warning, 50 cycles left". The whole list is still read when a game loads, and O reads it any time.
+- Fixed: Backspace in a room's hero list took the hero out of the room. The room now keeps its hero. The game's own Escape still empties the slot, so use Backspace.
+- New: a room's assigned hero says what the hero adds, for example "Assigned hero: Neelix. +4 MORALE per CYCLE", and the hero list says "2 of 3".
+- New: C says how much of each resource the ship can store, for example "Duranium 100, max 100". Events kept saying "storage full" with no way to know the limit.
+- New: a point on the System Map with a side mission says so, for example "Planetoid, side mission".
+- Changed: systems on the Sector Map have the names the game shows when you point at them, said the Starfleet way: "System 3 5 2 oh point 1" instead of "Star system" for all four. The number after the point is kept now, because the systems in a sector can differ only there.
+- Fixed: after a story scene, Set course to a far planet failed twice and said so. The game keeps the camera on Voyager then, and the planet was off the screen. Voyager Access now zooms the map out until the planet is on screen.
+- Fixed: after you chose an event option, "CONTINUE" was sometimes said before the result, and the event's opening text could be read a second time. Now you hear the result, then CONTINUE.
+- Fixed: a side mission offer said its first answer before its message. The answers also say "1 of 2" now.
+- Fixed: the ring on a ruined room only said "Clear Debris". It now reads what the game shows, for example "Clearing this ruin will give you some resources back. Gives 16 duranium."
+- Fixed: closing one of Voyager Access's lists with Escape also said "RESUME" from the pause menu the same key opened.
+- Fixed: the first-launch Performance Selection screen could say "CONFIRM" before its message.
+- Fixed: two wording slips. An event option ended in "exposure:." and a choice said "Level 1- Chance".
+
+## Thursday October 15th 2026
+
 Version 0.3.10
 
 Less repeating.

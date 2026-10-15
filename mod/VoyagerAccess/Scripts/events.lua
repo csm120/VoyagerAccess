@@ -306,6 +306,9 @@ function M.option_label(b)
     crumb.at("events: unmet")
     local needs = unmet(b)
     local text = plain(wording:gsub("%s*%[[^%[%]]*%]%s*", " "))
+    -- "...for resource exposure: [Torpedo Launch Bay Lvl 1]" left a colon
+    -- before the full stop: "exposure:." (Icy Planetoid, VM, 2026-10-15).
+    text = (text:gsub("%s*:%s*$", ""))
     local parts = { is_locked(b) and ("Locked: " .. text) or text }
     if needs then parts[#parts + 1] = "Needs " .. needs end
     -- A cost the ship cannot pay is shown in the negative color ("Pay

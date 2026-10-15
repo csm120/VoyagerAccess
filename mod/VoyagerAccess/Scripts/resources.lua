@@ -56,10 +56,16 @@ local function lines()
         end)
         if ok and text ~= "Hull " then parts[#parts + 1] = text end
     end
+    -- Storage limits: events said "storage full" and C never said how much
+    -- fits (State of Flux, VM, 2026-10-15). Science points (9999) have none
+    -- worth saying.
+    local manager = FindFirstOf("STVResourceManager")
     for _, key in ipairs(ORDER) do
         local w = by[key]
         if w then
             local text = (NAMES[key] or key) .. " " .. text_of(w.CurrentResourceAmountText)
+            local okc, cap = pcall(function() return manager:GetResourceCapacity(key) end)
+            if okc and type(cap) == "number" and cap > 0 and cap < 9999 then text = text .. ", max " .. cap end
             local change = text_of(w.CyclePreview)
             if change:match("^[%+%-]%d") then
                 text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"

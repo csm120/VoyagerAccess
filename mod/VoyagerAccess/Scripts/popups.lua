@@ -200,10 +200,7 @@ local function poi_detail(parts)
         -- which came out "1 1 2 .oh  Vidiian System" (2026-10-14): only the
         -- number is said digit by digit, then the name.
         local raw = by.SystemNameTextBlock
-        local num, rest = nil, nil
-        if raw then num, rest = raw:gsub(",", ""):match("^(%d+)%.?%d*%s*(.-)%s*$") end
-        local system = num and (num:gsub("%d", "%0 "):gsub("0 ", "oh "):gsub(" $", "")
-            .. (rest ~= "" and (", " .. rest) or "")) or raw
+        local system = raw and require("system").spoken_number(raw)
         if system then place = place .. ", in system " .. system end
         out[#out + 1] = place
     end
@@ -948,9 +945,33 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
         for _, p in ipairs(parts) do out[#out + 1] = p.text end
         return table.concat(out, ". ")
     end,
+    -- A side mission's end: "Phage. CONTINUE. Mission Failed" had its
+    -- button's label in the middle (VM, 2026-10-15). The button is said
+    -- on its own after the window.
+    WBP_SideMissionFinished_C = function(parts)
+        local out, seen = {}, {}
+        for _, p in ipairs(parts) do
+            if not p.path:find("Button[%w_]*%.") and not seen[p.text] then
+                seen[p.text] = true
+                out[#out + 1] = (p.text:gsub("%.%s*$", ""))
+            end
+        end
+        return table.concat(out, ". ") .. "."
+    end,
     WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end,
     WBP_AwayMissionLoadout_C = function() return require("awaymission").window_text() end,
     WBP_AwayMissionOutcome_C = function(_, path) return require("awaymission").outcome_text(path) end }
+
+-- True while an event window's text has changed since it was last read:
+-- the poll is about to read it and say the focused button after it. Focus
+-- reached CONTINUE 80 ms before the result was read, and "CONTINUE" came
+-- first (Abandoned Mining Station, VM, 2026-10-15).
+function M.event_unread(button_path)
+    local p = button_path and button_path:match("^(.-WBP_POIMultipleChoice_C_%d+)")
+    if not (p and last_text[p]) then return false end
+    local ok, text = pcall(M.text_under, p)
+    return ok and text ~= last_text[p] and text:find("%a") ~= nil
+end
 
 -- All on-screen text inside the widget at path, in reading order.
 function M.text_under(path)
@@ -1134,7 +1155,8 @@ local function poll()
                     or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
                     or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
                     or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
-                    or p:find("WBP_SandboxSectorResult_C", 1, true))
+                    or p:find("WBP_SandboxSectorResult_C", 1, true)
+                    or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true))
                 -- An event's result replaces its options in the same window:
                 -- "CONTINUE" came before "Trading Station. We accepted their
                 -- trade offer" (VM, 2026-10-14).
@@ -1153,6 +1175,30 @@ local function poll()
                     end
                     if #new > 0 then say = table.concat(new, " ") end
                 end
+                -- Between an option and its result the event shows its
+                -- description alone, and that was read again with CONTINUE
+                -- before the result (Icy Planetoid, VM, 2026-10-15). A
+                -- reread that only lost sentences says nothing.
+                local nothing_new = false
+                if reread and last_text[p] and p:find("WBP_POIMultipleChoice_C", 1, true) then
+                    local old = {}
+                    for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
+                    nothing_new = true
+                    for s in (text .. " "):gmatch("(.-%.)%s+") do
+                        if not old[s] then nothing_new = false end
+                    end
+                end
+                if nothing_new then
+                    print("[VoyagerAccess] popup: only lost text, not read again (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
+                    -- Focus moves to CONTINUE before the result is in, and
+                    -- "CONTINUE" came first (Abandoned Vessel, VM,
+                    -- 2026-10-15); the result is read with the button after it.
+                    -- Held until the result is read: focus moved about 3 s
+                    -- after the choice once (Icy Planetoid), so 10 s is only
+                    -- a safety limit.
+                    M.result_pending_until = os.clock() + 10
+                else
+                M.result_pending_until = nil
                 speech.say_long(say, first_event and true or nil)
                 -- An offer that opened over the construction ring left focus
                 -- on the ring behind it, and its options could not be reached
@@ -1182,6 +1228,7 @@ local function poll()
                 if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true) then
                     local okl, label = pcall(function() return require("focus").current_label() end)
                     if okl and label and label ~= "" then speech.say(label, false) end
+                end
                 end
                 spoken[#spoken + 1] = text
             end

@@ -337,7 +337,7 @@ function M.choice_label(path)
     -- The requirement widget is not a named member, so find its text by path.
     local req = ""
     local want = cpath .. "."
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
             if tp and tp:sub(1, #want) == want and tp:find("WBP_Dialogue_Requirement", 1, true)
@@ -348,7 +348,9 @@ function M.choice_label(path)
     end
     if req ~= "" and not req:find("^##") then
         local unmet = req:find("ColorNegative", 1, true) ~= nil
-        req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub(" %- Chance:", ", chance")
+        -- "Phaser Control Room Level 1- Chance: 50% + 35%" has no space
+        -- before the dash (Mirror, Mirror, VM, 2026-10-15).
+        req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub("%s*%-%s*Chance:", ", chance")
         parts[#parts + 1] = (unmet and "Needs " or "") .. req
     end
     local reward = ""

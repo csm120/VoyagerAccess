@@ -35,7 +35,10 @@ local BUTTON_NAMES = { OpenSelectionButton = "Assign a hero" }
 local function texts_under(path)
     local by = {}
     local prefix = path .. "."
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+    -- FindAllOf does not include subclasses: a room hero's bonus,
+    -- HeroImpact_RichTXT ("+4 MORALE per CYCLE"), is a CommonRichTextBlock
+    -- and was never read (Mess Hall, VM, 2026-10-15).
+    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and path_of(t)
             if tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
@@ -184,7 +187,7 @@ function M.serving_label(path)
     if not (path and path:find("WBP_Button_SelectableServing_C_%d+$")) then return nil end
     local by = {}
     local prefix = path .. "."
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and path_of(t)
             if tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
@@ -202,18 +205,24 @@ function M.serving_label(path)
     local ok, sel = pcall(function() return b:GetSelected() end)
     if ok and sel then
         label = label .. ", selected"
-        for _, cls in ipairs({ "TextBlock", "RichTextBlock" }) do
+        -- One widget can be found under two class names: keep one text per
+        -- name, said description first, then per crew, then for all crew.
+        local texts = {}
+        for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
             for _, t in ipairs(FindAllOf(cls) or {}) do
                 local tp = t:IsValid() and path_of(t)
                 -- Premium rations show their cost instead of a description.
                 local name = tp and tp:match("([^%.]+)$") or ""
-                local wanted = name:find("DescriptionText$") or name == "FedCrewPerResourceText"
-                    or name == "RequiredResourceAmountForCrewText"
-                if tp and wanted and tp:find("WBP_MessHall_ServingSizeModule_C_%d+%.") and screen.shown(t) then
+                local key = name:find("DescriptionText$") and 1 or (name == "FedCrewPerResourceText" and 2)
+                    or (name == "RequiredResourceAmountForCrewText" and 3) or nil
+                if tp and key and not texts[key] and tp:find("WBP_MessHall_ServingSizeModule_C_%d+%.") and screen.shown(t) then
                     local d = plain(text_of(t))
-                    if d ~= "" then label = label .. ". " .. d end
+                    if d ~= "" then texts[key] = d end
                 end
             end
+        end
+        for key = 1, 3 do
+            if texts[key] then label = label .. ". " .. texts[key] end
         end
     end
     return label
@@ -271,6 +280,9 @@ function M.button_label(path, label)
     -- shows the hero's name only while one is assigned.
     if name == "OpenSelectionButton" and by.HeroNameText and by.HeroNameText ~= "" then
         label = "Assigned hero: " .. by.HeroNameText
+        if by.HeroImpact_RichTXT and by.HeroImpact_RichTXT ~= "" then
+            label = label .. ". " .. (by.HeroImpact_RichTXT:gsub("%.%s*$", ""))
+        end
     end
     -- The power button says what it would do ("Switch Off"); say the room's
     -- state instead (Casey, 2026-10-11).
@@ -372,6 +384,20 @@ function M.hero_label(path)
     for _, text in pairs(by) do
         if text:find("%%") then parts[#parts + 1] = (text:gsub("^%+", "Plus ")) end
     end
+    -- "2 of 3": the list said nothing at either end, so there was no way to
+    -- know how many heroes it had (Mess Hall, VM, 2026-10-15).
+    pcall(function()
+        local list = b:GetParent()
+        local n, index = 0, nil
+        for i = 0, list:GetChildrenCount() - 1 do
+            local c = list:GetChildAt(i)
+            if c and c:IsValid() and c:GetClass():GetFName():ToString() == "WBP_RoomHeroSelectionButton_C" and screen.shown(c) then
+                n = n + 1
+                if c:GetFullName() == b:GetFullName() then index = n end
+            end
+        end
+        if index then parts[#parts + 1] = index .. " of " .. n end
+    end)
     for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
     return table.concat(parts, ". ") .. "."
 end
