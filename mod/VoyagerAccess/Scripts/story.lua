@@ -35,6 +35,7 @@ function M.active()
 end
 
 local function clean(s)
+    s = require("text").prep(s)  -- icons beside numbers (text.lua)
     s = s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", "")
     return (s:gsub("%s+", " "):match("^%s*(.-)%s*$"))
 end

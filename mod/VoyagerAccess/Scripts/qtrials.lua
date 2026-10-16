@@ -41,6 +41,7 @@ local function text(w)
     if not valid(w) then return "" end
     local ok, s = pcall(function() return w:GetText():ToString() end)
     if not ok or type(s) ~= "string" or s:sub(1, 1) == "#" then return "" end
+    s = require("text").prep(s)  -- icons beside numbers (text.lua)
     s = s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", "")
     return (s:gsub("%s+", " "):match("^%s*(.-)%s*$"))
 end

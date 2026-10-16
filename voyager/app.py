@@ -270,6 +270,11 @@ def unset_launch_options():
         LAUNCH_RECORD.unlink(missing_ok=True)
 
 
+# install_mod's exit code when the game is not installed: setup's Finish page
+# then says so instead of "installed and added to the game".
+NO_GAME = 2
+
+
 def install_mod(from_setup=False):
     """from_setup: run by setup, whose Finish page says it is ready, so no
     box of its own on success (Casey, 2026-10-11: one box, not OK and
@@ -284,7 +289,7 @@ def install_mod(from_setup=False):
                 "\"Add Voyager Access to the game\", or run this installer again.",
                 MB_YESNO | MB_ICONQUESTION) == IDYES:
             steam.open_store_page(steam.FULL)
-        return 0
+        return NO_GAME
     while True:
         try:
             for game in games:

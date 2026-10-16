@@ -1,5 +1,17 @@
 # New in Voyager Access
 
+## Friday October 16th 2026
+
+Version 0.3.20
+
+Building rooms and the installer, checked with JAWS this time, and a fix for a player who couldn't set a course.
+
+- Fixed: for some players, Set course always said "not set". The mod points the mouse at the place and the game picks it up from there, but on some computers the game never did, even with the mouse exactly in the right spot. When that happens now, the mod sets the course through the game directly, without the mouse.
+- Fixed: after you chose a room to build, the build menu stayed open behind everything. It could take the arrow keys away from the next window, even the Game Over screen. It closes by itself now and says "Building" and the room's name.
+- Fixed: Enter on something in a ship's room menu that the game won't allow, like Clear Debris on a deck with no life support, did nothing and said nothing. It says why now, for example "Not possible: No Life Support".
+- Fixed: a Cargo Bay's description in the build menu read "+500 storage capacity" four times without saying which resource. It says "+500 deuterium storage capacity, +500 food storage capacity" and so on now. The same clean-up now runs in the tech tree, Q Trials setup and story text.
+- Fixed: if you install Voyager Access before the game, the last page of setup said the mod was "installed and added to the game" and offered to start it. It says the game isn't installed yet and what to do next, with no start box.
+
 ## Thursday October 15th 2026
 
 Version 0.3.19

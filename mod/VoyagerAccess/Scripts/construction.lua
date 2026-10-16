@@ -119,9 +119,24 @@ function M.enter(b, label)
         speech.say("The build did not start", true)
         return true
     end
-    -- The ring stays open after a build (OnCloseRadial is only an event);
-    -- the game's Escape closes it.
-    speech.say("Building " .. (name ~= "" and name or "the room") .. ". Escape closes the ring.", true)
+    -- The ring stays open after a build, on its room page (OnCloseRadial is
+    -- only an event). Left open, it sat behind the next offer and then
+    -- behind Game Over, and its categories took the arrows there (VM,
+    -- 2026-10-15). GoBackToLastMenu steps back one level a call: the first
+    -- reaches the categories, the second closes the ring.
+    speech.say("Building " .. (name ~= "" and name or "the room"), true)
+    ExecuteInGameThreadWithDelay(300, function()
+        pcall(function()
+            for _ = 1, 3 do
+                local open = nil
+                for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+                    if w:IsValid() and require("screen").shown(w) then open = w end
+                end
+                if not open then break end
+                open:GoBackToLastMenu()
+            end
+        end)
+    end)
     return true
 end
 

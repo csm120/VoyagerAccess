@@ -423,6 +423,19 @@ class InstallModMessageTests(unittest.TestCase):
             app.start_game = saved
         self.assertEqual(started, [])
 
+    def test_no_game_tells_setup_with_its_own_code(self):
+        # Setup's Finish page said "installed and added to the game" after
+        # the game-missing box (JAWS in the VM, 2026-10-15); exit code 2 lets
+        # setup say the game is missing instead.
+        app.steam.find_games = lambda s=None: []
+        saved = app.steam.open_store_page
+        app.steam.open_store_page = lambda appid: None
+        try:
+            self.assertEqual(app.install_mod(from_setup=True), app.NO_GAME)
+        finally:
+            app.steam.open_store_page = saved
+        self.assertEqual(app.NO_GAME, 2)
+
     def test_not_installed_message_does_not_offer_the_demo(self):
         app.steam.find_games = lambda s=None: []
         saved = app.steam.open_store_page

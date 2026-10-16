@@ -287,6 +287,11 @@ local function radial_details(menu)
                 local name = tp:match("([^%.]+)$")
                 center = center or tp:match("^(.-WBP_RadialMenuCenter_[%w_]-_C_%d+)%.")
                 local ok, s = pcall(function() return t:GetText():ToString() end)
+                -- The shared clean-up first: a Cargo Bay's description lists
+                -- "<img id="Deuterium"/> +500 storage capacity" a line each,
+                -- read as "+500 storage capacity +500 storage capacity"
+                -- (VM, 2026-10-15).
+                if ok and s then s = require("text").prep(s) end
                 s = (ok and s) and s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "") or ""
                 local res = tp:match("%.(%w+)Display%.WidgetTree_%d+%.AmountText$")
                 if res then
@@ -977,6 +982,7 @@ label_for = function(b, path)
                 local tp = t:IsValid() and path_of(t)
                 if tp and tp:sub(1, #prefix) == prefix and require("screen").shown(t) then
                     local ok, s = pcall(function() return t:GetText():ToString() end)
+                    if ok then s = require("text").prep(s) end  -- icons beside numbers (text.lua)
                     s = ok and s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%s+", " ")
                         :gsub("%s+([%.,])", "%1"):match("^%s*(.-)%s*$") or ""
                     if s ~= "" then texts[#texts + 1] = s end
@@ -1550,6 +1556,17 @@ local function activate()
     -- could do the action twice. So click only if the ring is still open,
     -- with the same segment, a moment later (2026-10-14).
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then
+        -- A segment the game has locked (bLocked): Clear Debris with no life
+        -- support did nothing and said nothing on Enter (VM, 2026-10-15).
+        -- Say why, from what the ring said for it ("Clear Debris. No Life
+        -- Support. ...").
+        local okl, locked = pcall(function() return b.bLocked == true end)
+        if okl and locked then
+            local said = radial_said[current] or ""
+            local name, why = said:match("^([^%.]+)%.%s*([^%.]+)")
+            speech.say("Not possible" .. (why and (": " .. why) or "") .. (name and (". " .. name) or ""), true)
+            return
+        end
         -- A room to build: built at the selected space by the mod, since the
         -- game's own placement needs a mouse click on a slot (2026-10-14).
         local okc, handled = pcall(require("construction").enter, b, radial_said[current])

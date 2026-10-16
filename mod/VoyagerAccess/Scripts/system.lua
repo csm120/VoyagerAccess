@@ -481,6 +481,47 @@ function M.travel_status()
 end
 
 local fire_course   -- defined after run(); verify_course retries through it
+
+-- Sets a course with STVJourneySubsystem:DeclareTravel(ship, point), when
+-- CanTravel allows it. True when the call was made; it then checks that the
+-- trip started, says "Under way" and watches for the arrival.
+function M.declare_travel(name, target, start_d)
+    local ok, started = pcall(function()
+        local j = FindFirstOf("STVJourneySubsystem")
+        local ship = voyager()
+        local poi = nil
+        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
+            if c:IsValid() and path_of(c):find("PersistentLevel", 1, true) then
+                local a = c:GetOwner()
+                if a and a:IsValid() and path_of(a) == target then poi = c end
+            end
+        end
+        if not (j and j:IsValid() and ship and poi) then return false end
+        if not j:CanTravel(ship, poi, {}) then return false end
+        print("[VoyagerAccess] course: DeclareTravel " .. name .. "\n")
+        j:DeclareTravel(ship, poi)
+        return true
+    end)
+    if not (ok and started) then
+        print("[VoyagerAccess] course: DeclareTravel not possible (" .. tostring(started) .. ")\n")
+        return false
+    end
+    ExecuteInGameThreadWithDelay(1500, function()
+        pcall(function()
+            local j = FindFirstOf("STVJourneySubsystem")
+            local d = target_distance(target)
+            local moving = j and j:IsValid() and j:IsTravelling()
+            if moving or (d and start_d and d < start_d - 1) or (d and d <= 1000) then
+                print("[VoyagerAccess] course: under way (DeclareTravel)\n")
+                speech.say("Under way to " .. name, false)
+                watch_arrival(name, target, start_d)
+            else
+                speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
+            end
+        end)
+    end)
+    return true
+end
 local function verify_course(name, target, attempt)
     local ship = voyager()
     local start = ship and ship:K2_GetActorLocation()
@@ -551,6 +592,13 @@ local function verify_course(name, target, attempt)
             fire_course(name, target, 2)
             return
         end
+        -- Last: the journey's own DeclareTravel, with no mouse at all. A
+        -- forum player's game never picked up the point under the cursor
+        -- (2560x1600 at 100 percent, one screen, cursor exactly on the
+        -- point, "selected=none" every time, 2026-10-16); DeclareTravel
+        -- flew Voyager there with the cursor parked in a corner (demo, VM).
+        -- Only when the game's own CanTravel agrees.
+        if attempt == 2 and M.declare_travel(name, target, start_d) then return end
         speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
     end
     ExecuteInGameThreadWithDelay(2000, function() check(3) end)

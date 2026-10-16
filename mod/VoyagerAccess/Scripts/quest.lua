@@ -177,7 +177,14 @@ local function poll()
     -- exit spent the duranium (VM, 2026-10-15).
     -- Not the loading screen: away missions show it too, and every
     -- objective change after one read the whole list again (VM, 2026-10-15).
-    for _, cls in ipairs({ "WBP_MainMenu_C", "WBP_SandboxSectorResult_C" }) do
+    -- Game Over too: its Reload Save loads without the main menu, and "New
+    -- mission" over Game Over then "Mission ended" after the reload were
+    -- said (VM, 2026-10-15).
+    -- And the profile's save window (Continue, Load Autosave), which both
+    -- games show before a load: the demo's objective was not read after
+    -- loading (VM, 2026-10-16).
+    for _, cls in ipairs({ "WBP_MainMenu_C", "WBP_SandboxSectorResult_C", "WBP_GameOver_C",
+            "WBP_LoadSectorSaveWindow_C" }) do
         for _, w in ipairs(FindAllOf(cls) or {}) do
             if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
                 last_missions = nil

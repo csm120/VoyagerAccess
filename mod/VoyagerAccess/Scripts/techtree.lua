@@ -206,7 +206,7 @@ local function view_texts(view)
         end
         local ok, txt = pcall(function() return w:GetText():ToString() end)
         if ok and type(txt) == "string" then
-            local t = txt:gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
+            local t = require("text").prep(txt):gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
             if t ~= "" then
                 if t:match("^%d+$") and icon then t = t .. " " .. icon end
                 out[#out + 1] = t

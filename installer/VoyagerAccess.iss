@@ -82,11 +82,11 @@ FinishedLabel=Voyager Access is installed and added to Star Trek: Voyager - Acro
 FinishedLabelNoIcons=Voyager Access is installed and added to Star Trek: Voyager - Across the Unknown.%n%nStart the game from Steam as usual. Speech starts when the game loads.
 
 [Run]
-; Interactive install: add the mod to the game and say so. A silent
-; install (the updater) skips this; the run without arguments that follows
+; Interactive install: adding the mod to the game runs from [Code]
+; (CurStepChanged), so its exit code can change the Finish page. A silent
+; install (the updater) skips it; the run without arguments that follows
 ; puts the new mod in, sets the launch options if they are missing (asking
 ; to restart Steam), and starts the game again after an update.
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod --from-setup"; Flags: skipifsilent
 ; Only for silent installs (updates): an interactive install's
 ; --install-mod has already done this, and a second Steam prompt there
 ; would be confusing.
@@ -112,4 +112,44 @@ var
 begin
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
+end;
+
+// Adding the mod to the game (interactive installs only). The Finish page
+// said "installed and added to the game" even after the box saying the game
+// is not installed (JAWS in the VM, 2026-10-15). --install-mod exits 0 when
+// added, 2 (NO_GAME in app.py) when the game is missing, 1 when it failed.
+var
+  ModResult: Integer;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if (CurStep = ssPostInstall) and not WizardSilent then
+  begin
+    if not Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--install-mod --from-setup', '',
+        SW_SHOWNORMAL, ewWaitUntilTerminated, ModResult) then
+      ModResult := 1;
+  end;
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if (CurPageID = wpFinished) and (ModResult <> 0) then
+  begin
+    if ModResult = 2 then
+      WizardForm.FinishedLabel.Caption :=
+        'Voyager Access is installed, but Star Trek: Voyager - Across the Unknown is not installed in Steam yet.' + #13#10#13#10 +
+        'After installing the game, open the Start menu and choose "Add Voyager Access to the game", or run this installer again.'
+    else
+      WizardForm.FinishedLabel.Caption :=
+        'Voyager Access is installed, but it could not be added to the game.' + #13#10#13#10 +
+        'Open the Start menu and choose "Add Voyager Access to the game" to try again.';
+    // No "Start the game" box when there is no game to start.
+    WizardForm.RunList.Visible := False;
+    if WizardForm.RunList.Items.Count > 0 then
+      WizardForm.RunList.Checked[0] := False;
+    // Focus is left where the hidden box was: JAWS then reads the message
+    // above, and Enter still presses Finish (the default button). With
+    // focus moved to Finish it said only "Finish button" and skipped the
+    // message (VM, 2026-10-15).
+  end;
 end;
