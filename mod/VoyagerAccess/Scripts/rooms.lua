@@ -553,6 +553,10 @@ function M.patients_text()
         local cond = plain(text_of(r.Conditions)):lower()
         local cycles = plain(text_of(r.RecoveryTime))
         local item = name
+        -- A star before a hero's name (Image_75; Chakotay, Harry Kim and
+        -- Tom Paris among crew, VM, 2026-10-16).
+        local okh, hero = pcall(function() return screen.shown(r.Image_75) end)
+        if okh and hero then item = item .. ", hero" end
         if cond ~= "" then item = item .. ", " .. cond end
         if cycles:match("^%d+$") then
             item = item .. ", " .. cycles .. (cycles == "1" and " cycle" or " cycles") .. " to recover"
@@ -819,6 +823,17 @@ function M.window_text(path)
     -- Quarters open on Crew Info.
     local okc, crew = pcall(M.crew_text)
     if okc and crew then out[#out + 1] = crew end
+    -- The tab can show a moment after the window: a working Sickbay with
+    -- five patients said only "Sick bay, level 1, active, uses 7 energy"
+    -- (VM, 2026-10-16). Read it then, after the header.
+    if not (okp and patients) and not (okc and crew) then
+        ExecuteInGameThreadWithDelay(600, function()
+            pcall(function()
+                local t = M.patients_text() or M.crew_text()
+                if t then require("speech").say(t, false) end
+            end)
+        end)
+    end
     -- A cargo bay's "Stock" bar (WBP_Cargo_FillPercentModule, FillPercentBar),
     -- a bar with no number, never read (room widget scan, VM, 2026-10-15).
     -- Its outer is the game instance, not the window; one room window is

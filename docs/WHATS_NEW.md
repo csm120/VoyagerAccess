@@ -2,6 +2,18 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.33
+
+Restart Sector, the Sickbay and a few readings.
+
+- Fixed: in a profile's menu, Restart Sector only said "selected" and nothing opened, so after a game over there was no way back to a sector's start. One Enter now opens the list of sector saves, like "Sector 1, Caretaker".
+- Changed: the Sickbay reads its patients when it opens, with each one's condition and the cycles until they recover, and says which ones are heroes. Before, a Sickbay full of patients only said its name and energy.
+- Changed: a room with paused work says so, like "Ruined room, removing, paused, 3 cycles".
+- Fixed: when an objective's count changed, like "Treat the sick before the disease spreads (38)" going to 45, it was announced as done and then as a new objective. Count changes are quiet now, and O reads the current numbers.
+- Fixed: square brackets around names were still read in some messages, like "[Sick bay] got damaged". An "&" in the game's text is read as "and".
+
+## Friday October 16th 2026
+
 Version 0.3.32
 
 Building rooms where they really fit.

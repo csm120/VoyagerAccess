@@ -1732,6 +1732,48 @@ local function activate()
                 end
             end
         end
+        -- In the full game Restart Sector's click only made it "selected"
+        -- and its column of sector saves stayed collapsed, after a game
+        -- over and again on every try (VM, 2026-10-16). When the click has
+        -- not shown them, the window's UpdateShowLoadSaveButtons does, and
+        -- focus moves to the first save that can be loaded.
+        if name == "SectorSaveButton" then
+            ExecuteInGameThreadWithDelay(400, function()
+                pcall(function()
+                    local function any_shown()
+                        for _, x in ipairs(FindAllOf("WBP_Button_LoadSectorSave_C") or {}) do
+                            if x:IsValid() and require("screen").shown(x) then return true end
+                        end
+                        return false
+                    end
+                    -- The demo needed a second Enter (the first only
+                    -- selected it): focus goes into a list already shown.
+                    if current and current:find("WBP_Button_LoadSectorSave_C", 1, true) then return end
+                    local shown = any_shown()
+                    for _, w in ipairs(FindAllOf("WBP_LoadSectorSaveWindow_C") or {}) do
+                        if w:IsValid() and live(w) and require("screen").shown(w) then
+                            print("[VoyagerAccess] enter: save window list, shown " .. tostring(shown) .. "\n")
+                            if not shown then w:UpdateShowLoadSaveButtons(true) end
+                            -- GetFirstEnabledSectorSaveButton fails in the
+                            -- demo; then the first one shown, in list order.
+                            local okf, first = pcall(function() return w:GetFirstEnabledSectorSaveButton() end)
+                            if not (okf and first and first:IsValid()) then
+                                first = nil
+                                local best = math.huge
+                                for _, x in ipairs(FindAllOf("WBP_Button_LoadSectorSave_C") or {}) do
+                                    if x:IsValid() and require("screen").shown(x) then
+                                        local i = 0
+                                        pcall(function() i = x:GetParent():GetChildIndex(x) end)
+                                        if i < best then first, best = x, i end
+                                    end
+                                end
+                            end
+                            if first then first:SetFocus() end
+                        end
+                    end
+                end)
+            end)
+        end
     end
     -- The room's hero when its hero list is opened: closing the list
     -- without a choice leaves the room with no hero (see go_back).

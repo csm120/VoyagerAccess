@@ -105,8 +105,10 @@ function M.objective()
 end
 
 -- Countdowns and progress counts change on their own every cycle; they are
--- not a change of objective.
-local function bare(s) return (s:gsub(", %d+ cycles? left", ""):gsub("%s*%(%d+/%d+%)", "")) end
+-- not a change of objective. A lone count too: "Treat the sick before the
+-- disease spreads. (38)" became (45) and was said as "Done: ..." and then
+-- as a new objective (Outbreak, VM, 2026-10-16).
+local function bare(s) return (s:gsub(", %d+ cycles? left", ""):gsub("%s*%(%d+/%d+%)", ""):gsub("%s*%(%d+%)", "")) end
 
 -- What changed between two mission lists, as words: "Done: Assign Neelix
 -- to the Mess Hall." Every step re-read the whole list, five missions long,

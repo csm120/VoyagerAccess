@@ -55,6 +55,13 @@ function M.say(text, interrupt)
     -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
     text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ","):gsub("%s+([;:!%?%)])", "%1")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    -- "Severely Injured & Sick" (Sickbay patients, VM, 2026-10-16): with
+    -- punctuation off a screen reader may say nothing for the "&".
+    text = text:gsub("%s+&%s+", " and ")
+    -- Brackets round a name: "the [TECH TREE]" (room descriptions) and
+    -- "[Sick bay] got damaged" (a sabotage toast), VM, 2026-10-16.
+    -- Placeholders like "[{Shuttle}]" are left to their readers.
+    text = text:gsub("%[([^%[%]{}]+)%]", "%1")
     text = split_words(text)
     if text == "" then return end
     if interrupt and os.time() < hold_until then interrupt = false end

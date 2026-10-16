@@ -133,7 +133,14 @@ local function room_state(h, raw)
             if raw == "None" and st:lower():find("^remov") then return "just cleared" end
             return st:lower() .. " done"
         end
-        return st:lower() .. (cy ~= "" and (", " .. cy:lower()) or "")
+        -- Paused work keeps its text ("removing, 3 cycles") but has no
+        -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).
+        local paused = false
+        pcall(function()
+            local d = FindFirstOf("STVConstructionManager"):BP_GetRoomDataBySlot(h:BP_GetSlotIndex())
+            paused = #d.AssignedWorkTeams == 0
+        end)
+        return st:lower() .. (paused and ", paused" or "") .. (cy ~= "" and (", " .. cy:lower()) or "")
     end)
     if ok and busy then return busy end
     for _, part in ipairs(STATE_PARTS) do
