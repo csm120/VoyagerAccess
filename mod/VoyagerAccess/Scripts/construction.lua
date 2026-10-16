@@ -84,6 +84,100 @@ function M.fit_text(b)
         or ("only " .. run .. " empty spaces side by side here")) .. ". Clear ruined rooms beside it for more space"
 end
 
+-- The ring's centre fills only on a real mouse hover, and on a forum
+-- player's computer the game ignored the mouse (2026-10-16). Hooking the
+-- centre showed the game calls OnSetRoom(level config, type config, cycles,
+-- 0); calling it from Lua fills only part of the centre (name, description
+-- and costs are set natively), so the same reading is built from the data:
+-- DA_RoomConfig's Configs (type config) and GetRoomConfig (level 0), the
+-- room text generator's description (it wants the type config), and the
+-- command's CanExecute and IsHardLocked_BP with the construction manager
+-- as context (the ring's CommandContextObject). Missing technology is a
+-- hard lock; the other reasons are checked here.
+local ROOM_CONFIG = "/Game/STVoyager/ConstructionSideview/Data/DA_RoomConfig.DA_RoomConfig"
+
+local function clean(s)
+    s = require("text").prep(s)
+    return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+end
+
+function M.blocked(cmd, cm, cfg, tc)
+    local ok, can = pcall(function() return cmd:CanExecute(cm) end)
+    if not ok or can then return nil end
+    local hard = false
+    pcall(function() hard = cmd:IsHardLocked_BP(cm) end)
+    if hard then return "Missing technology" end
+    local hull = require("ship").selected_hull()
+    local ls = true
+    pcall(function()
+        if tc.bRequiresLifesupport and hull then ls = cm:IsLifeSupportActiveForSlot(hull:BP_GetSlotIndex()) end
+    end)
+    if not ls then return "No life support" end
+    local rm = FindFirstOf("STVResourceManager")
+    -- Free work teams: the HUD counter C reads. The resource "WorkTeams"
+    -- lags (still 1 with C saying "Work teams 0 of 2 available", VM,
+    -- 2026-10-16).
+    local teams = true
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_WorkTeams_Resource_C") or {}) do
+            if w:IsValid() and require("screen").shown(w) then
+                local n = tonumber((w.AvailableAmount:GetText():ToString():match("%d+")))
+                if n then teams = n >= cfg.RequiredWorkTeamsToBuild end
+            end
+        end
+    end)
+    if not teams then return "No available work team" end
+    local short = false
+    pcall(function()
+        cfg.RequiredResourcesToBuild:ForEach(function(_, e)
+            local r = e:get()
+            if rm:GetResourceAmount(r.ResourceName:ToString(), false) < r.ResourceAmount then short = true end
+        end)
+    end)
+    if short then return "Missing resources" end
+    return "Not possible now"
+end
+
+-- What the centre would say for a room choice: { text, check }, check being
+-- the start of the description, to tell whether a hover reached this room.
+function M.ring_text(b)
+    local cmd = M.command_of(b)
+    if not cmd then return nil end
+    local t = cmd.RoomType
+    local rc = StaticFindObject(ROOM_CONFIG)
+    if not (rc and rc:IsValid()) then return nil end
+    local tc = nil
+    rc.Configs:ForEach(function(k, v) if k:get() == t then tc = v:get() end end)
+    local out = {}
+    rc:GetRoomConfig(t, 0, out)
+    local cfg = out.OutConfig
+    if not (tc and tc:IsValid() and cfg and cfg:IsValid()) then return nil end
+    local cm = FindFirstOf("STVConstructionManager")
+    local desc = ""
+    pcall(function() desc = clean(cm:GetRoomTextGenerator(cm):GetRoomDescriptionText(t, tc, 0):ToString()) end)
+    local parts = { require("ship").type_name(t) }
+    local why = M.blocked(cmd, cm, cfg, tc)
+    if why then parts[#parts + 1] = why end
+    if desc ~= "" then parts[#parts + 1] = desc end
+    parts[#parts + 1] = string.format("Operation: energy %d, crew %d", cfg.EnergyCostWhenActive, cfg.RequiredCrewMembersToOperate)
+    local build = {}
+    cfg.RequiredResourcesToBuild:ForEach(function(_, e)
+        local r = e:get()
+        -- "BioneuralGelPack" here (VM, 2026-10-16); the others read as the
+        -- centre has them ("50 Duranium").
+        local name = r.ResourceName:ToString()
+        if name:lower() == "bioneuralgelpack" then name = "bio-neural gel packs"
+        else name = name:gsub("(%l)(%u)", "%1 %2") end
+        build[#build + 1] = r.ResourceAmount .. " " .. name
+    end)
+    local wt, cy = cfg.RequiredWorkTeamsToBuild, cfg.CyclesToBuild
+    build[#build + 1] = wt .. (wt == 1 and " work team" or " work teams")
+    build[#build + 1] = cy .. (cy == 1 and " cycle" or " cycles")
+    parts[#parts + 1] = "Construction: " .. table.concat(build, ", ")
+    for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
+    return { text = table.concat(parts, ". "), check = desc:sub(1, 30) }
+end
+
 -- Enter on a room choice. True when the mod handled it (built, or said why
 -- not); the game's own click is then not used.
 function M.enter(b, label)
@@ -100,6 +194,21 @@ function M.enter(b, label)
     if label and (label:find("Missing", 1, true) or label:find("No available", 1, true)
         or label:find("Not possible", 1, true)) then
         speech.say("Cannot build. " .. label, true)
+        return true
+    end
+    -- The game's own check, for when the reading came from the data and the
+    -- label has no reason in it.
+    local cm0 = FindFirstOf("STVConstructionManager")
+    local okb, why = pcall(function()
+        local rc = StaticFindObject(ROOM_CONFIG)
+        local tc = nil
+        rc.Configs:ForEach(function(k, v) if k:get() == cmd.RoomType then tc = v:get() end end)
+        local out = {}
+        rc:GetRoomConfig(cmd.RoomType, 0, out)
+        return M.blocked(cmd, cm0, out.OutConfig, tc)
+    end)
+    if okb and why then
+        speech.say("Cannot build. " .. why, true)
         return true
     end
     local width = cmd.Width or 1

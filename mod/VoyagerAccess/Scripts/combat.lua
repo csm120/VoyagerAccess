@@ -264,6 +264,8 @@ function M.status()
     if okt and ammo ~= "" then parts[#parts + 1] = ammo .. " torpedoes" end
     local abilities = M.abilities()
     if abilities then parts[#parts + 1] = abilities end
+    local nrg = M.energy_text()
+    if nrg then parts[#parts + 1] = nrg end
     local goal = M.objective()
     if goal then parts[#parts + 1] = "Goal: " .. goal end
     local paused = M.paused_text(w)
@@ -436,9 +438,133 @@ function M.setup_sync()
     end
 end
 
+-- Energy (2026-10-16, Casey's machine): the game's Left and Right pick
+-- Weapons, Engine or Shields and Up and Down move energy to it, all silent.
+-- Each system's column is a WBP_CombatAbilityEnergyWidget whose Blueprint
+-- events fire on every change: SetSelected(bool) on Left and Right, and
+-- OnEnergyChangedEvent(new, max, unmodified max, buffed) on Up and Down
+-- (heard "Engine 2.0/2.0" with Engine selected). The panel's own native
+-- handlers (OnEnergyLevelChanged and the rest) are bound in C++ and never
+-- reach a hook. Drawn cells are rebuilt on each change, so they are not
+-- counted. Spare energy is the panel's TextAvailable.
+-- UE4SS removes a mod's hooks when it reloads ("Unregistering hook" in the
+-- log), so module state is enough.
+local energy = { level = {}, max = {}, order = {}, selected = nil, said = 0 }
+local hooked = false
+local energy_quiet_until = 0
+local was_active = false
+
+local function spare()
+    for _, x in ipairs(FindAllOf("WBP_EnergyManagement_Rework_C") or {}) do
+        if live(x) then
+            local n = tonumber((text_of(x.TextAvailable):match("%d+")))
+            if n then return n end
+        end
+    end
+    return nil
+end
+
+local function energy_line(name)
+    local lv, mx = energy.level[name], energy.max[name]
+    if not lv then return name end
+    local s = string.format("%s %d", name, math.floor(lv + 0.5))
+    if mx then s = s .. string.format(" of %d", math.floor(mx + 0.5)) end
+    return s
+end
+
+local function energy_say(name)
+    if os.time() < energy_quiet_until or not name then return end
+    local s = energy_line(name)
+    local n = spare()
+    if n then s = s .. string.format(", %d spare", n) end
+    energy.said = os.clock()
+    print("[VoyagerAccess] combat energy: " .. s .. "\n")
+    speech.say(s, true)
+end
+
+-- For L: every system's energy.
+function M.energy_text()
+    local parts = {}
+    for _, name in ipairs(energy.order) do
+        if energy.level[name] then parts[#parts + 1] = energy_line(name) end
+    end
+    if #parts == 0 then return nil end
+    local s = "Energy: " .. table.concat(parts, ", ")
+    local n = spare()
+    if n then s = s .. string.format(", %d spare", n) end
+    return s
+end
+
+-- Up or Down in battle: when the level did not change (already at the most
+-- or at none), say the selected system anyway, so the key is not silent.
+function M.energy_key()
+    if not M.active() or not energy.selected then return end
+    -- The order wheel takes the arrows (it spoke "Weapons 0 of 0" on every
+    -- Down through the wheel, 2026-10-16).
+    for _, x in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+        if live(x) and screen.shown(x) then return end
+    end
+    local at = os.clock()
+    ExecuteInGameThreadWithDelay(300, function()
+        pcall(function()
+            if energy.said < at then energy_say(energy.selected) end
+        end)
+    end)
+end
+
+-- The Blueprint is loaded only with the first battle: registering at mod
+-- start failed ("no UFunction", 2026-10-16), so poll() calls this until it
+-- works.
+local function energy_hooks()
+    if hooked then return end
+    local P = "/Game/CombatPrototype/Blueprints/UI/ActionCombat/WBP_CombatAbilityEnergyWidget.WBP_CombatAbilityEnergyWidget_C:"
+    local function name_of(s)
+        local ok, n = pcall(function() return s:get().Ability:GetAbilityName():ToString() end)
+        if not ok or not n or n == "" then return nil end
+        for _, x in ipairs(energy.order) do if x == n then return n end end
+        energy.order[#energy.order + 1] = n
+        return n
+    end
+    local ok, err = pcall(function()
+        RegisterHook(P .. "OnEnergyChangedEvent", function(s, new, max)
+            local name = name_of(s)
+            if not name then return end
+            local old = energy.level[name]
+            energy.level[name] = new:get()
+            energy.max[name] = max:get()
+            -- Fired twice per change with the same value.
+            if old and math.floor(old + 0.5) ~= math.floor(energy.level[name] + 0.5) then
+                ExecuteInGameThreadWithDelay(60, function() pcall(energy_say, name) end)
+            end
+        end)
+        RegisterHook(P .. "SetSelected", function(s, b)
+            if not b:get() then return end
+            local name = name_of(s)
+            if not name or name == energy.selected then return end
+            energy.selected = name
+            ExecuteInGameThreadWithDelay(60, function() pcall(energy_say, name) end)
+        end)
+    end)
+    if ok then
+        hooked = true
+        print("[VoyagerAccess] combat: energy hooks registered\n")
+    end
+end
+
 local function poll()
     M.setup_sync()
-    if not M.active() then said_goal = nil said_target = nil said_pause = false ability_state = {} return end
+    if not hooked and M.screen_up() then energy_hooks() end
+    if not M.active() then
+        said_goal = nil said_target = nil said_pause = false ability_state = {}
+        -- The battle's first levels are set as it starts: not spoken.
+        energy_quiet_until = os.time() + 3
+        if was_active then
+            energy.level, energy.max, energy.order, energy.selected = {}, {}, {}, nil
+        end
+        was_active = false
+        return
+    end
+    was_active = true
     abilities_poll()
     target_poll(main())
     pause_poll(main())

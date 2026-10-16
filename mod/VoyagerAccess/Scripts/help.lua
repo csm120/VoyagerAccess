@@ -33,7 +33,7 @@ local HELP = {
         .. "Enter on Start Game holds it for you. Escape goes back.",
     combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
         .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
-        .. "I reads both ships. O reads the combat goal.",
+        .. "I reads both ships and the energy. O reads the combat goal.",
     none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
         .. "I says where you are. R repeats the last line. Ctrl+F12 lists what is new in Voyager Access.",
 }

@@ -339,7 +339,14 @@ local function poi_result(parts, by, path)
         end
     end
     table.sort(rows, function(a, b) return (not a.last) and b.last end)
-    for _, r in ipairs(rows) do out[#out + 1] = r.text end
+    -- With nothing lost, the reward and what was stored are the same number:
+    -- "400 food. 400 food stored." (Q Trials, Casey's machine, 2026-10-16).
+    -- Only the stored line is said then.
+    local stored_text = {}
+    for _, r in ipairs(rows) do if r.last then stored_text[r.text] = true end end
+    for _, r in ipairs(rows) do
+        if r.last or not stored_text[r.text .. " stored"] then out[#out + 1] = r.text end
+    end
     -- Consequences in their own rich text lines ("FOOD +200", "5 CREW got
     -- Severely injured"), which were never read (Planet of Plenty, Q
     -- Trial, VM, 2026-10-14). Unfilled templates ("{TechName} unlocked")

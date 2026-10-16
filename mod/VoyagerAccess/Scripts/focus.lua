@@ -345,6 +345,13 @@ function M.radial_focus(b, path)
             local nb = resolve(path)
             if not nb then return end
             local text = menu and radial_details(menu) or nil
+            -- A room to build: when the hover did not reach this room (no
+            -- mouse, or a game that ignores it), read it from the game's data.
+            local okr, ring = pcall(require("construction").ring_text, nb)
+            if okr and ring and not (text and ring.check ~= "" and text:find(ring.check, 1, true)) then
+                print("[VoyagerAccess] radial: centre not for this room, read from data\n")
+                text = ring.text
+            end
             if not text or text == "" then text = M.radial_label(nb) or "Button" end
             -- A room to build: its width and whether it fits at the selected
             -- space (construction.lua).
@@ -2071,6 +2078,7 @@ function M.install()
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
+        pcall(require("combat").energy_key)
         if require("qtrials").step(current, -1) then return end
         if require("rooms").trade_offer_step(current, -1) then return end
         if require("whatsnew").open() then require("whatsnew").step(-1)
@@ -2090,6 +2098,7 @@ function M.install()
         else last_dir = -1 arrow_tick = ticks end
     end)
     keys.on("down", function()
+        pcall(require("combat").energy_key)
         if require("qtrials").step(current, 1) then return end
         if require("rooms").trade_offer_step(current, 1) then return end
         if require("whatsnew").open() then require("whatsnew").step(1)
@@ -2110,6 +2119,7 @@ function M.install()
     end)
     local rooms = require("rooms")
     keys.on("left", function()
+        pcall(require("combat").energy_key)
         go_in_until = ticks + 5
         if require("qtrials").switch_ship(current, -1) then return end
         if require("events").hero_step(current, -1) then return end
@@ -2120,6 +2130,7 @@ function M.install()
         elseif ship_mode() then ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
+        pcall(require("combat").energy_key)
         go_in_until = ticks + 5
         if require("qtrials").switch_ship(current, 1) then return end
         if require("events").hero_step(current, 1) then return end

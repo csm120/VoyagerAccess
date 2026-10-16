@@ -29,6 +29,12 @@ local NAMES = {
     EnlistedQuarter = "Emergency quarters",
     TurboShaft = "Turbolift",
     TacticalScannerAndSensorArray = "Tactical scanner and sensor array",
+    -- The build ring's centre says Engineering Office (2026-10-16).
+    EngineeringOffices = "Engineering office",
+    -- Names the game shows (build ring, tech tree, VM, 2026-10-15 and 16).
+    OfficersQuarter = "Officers' quarters",
+    PhaserArray = "Phaser control room",
+    DisruptorArray = "Disruptor control room",
     -- The quest's "Stellar Cartography": powering this room completed it.
     AstrometricsLaboratory = "Stellar cartography",
 }
@@ -342,6 +348,9 @@ function M.open()
     list[i].hull:OnHoveredRoom()
     list[i].hull:ClickedRoom()
 end
+
+-- A room type's spoken name (the build ring's reading without the mouse).
+M.type_name = room_name
 
 -- Development: every room as the mod would speak it.
 function M.preview()

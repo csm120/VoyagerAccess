@@ -98,9 +98,10 @@ follows them.
    the heroes' abilities, Tab changes target, Shift fires a torpedo, Left
    and Right pick a system and Up and Down move energy to it). Enter opens
    Orders; the order wheel is a list (Up, Down, Enter; Back is last). I
-   reads both ships, the enemies, the order, torpedoes, abilities and the
-   goal; O reads the goal. Target changes, abilities turning active or
-   ready, and pauses are spoken as they happen.
+   reads both ships, the enemies, the order, torpedoes, abilities, energy and
+   the goal; O reads the goal. Target changes, abilities turning active or
+   ready, pauses and energy ("Engine 1 of 2, 2 spare") are spoken as they
+   happen.
 10. Away team selection: once every slot is filled, the game starts the
     mission on Enter wherever focus is, and filled slots say "Team complete:
     Enter starts the mission." Heroes in a mission choice say when they have

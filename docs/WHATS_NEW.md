@@ -2,6 +2,17 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.22
+
+Energy in battle, and the build menu without the mouse.
+
+- New: moving energy in battle talks now. Left and Right say which system you picked and how much energy it has, like "Engine 1 of 2, 2 spare", and Up and Down say the new amount. If a system is already full or empty, it tells you that too instead of staying quiet. I in battle includes the energy for all three systems.
+- Changed: the build menu used to read a room's description and costs only when the mouse got there. When it doesn't, the mod reads the same thing from the game itself, along with why you can't build it, like "No available work team" or "Missing technology".
+- Fixed: an event result could say the same amount twice, like "400 food. 400 food stored." It says "400 food stored." now.
+- Fixed: a few rooms had names the game doesn't use. It's Engineering Office, Officers' Quarters, Phaser Control Room and Disruptor Control Room now.
+
+## Friday October 16th 2026
+
 Version 0.3.21
 
 Set course without the mouse.
