@@ -204,10 +204,14 @@ local function hero_cards()
     local panel = heroes_panel()
     if not panel then return {} end
     local pp = panel:GetFullName():match("^%S+%s+(.+)$") .. "."
+    -- In the campaign the cards are created with the game instance as their
+    -- outer, so their path is not under the panel ("0 heroes", VM,
+    -- 2026-10-16); climb the parents, crossing widget trees, instead.
+    local panel_path = pp:sub(1, -2)
     local cards = {}
     for _, c in ipairs(FindAllOf("WBP_Hero_InfoCardButton_C") or {}) do
         local cp = c:IsValid() and c:GetFullName():match("^%S+%s+(.+)$")
-        if cp and cp:sub(1, #pp) == pp and screen.shown(c) then
+        if cp and screen.inside(c, panel_path) and screen.shown(c) then
             local parent, idx, pidx = nil, 0, 0
             pcall(function()
                 parent = c:GetParent()

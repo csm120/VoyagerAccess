@@ -490,7 +490,7 @@ local function say_virtual()
     if M.wheel_locked(b) then label = label:gsub("%.$", "") .. ", not available now" end
     -- An event option already says its place ("1 of 2, 2 locked, 1 of 2",
     -- VM, 2026-10-14).
-    if not label:find("%d+ of %d+") then
+    if not label:gsub("health %d+ of %d+", ""):find("%d+ of %d+") then
         label = string.format("%s, %d of %d", label:gsub("%.$", ""), virtual.index, #virtual.buttons)
     end
     print("[VoyagerAccess] window button: " .. label .. "\n")
@@ -740,9 +740,24 @@ function M.wheel_locked(b)
     return ok and locked
 end
 
+-- A ring's Back: its click closed the whole order wheel from a sub-page
+-- (Defensive Actions, Casey's machine, 2026-10-16). GoBackToLastMenu goes
+-- up one level, and closes the ring from the top (construction.lua).
+local function ring_back(path)
+    local ring = path and path:match("^(.-WBP_RadialMenu_C_%d+)%.WidgetTree_%d+%.BackButton$")
+    if not ring then return false end
+    local menu = StaticFindObject(ring)
+    if menu and menu:IsValid() and pcall(function() menu:GoBackToLastMenu() end) then
+        print("[VoyagerAccess] radial: back one level\n")
+        return true
+    end
+    return false
+end
+
 function M.virtual_enter()
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
+    if ring_back(virtual.buttons[virtual.index]) then return end
     if M.wheel_locked(b) then
         speech.say("Not available now", true)
         return
@@ -846,7 +861,10 @@ end
 local function with_position(label, path)
     -- An empty label is said later by its own module (ring segments after
     -- the hover): a count alone came out as ", 1 of 6" (VM, 2026-10-15).
-    if not (label and positions[path]) or label == "" or label:find("%d+ of %d+") then return label end
+    -- A label with its own count keeps it ("Combat slot 1 of 3"); a value
+    -- such as "health 25 of 25" is not a count (it cost the repair page its
+    -- count, VM, 2026-10-16).
+    if not (label and positions[path]) or label == "" or label:gsub("health %d+ of %d+", ""):find("%d+ of %d+") then return label end
     -- Just after a room's tab switch the old page still counts as shown, and
     -- the Heroes tab's one slot was "6 of 6": no count then.
     if os.clock() - (require("rooms").tab_switched_at or -100) < 0.6 then return label end
@@ -1061,6 +1079,9 @@ label_for = function(b, path)
     -- word for it: "49, Repair Weapons" (VM, 2026-10-15).
     if label and path:find("Radial", 1, true) then
         label = label:gsub("^(%d+), (Repair [%a ]+)", "%2, health %1")
+        label = label:gsub("^(Repair [%a ]+), (%d+)", "%1, health %2")
+        local okr, full = pcall(require("combat").repair_label, label)
+        if okr and full then label = full end
     end
     -- Surrender's cost shows only while the mouse is over it
     -- (WBP_SurrenderCost in the loadout's ResourceRewardBundle, "40
@@ -1489,8 +1510,10 @@ local function activate()
     if b:GetClass():GetFName():ToString() == "WBP_AeroShuttleBay_TradeOffer_C" then
         local target = nil
         pcall(function()
-            local t, d = b.TradeBtn, b.DismissBtn
-            if t and t:IsValid() and t:GetIsEnabled() then target = t
+            local t, d, c = b.TradeBtn, b.DismissBtn, b.CollectButton
+            -- A finished trade shows only COLLECT (VM, 2026-10-16).
+            if c and c:IsValid() and require("screen").shown(c) and c:GetIsEnabled() then target = c
+            elseif t and t:IsValid() and t:GetIsEnabled() then target = t
             elseif d and d:IsValid() and d:GetIsEnabled() then target = d end
         end)
         if target then
@@ -1562,6 +1585,32 @@ local function activate()
     -- game's own Enter selects the hovered segment; clicking it as well
     -- could do the action twice. So click only if the ring is still open,
     -- with the same segment, a moment later (2026-10-14).
+    if ring_back(current) then return end
+    -- COLLECT on a finished trade: the goods arrive with no word (VM,
+    -- 2026-10-16). Say what came, from the offer, after the click.
+    local offer_path = current and current:match("^(.-WBP_AeroShuttleBay_TradeOff[%w_]*)%.WidgetTree_%d+%.CollectButton$")
+    if offer_path then
+        local got = nil
+        pcall(function()
+            local offer = StaticFindObject(offer_path)
+            got = offer and require("rooms").trade_offer_label(offer):match("You get ([^%.]+)")
+        end)
+        print("[VoyagerAccess] enter: collecting trade " .. tostring(got) .. "\n")
+        local current_collect = current
+        click(b)
+        -- Said only once the button has gone (review, 2026-10-16).
+        ExecuteInGameThreadWithDelay(500, function()
+            pcall(function()
+                local c = StaticFindObject(current_collect)
+                if c and c:IsValid() and require("screen").shown(c) then
+                    speech.say("Collect did not take", true)
+                else
+                    speech.say(got and ("Collected: " .. got) or "Collected", true)
+                end
+            end)
+        end)
+        return
+    end
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then
         -- A segment the game has locked (bLocked): Clear Debris with no life
         -- support did nothing and said nothing on Enter (VM, 2026-10-15).

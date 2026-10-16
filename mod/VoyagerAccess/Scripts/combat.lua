@@ -57,6 +57,11 @@ function M.active()
     if not w then return false end
     local ok, L = pcall(function() return w.HeroLoadout end)
     if ok and L and L:IsValid() and screen.shown(L) then return false end
+    -- Auto Resolve's window replaces the setup; the battle panels behind it
+    -- hold placeholders ("Target: U.S.S. Voyager", "X torpedoes", VM,
+    -- 2026-10-16).
+    local oka, A = pcall(function() return w.AutoResolveWidget end)
+    if oka and A and A:IsValid() and screen.shown(A) then return false end
     -- Over once the result is up (the target kept being read after it).
     local okr, R = pcall(function() return w.CombatResultView end)
     if okr and R and R:IsValid() and screen.shown(R) then return false end
@@ -274,6 +279,28 @@ function M.status()
     return table.concat(parts, ". ") .. "."
 end
 
+-- A repair item says only the system's health ("Repair Weapons, health
+-- 20"); the player's panel has its maximum ("Weapons 20 of 25"). The names
+-- differ a little ("Repair Engine", "Engines"), so they are matched by start.
+function M.repair_label(label)
+    -- Already done (button_label, then the window list's own pass).
+    if label:find("health %d+ of %d+") then return nil end
+    local sys, hp = label:match("^Repair ([%a ]-), health (%d+)")
+    if not sys then return nil end
+    local w = main()
+    local subs = w and panel_subsystems(w.PlayerView)
+    for _, s in ipairs(subs or {}) do
+        local name, cur, max = s:match("^(.-) (%d+) of (%d+)$")
+        if name and cur == hp then
+            local a, b = name:lower(), sys:lower()
+            if a:sub(1, #b) == b or b:sub(1, #a) == a then
+                return (label:gsub(", health %d+", ", health " .. hp .. " of " .. max, 1))
+            end
+        end
+    end
+    return nil
+end
+
 -- The order wheel's buttons that show only a picture.
 function M.handles(b, path)
     local cls = b:GetClass():GetFName():ToString()
@@ -294,6 +321,9 @@ function M.button_label(b, path)
     end
     local label = by.hoverText ~= "" and by.hoverText or "Subsystem"
     if by.hp and by.hp ~= "" then label = label .. ", " .. by.hp .. " health" end
+    if label:find("^Repair ") then label = label:gsub(", (%d+) health$", ", health %1") end
+    local okr, full = pcall(M.repair_label, label)
+    if okr and full then label = full end
     return label
 end
 
@@ -356,6 +386,23 @@ local function target_poll(w)
         speech.say(text, true)
     end
     said_target = key
+end
+
+-- Shift (the game's) fires a torpedo without a word (36 went to 35, VM,
+-- 2026-10-16): say it from the count.
+local said_ammo = nil
+
+local function torpedo_poll(w)
+    local ok, n = pcall(function()
+        return tonumber((plain(text_of(w.FireControlWidget.CT_TorpedoAmmo)):match("%d+")))
+    end)
+    if not ok or not n then return end
+    if said_ammo and n < said_ammo then
+        local text = "Torpedo fired, " .. n .. " left"
+        print("[VoyagerAccess] combat: " .. text .. "\n")
+        speech.say(text, false)
+    end
+    said_ammo = n
 end
 
 -- Space (the game's) pauses and resumes without a word; tutorial steps
@@ -504,6 +551,9 @@ function M.energy_key()
     for _, x in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
         if live(x) and screen.shown(x) then return end
     end
+    -- Any other list in front (a tutorial, the pause menu) has the arrows.
+    local okv, v = pcall(function() return require("focus").virtual_active() end)
+    if okv and v then return end
     local at = os.clock()
     ExecuteInGameThreadWithDelay(300, function()
         pcall(function()
@@ -525,6 +575,9 @@ local function energy_hooks()
         energy.order[#energy.order + 1] = n
         return n
     end
+    -- One attempt per battle screen: a half-registered pair retried every
+    -- poll would pile up hooks (review, 2026-10-16).
+    hooked = true
     local ok, err = pcall(function()
         RegisterHook(P .. "OnEnergyChangedEvent", function(s, new, max)
             local name = name_of(s)
@@ -546,8 +599,12 @@ local function energy_hooks()
         end)
     end)
     if ok then
-        hooked = true
         print("[VoyagerAccess] combat: energy hooks registered\n")
+    elseif tostring(err):find("no UFunction", 1, true) then
+        -- The class is not loaded yet: nothing was registered, try again.
+        hooked = false
+    else
+        print("[VoyagerAccess] combat: energy hooks failed: " .. tostring(err) .. "\n")
     end
 end
 
@@ -555,7 +612,7 @@ local function poll()
     M.setup_sync()
     if not hooked and M.screen_up() then energy_hooks() end
     if not M.active() then
-        said_goal = nil said_target = nil said_pause = false ability_state = {}
+        said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil
         -- The battle's first levels are set as it starts: not spoken.
         energy_quiet_until = os.time() + 3
         if was_active then
@@ -568,6 +625,7 @@ local function poll()
     abilities_poll()
     target_poll(main())
     pause_poll(main())
+    torpedo_poll(main())
     local goal = M.objective()
     if goal and goal ~= said_goal then
         said_goal = goal

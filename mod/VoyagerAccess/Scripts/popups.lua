@@ -347,6 +347,21 @@ local function poi_result(parts, by, path)
     for _, r in ipairs(rows) do
         if r.last or not stored_text[r.text .. " stored"] then out[#out + 1] = r.text end
     end
+    -- Items gained (WBP_ItemRewards_EventDetails: ItemNameTextBlock, maybe
+    -- an amount); not read before, so an item reward was silent (found by
+    -- the asset scan, 2026-10-16; not yet met in play).
+    for _, cls in ipairs({ "WBP_ItemRewards_EventDetails_C", "WBP_ItemReward_ResourceReport_C" }) do
+        for _, r in ipairs(FindAllOf(cls) or {}) do
+            if r:IsValid() and screen.inside(r, path) and screen.shown(r) then
+                local okn, n = pcall(function() return r.ItemNameTextBlock:GetText():ToString() end)
+                local amount = ""
+                pcall(function() amount = r.ItemAmountTextBlock:GetText():ToString() end)
+                if okn and n and n ~= "" and n ~= "Item Name" then
+                    out[#out + 1] = "Item: " .. require("text").prep(n):gsub("^%s+", "") .. (amount ~= "" and (" " .. amount) or "")
+                end
+            end
+        end
+    end
     -- Consequences in their own rich text lines ("FOOD +200", "5 CREW got
     -- Severely injured"), which were never read (Planet of Plenty, Q
     -- Trial, VM, 2026-10-14). Unfilled templates ("{TechName} unlocked")
@@ -982,7 +997,7 @@ local function research_rewards()
     local res, items = {}, {}
     for _, r in ipairs(FindAllOf("WBP_ResourceReward_ResearchReport_C") or {}) do
         local rp = r:IsValid() and path_of(r)
-        if rp and rp:sub(1, #prefix) == prefix and screen.shown(r) then
+        if rp and screen.inside(r, prefix:sub(1, -2)) and screen.shown(r) then
             local icon = icon_name(r.ResourceImage)
             local name = icon and icon:match("^MI_UI_(%a+)") or "resources"
             local amount = text_of_widget(r.ResourceAmountTextBlock):gsub("^%+", "")
@@ -991,7 +1006,7 @@ local function research_rewards()
     end
     for _, r in ipairs(FindAllOf("WBP_ItemReward_ResourceReport_C") or {}) do
         local rp = r:IsValid() and path_of(r)
-        if rp and rp:sub(1, #prefix) == prefix and screen.shown(r) then
+        if rp and screen.inside(r, prefix:sub(1, -2)) and screen.shown(r) then
             local item = text_of_widget(r.ItemNameTextBlock)
             if item ~= "" then items[#items + 1] = item end
         end

@@ -926,7 +926,7 @@ function M.outcome_text(path)
         local list = {}
         for _, w in ipairs(FindAllOf(cls) or {}) do
             local p = w:IsValid() and path_of(w)
-            if p and p:sub(1, #path + 1) == path .. "." and screen.shown(w) then list[#list + 1] = w end
+            if p and screen.inside(w, path) and screen.shown(w) then list[#list + 1] = w end
         end
         return list
     end

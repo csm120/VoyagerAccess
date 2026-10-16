@@ -535,7 +535,7 @@ function M.patients_text()
     local rows = {}
     for _, r in ipairs(FindAllOf("WBP_SickBayPatientInfo_C") or {}) do
         local rp = r:IsValid() and path_of(r)
-        if rp and rp:sub(1, #mp) == mp and screen.shown(r) then
+        if rp and screen.inside(r, (mp:gsub("%.$", ""))) and screen.shown(r) then
             local i = 0
             pcall(function() i = r:GetParent():GetChildIndex(r) end)
             rows[#rows + 1] = { i = i, r = r }
@@ -577,7 +577,7 @@ function M.crew_text()
     local rows = {}
     for _, r in ipairs(FindAllOf("WBP_CrewMemberInfo_C") or {}) do
         local rp = r:IsValid() and path_of(r)
-        if rp and rp:sub(1, #mp) == mp and screen.shown(r) then
+        if rp and screen.inside(r, (mp:gsub("%.$", ""))) and screen.shown(r) then
             local i = 0
             pcall(function() i = r:GetParent():GetChildIndex(r) end)
             rows[#rows + 1] = { i = i, r = r }
@@ -632,7 +632,7 @@ function M.trading_text()
     local offers = 0
     for _, o in ipairs(FindAllOf("WBP_AeroShuttleBay_TradeOffer_C") or {}) do
         local op = o:IsValid() and path_of(o)
-        if op and op:sub(1, #mp) == mp and screen.shown(o) then offers = offers + 1 end
+        if op and screen.inside(o, (mp:gsub("%.$", ""))) and screen.shown(o) then offers = offers + 1 end
     end
     if offers > 0 then
         out[#out + 1] = offers .. (offers == 1 and " offer" or " offers") .. "; Enter on an offer reaches Trade and Dismiss"
@@ -677,6 +677,8 @@ function M.trade_offer_label(offer)
     for _, r in ipairs(FindAllOf("WBP_AeroShuttleBay_TradeOffer_Resources_C") or {}) do
         if r:IsValid() and screen.shown(r) and belongs_to(r, offer) then
             local amount = plain(text_of(r.ResourceAmount)):gsub("[%s%+%-]", "")
+            -- "04 Dilithium" (VM, 2026-10-16).
+            amount = amount:gsub("^0+(%d)", "%1")
             local res = "resources"
             pcall(function()
                 local ro = r.ResourceImage.Brush.ResourceObject
@@ -696,11 +698,25 @@ function M.trade_offer_label(offer)
     if #pays > 0 then out[#out + 1] = "You give " .. table.concat(pays, ", ") end
     if #gives > 0 then out[#out + 1] = "You get " .. table.concat(gives, ", ") end
     local dur = plain(text_of(offer.DurationText)):match("(%d+)")
-    if dur then out[#out + 1] = "Takes " .. dur .. (dur == "1" and " cycle" or " cycles") end
-    local exp = plain(text_of(offer.ExpireTimeTextBox))
-    if exp:match("^%d+$") then out[#out + 1] = "Expires in " .. exp .. (exp == "1" and " cycle" or " cycles") end
-    local blocked = plain(text_of(offer.TradeBlockedText))
-    if blocked ~= "" then out[#out + 1] = "Not possible: " .. blocked:lower() end
+    -- A trade under way shows "16 remaining" and hides its expiry ("Expires
+    -- in 00 cycles" was read, VM, 2026-10-16).
+    local under_way = false
+    pcall(function() under_way = screen.shown(offer.remainingText) end)
+    if dur and under_way and tonumber(dur) == 0 then
+        out[#out + 1] = "Trade done; Enter reaches Collect"
+    elseif dur and under_way then
+        out[#out + 1] = "Trade under way, " .. tonumber(dur) .. (tonumber(dur) == 1 and " cycle" or " cycles") .. " left"
+    elseif dur then
+        out[#out + 1] = "Takes " .. tonumber(dur) .. (tonumber(dur) == 1 and " cycle" or " cycles")
+    end
+    local exp = ""
+    pcall(function() if screen.shown(offer.ExpireTimeTextBox) then exp = plain(text_of(offer.ExpireTimeTextBox)) end end)
+    if exp:match("^%d+$") then out[#out + 1] = "Expires in " .. tonumber(exp) .. (tonumber(exp) == 1 and " cycle" or " cycles") end
+    -- Hidden once the trade is possible, and then still holding its
+    -- designer text: "Not possible: #trade blocked text" (VM, 2026-10-16).
+    local blocked = ""
+    pcall(function() if screen.shown(offer.TradeBlockedText) then blocked = plain(text_of(offer.TradeBlockedText)) end end)
+    if blocked ~= "" and not blocked:find("^#") then out[#out + 1] = "Not possible: " .. blocked:lower() end
     return table.concat(out, ". ") .. "."
 end
 

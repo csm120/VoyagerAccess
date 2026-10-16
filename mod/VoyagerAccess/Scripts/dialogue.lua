@@ -354,6 +354,10 @@ function M.choice_label(path)
     end)
     if #costs > 0 then wording = wording .. ". Costs " .. table.concat(costs, ", ") end
     wording = plain(wording):gsub("^%[[Oo][Pp][Tt][Ii][Oo][Nn][Aa][Ll]%]%s*", "Optional: ")
+    -- A note in brackets at the end ran into the wording with punctuation
+    -- off: "Send Tuvok to investigate Warning: Becomes unavailable" (text
+    -- scan, 2026-10-15). Its own sentence instead.
+    wording = wording:gsub("([^%s%.])%s*%[([^%]{}]+)%]%s*$", "%1. %2")
     if wording ~= "" then parts[#parts + 1] = wording end
     -- The requirement widget is not a named member, so find its text by path.
     local req = ""

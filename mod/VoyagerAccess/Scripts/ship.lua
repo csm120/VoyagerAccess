@@ -125,6 +125,10 @@ local function room_state(h, raw)
         local st = w.StateText:GetText():ToString()
         local cy = w.CycleText:GetText():ToString()
         if st == "" then return nil end
+        -- Finished work waits for the Construction Report's Close: the cycle
+        -- text says "Ready", read "Cargo bay, building, ready" (VM,
+        -- 2026-10-16).
+        if cy:lower() == "ready" then return st:lower() .. " done" end
         return st:lower() .. (cy ~= "" and (", " .. cy:lower()) or "")
     end)
     if ok and busy then return busy end
@@ -347,6 +351,19 @@ function M.open()
     -- why the Aeroshuttle bay opened Stellar Cartography). Hover it first.
     list[i].hull:OnHoveredRoom()
     list[i].hull:ClickedRoom()
+end
+
+-- Development (tools\vm\vm-room.ps1): select the first room whose reading
+-- matches a Lua pattern, as the room list's Enter does. Walking decks with
+-- the arrows to reach one took minutes (2026-10-16).
+function M.select_matching(pattern)
+    for _, r in ipairs(rooms()) do
+        if describe(r, true):lower():find(pattern:lower()) then
+            select(r, true)
+            return describe(r, true)
+        end
+    end
+    return nil
 end
 
 -- A room type's spoken name (the build ring's reading without the mouse).

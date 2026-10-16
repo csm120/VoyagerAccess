@@ -48,6 +48,40 @@ function M.shown(w)
     return ok and result
 end
 
+-- True when widget w sits inside the widget whose path is target_path.
+-- Path prefix first; then the parents, crossing widget trees, because
+-- widgets the game makes at runtime often have the game instance as their
+-- outer, so their path is not under their window (the campaign's hero
+-- cards, "0 heroes", VM, 2026-10-16).
+local function inside_unsafe(w, target_path)
+    WIDGET = WIDGET or StaticFindObject("/Script/UMG.Widget")
+    local node, hops = w, 0
+    while valid(node) and hops < 48 do
+        hops = hops + 1
+        local parent = node:GetParent()
+        if valid(parent) then
+            node = parent
+        else
+            local tree = node:GetOuter()
+            local owner = valid(tree) and tree:GetOuter() or nil
+            if not (valid(owner) and owner:IsA(WIDGET)) then return false end
+            node = owner
+        end
+        local p = node:GetFullName():match("^%S+%s+(.+)$")
+        if p == target_path then return true end
+    end
+    return false
+end
+
+function M.inside(w, target_path)
+    local ok, p = pcall(function() return w:GetFullName():match("^%S+%s+(.+)$") end)
+    if not ok or not p then return false end
+    if p:sub(1, #target_path + 1) == target_path .. "." then return true end
+    if not p:find("^/Engine/Transient%.") then return false end
+    local ok2, r = pcall(inside_unsafe, w, target_path)
+    return ok2 and r
+end
+
 -- All on-screen texts as a sorted list of "text" strings.
 function M.texts()
     local items, seen = {}, {}

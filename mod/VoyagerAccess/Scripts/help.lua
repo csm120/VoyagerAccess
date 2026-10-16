@@ -131,6 +131,15 @@ function M.say_where()
             if win then
                 local ok, t = pcall(function() return require("popups").text_under(win) end)
                 local title = ok and t and t:match("^([^%.:]+)")
+                -- A notice starts with who sends it, so its title was only a
+                -- name: "Lieutenant Lani. CLOSE" (VM, 2026-10-16). Add what
+                -- it is about.
+                if title and win:find("WBP_CommonInfoWidget_C", 1, true) then
+                    local about = t:match("^[^%.]+%.%s*([^%.!]+)")
+                    if about and about ~= "" and #title < 40 and #about < 80 and about ~= about:upper() then
+                        title = title .. ". " .. about
+                    end
+                end
                 if title and title ~= "" then parts[1] = title end
             end
             parts[2] = f.current_label()

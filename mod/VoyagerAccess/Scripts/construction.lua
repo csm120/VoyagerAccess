@@ -159,7 +159,7 @@ function M.ring_text(b)
     local why = M.blocked(cmd, cm, cfg, tc)
     if why then parts[#parts + 1] = why end
     if desc ~= "" then parts[#parts + 1] = desc end
-    parts[#parts + 1] = string.format("Operation: energy %d, crew %d", cfg.EnergyCostWhenActive, cfg.RequiredCrewMembersToOperate)
+    parts[#parts + 1] = string.format("Operation: energy %d, crew %d", math.floor(cfg.EnergyCostWhenActive + 0.5), math.floor(cfg.RequiredCrewMembersToOperate + 0.5))
     local build = {}
     cfg.RequiredResourcesToBuild:ForEach(function(_, e)
         local r = e:get()
@@ -196,6 +196,14 @@ function M.enter(b, label)
         speech.say("Cannot build. " .. label, true)
         return true
     end
+    -- Where it fits first: that reason is more exact than the game's
+    -- "Not possible now" (review, 2026-10-16).
+    local width = cmd.Width or 1
+    local start, run = M.fit(hull, width)
+    if not start then
+        speech.say("Cannot build here. " .. M.fit_text(b), true)
+        return true
+    end
     -- The game's own check, for when the reading came from the data and the
     -- label has no reason in it.
     local cm0 = FindFirstOf("STVConstructionManager")
@@ -209,12 +217,6 @@ function M.enter(b, label)
     end)
     if okb and why then
         speech.say("Cannot build. " .. why, true)
-        return true
-    end
-    local width = cmd.Width or 1
-    local start, run = M.fit(hull, width)
-    if not start then
-        speech.say("Cannot build here. " .. M.fit_text(b), true)
         return true
     end
     -- The name as the ring reads it; CommandName is internal ("Build

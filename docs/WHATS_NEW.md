@@ -2,6 +2,21 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.23
+
+More battle sounds made into words, trading with the Aeroshuttle, and the hero list in the campaign.
+
+- New: firing a torpedo with Shift says so now, with how many you have left, like "Torpedo fired, 35 left."
+- New: an Aeroshuttle trade you've started says "Trade under way, 16 cycles left." When it's finished it says "Trade done", Enter takes you to Collect, and collecting tells you what you got, like "Collected: 4 Dilithium."
+- Fixed: in the campaign, the Overview's Heroes tab said "0 heroes" and Up and Down did nothing. It lists all your heroes now, same as in Q Trials.
+- Fixed: Back on a page of the battle orders, like Defensive Actions, closed the whole orders menu. It takes you back up one level now.
+- Fixed: repair orders in battle say the system's health out of its most, like "Repair Weapons, health 20 of 25."
+- Fixed: a room whose repair or building had finished, waiting for you to close the Construction Report, said "repairing, ready." It says "repairing done" now.
+- Fixed: trade offers said "04 Dilithium", and one that could be traded said "Not possible" with leftover placeholder text. Both read properly now.
+- Changed: I on a crew notice used to give only who sent it, like "Lieutenant Lani." It says what it's about too, like "Lieutenant Lani. Deuterium running low."
+
+## Friday October 16th 2026
+
 Version 0.3.22
 
 Energy in battle, and the build menu without the mouse.
