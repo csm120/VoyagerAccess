@@ -33,54 +33,98 @@ function M.command_of(b)
     return cmd
 end
 
--- Hulls on the selected hull's deck, by slot.
-local function deck_slots(hull)
-    local z = hull:K2_GetActorLocation().Z
-    local by = {}
-    for _, h in ipairs(FindAllOf("STVRoomHull") or {}) do
-        if h:IsValid() and path_of(h):find("PersistentLevel", 1, true) then
-            local loc = h:K2_GetActorLocation()
-            if math.abs(loc.Z - z) < 50 then by[h:BP_GetSlotIndex()] = h end
-        end
-    end
-    return by
-end
+local ROOM_CONFIG = "/Game/STVoyager/ConstructionSideview/Data/DA_RoomConfig.DA_RoomConfig"
 
 local function empty(h)
     return h ~= nil and h:GetRoomType() == 0
 end
 
--- Where a room of this width fits around the selected space: the first slot
--- of a run of empty spaces that includes it, and how many empty spaces in a
--- row there are there.
-function M.fit(hull, width)
-    local by = deck_slots(hull)
+-- A room's footprint, in spaces wide and decks tall: its level 0 config's
+-- Extent. The ring command's Width is 2 for every room and is not the
+-- footprint: a Phaser Control Room is 4 by 1, a Bio Lab 3 by 1, a Holodeck
+-- 3 by 3, and ConfirmBuild quietly refused a Phaser room on 3 free spaces
+-- (VM, 2026-10-16; the game's own mouse footprint covered 4 cells).
+function M.extent(t)
+    local w, d = 2, 1
+    pcall(function()
+        local out = {}
+        StaticFindObject(ROOM_CONFIG):GetRoomConfig(t, 0, out)
+        local e = out.OutConfig.Extent
+        w, d = math.floor(e.X + 0.5), math.floor(e.Y + 0.5)
+    end)
+    return math.max(w, 1), math.max(d, 1)
+end
+
+-- Slots are cells of the room grid, numbered along a deck row and down
+-- the decks a row at a time (STVRoomGrid:GetGridWidth, 88). A room is
+-- built from its top left cell: the Holodeck's hull at 399 (deck 4) sits
+-- on deck 6.
+local function grid_width()
+    local ok, w = pcall(function() return FindFirstOf("STVRoomGrid"):GetGridWidth() end)
+    return (ok and w and w > 0) and w or 88
+end
+
+local function empty_slots()
+    local by = {}
+    for _, h in ipairs(FindAllOf("STVRoomHull") or {}) do
+        if h:IsValid() and path_of(h):find("PersistentLevel", 1, true) and h:GetRoomType() == 0 then
+            by[h:BP_GetSlotIndex()] = true
+        end
+    end
+    return by
+end
+
+-- Where a room of this footprint fits so that it covers the selected
+-- space: its top left slot (the selected space itself when it can be), and
+-- how many empty spaces side by side there are on the selected deck.
+function M.fit(hull, width, decks)
+    decks = decks or 1
+    local free = empty_slots()
+    local gw = grid_width()
     local s = hull:BP_GetSlotIndex()
+    local function fits(a)
+        for r = 0, decks - 1 do
+            for c = 0, width - 1 do
+                if not free[a + c + r * gw] then return false end
+            end
+        end
+        return true
+    end
+    local start = nil
+    for r = 0, decks - 1 do
+        for c = 0, width - 1 do
+            if not start and fits(s - c - r * gw) then start = s - c - r * gw end
+        end
+    end
     local first, last = s, s
-    while empty(by[first - 1]) do first = first - 1 end
-    while empty(by[last + 1]) do last = last + 1 end
-    local run = last - first + 1
-    if run < width then return nil, run end
-    -- Start at the selected space when the room fits from there, otherwise
-    -- as far right as it can start and still cover it.
-    local start = math.min(s, last - width + 1)
-    return start, run
+    while free[first - 1] do first = first - 1 end
+    while free[last + 1] do last = last + 1 end
+    return start, last - first + 1
 end
 
 local function spaces(n)
     return n .. (n == 1 and " space" or " spaces")
 end
 
--- Added to a room choice's reading: its width and whether it fits.
+local function size_text(w, d)
+    if d > 1 then return spaces(w) .. " wide and " .. d .. " decks tall" end
+    return spaces(w) .. " wide"
+end
+
+-- Added to a room choice's reading: its size and whether it fits.
 function M.fit_text(b)
     local cmd = M.command_of(b)
     if not cmd then return nil end
     local hull = require("ship").selected_hull()
     if not (hull and hull:IsValid() and empty(hull)) then return nil end
-    local width = cmd.Width or 1
-    local start, run = M.fit(hull, width)
-    if start then return spaces(width) .. " wide, fits here" end
-    return spaces(width) .. " wide, does not fit: " .. (run == 1 and "this empty space is 1 wide"
+    local w, d = M.extent(cmd.RoomType)
+    local start, run = M.fit(hull, w, d)
+    if start then return size_text(w, d) .. ", fits here" end
+    if d > 1 and run >= w then
+        return size_text(w, d) .. ", does not fit: it needs " .. spaces(w) .. " empty side by side on "
+            .. d .. " decks, one under the other. Clear ruined rooms for more space"
+    end
+    return size_text(w, d) .. ", does not fit: " .. (run == 1 and "this empty space is 1 wide"
         or ("only " .. run .. " empty spaces side by side here")) .. ". Clear ruined rooms beside it for more space"
 end
 
@@ -94,7 +138,6 @@ end
 -- command's CanExecute and IsHardLocked_BP with the construction manager
 -- as context (the ring's CommandContextObject). Missing technology is a
 -- hard lock; the other reasons are checked here.
-local ROOM_CONFIG = "/Game/STVoyager/ConstructionSideview/Data/DA_RoomConfig.DA_RoomConfig"
 
 local function clean(s)
     s = require("text").prep(s)
@@ -198,8 +241,7 @@ function M.enter(b, label)
     end
     -- Where it fits first: that reason is more exact than the game's
     -- "Not possible now" (review, 2026-10-16).
-    local width = cmd.Width or 1
-    local start, run = M.fit(hull, width)
+    local start = M.fit(hull, M.extent(cmd.RoomType))
     if not start then
         speech.say("Cannot build here. " .. M.fit_text(b), true)
         return true

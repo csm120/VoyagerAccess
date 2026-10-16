@@ -76,6 +76,11 @@ function M.prep(s)
     -- "storage capacity / Changes ENERGY consumption". Labels wrapped onto
     -- two lines are all capitals, so they stay joined.
     s = s:gsub("(%l)[ \t]*\r?\n[\r\n%s]*(%u)", "%1. %2")
+    -- Brackets round a screen's name in capitals: "the [TECH TREE]",
+    -- "[MAIN ENGINEERING]", "[WORKSHOP]" (scan of every room description,
+    -- VM, 2026-10-16). Bracketed placeholders like "[{Shuttle}]" have no
+    -- capitals run and are left to their readers.
+    s = s:gsub("%[(%u[%u%s%-']*)%]", "%1")
     return s
 end
 

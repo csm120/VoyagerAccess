@@ -2,6 +2,17 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.32
+
+Building rooms where they really fit.
+
+- Fixed: the build ring treated every room as 2 spaces wide, so rooms like the Phaser Control Room, the Bio Laboratory and the Cargo Bay said they fit when they didn't, and Enter did nothing. Each room now says its real size, like "4 spaces wide, does not fit" or "3 spaces wide and 3 decks tall", and Enter only builds it where it really fits.
+- Fixed: Backspace in the build ring goes back to the categories. Before, it said "Nothing to go back to".
+- Fixed: a few room descriptions read square brackets around names, like "the [TECH TREE]". The brackets are gone.
+- Fixed: in a room's hero list, pressing Enter on a hero you can't pick and then backing out emptied the room's slot. The room keeps its hero now.
+
+## Friday October 16th 2026
+
 Version 0.3.31
 
 More fixes for games in other languages.

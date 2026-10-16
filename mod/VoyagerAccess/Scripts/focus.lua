@@ -1742,8 +1742,12 @@ local function activate()
     -- The same for an away team or battle slot: leaving its list with
     -- Escape or Backspace emptied the slot (Harry Kim left a battle slot,
     -- VM, 2026-10-16). See restore_slot_hero.
-    M.slot_before = nil
+    -- Reset only by a slot's own Enter: Enter on an unavailable hero in the
+    -- list picked nobody, and the Escape after it lost Harry Kim (VM,
+    -- 2026-10-16). A hero that was really chosen leaves the slot filled,
+    -- so restore_slot_hero does nothing then.
     if require("awaymission").is_slot(current) then
+        M.slot_before = nil
         local okl, l = pcall(require("awaymission").slot_label, current)
         local hero = okl and type(l) == "string" and l:match("slot %d+ of %d+: ([^,%.]+)")
         if hero then M.slot_before = { path = current, hero = hero } end
@@ -2204,6 +2208,15 @@ local function go_back()
         if pick then
             print("[VoyagerAccess] back: save slot\n")
             pick:SetFocus()
+            return
+        end
+    end
+    -- In a ring (the build ring's room page), up one level as its Back
+    -- button does: Backspace said "Nothing to go back to" there (VM,
+    -- 2026-10-16). From the top level this closes the ring.
+    for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+        if w:IsValid() and require("screen").shown(w) and pcall(function() w:GoBackToLastMenu() end) then
+            print("[VoyagerAccess] back: radial up one level\n")
             return
         end
     end
