@@ -573,6 +573,16 @@ for _, c in ipairs(require("popups").SAVE_WARNINGS) do CONFIRMS[#CONFIRMS + 1] =
 for _, c in ipairs(require("popups").ROOM_WARNINGS) do CONFIRMS[#CONFIRMS + 1] = c end
 local function is_confirm(p)
     for _, c in ipairs(CONFIRMS) do if p:find(c, 1, true) then return true end end
+    -- By class too: the Cargo Bay's warning is a member named
+    -- ResourceCapacityChangeConfirmWidget, so its path never names its
+    -- class, and a notice behind it took the arrows (VM, 2026-10-16).
+    local ok, cls = pcall(function()
+        local o = StaticFindObject(p)
+        return o and o:IsValid() and o:GetClass():GetFName():ToString() or ""
+    end)
+    if ok and cls ~= "" then
+        for _, c in ipairs(CONFIRMS) do if cls == c then return true end end
+    end
     return false
 end
 local function open_confirm()
@@ -834,6 +844,14 @@ function M.number_buttons(all, all_names)
         local status = false
         pcall(function()
             status = all_names[i]:find("%.CraftingButton$") ~= nil and not b:IsInteractionEnabled()
+        end)
+        -- Nor Settings headings, spacer rows and settings that cannot be
+        -- changed (Display Resolution in windowed fullscreen): Graphics
+        -- counted 18 rows and never reached 7, 8, 13 or 14 (demo, VM,
+        -- 2026-10-16).
+        pcall(function()
+            if b:GetClass():GetFName():ToString() == "WBP_Setting_C"
+                and (is_heading(b) or not is_setting(b) or not b:GetIsEnabled()) then status = true end
         end)
         if require("screen").shown(b) and not status then
             list[#list + 1] = b
@@ -2049,6 +2067,28 @@ local function go_back()
             end)
         end)
         return
+    end
+    -- In a save slot's panel (CONTINUE GAME, NEW GAME, NEW Q TRIAL), back to
+    -- the slot it belongs to: from an empty Q Trial slot's NEW Q TRIAL no
+    -- key led back (Up, Left, Backspace and Escape all did nothing, VM,
+    -- 2026-10-16).
+    if current and current:find("%.SectorSaveWindow%.") then
+        local menu_path = current:match("^(.-WBP_MainMenu_C_%d+)")
+        local pick, first = nil, nil
+        for _, x in ipairs(FindAllOf("WBP_Button_SaveProfile_C") or {}) do
+            local p = x:IsValid() and live(x) and path_of(x)
+            if p and menu_path and p:sub(1, #menu_path) == menu_path and require("screen").shown(x) then
+                first = first or x
+                local oks, sel = pcall(function() return x:GetSelected() end)
+                if oks and sel then pick = x end
+            end
+        end
+        pick = pick or first
+        if pick then
+            print("[VoyagerAccess] back: save slot\n")
+            pick:SetFocus()
+            return
+        end
     end
     speech.say("Nothing to go back to", true)
 end

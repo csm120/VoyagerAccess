@@ -230,6 +230,25 @@ function M.enter(b, label)
         speech.say("The build did not start", true)
         return true
     end
+    -- The game can refuse with no error: in a Q Trial, ConfirmBuild on a
+    -- just-cleared space did nothing and "Building Cargo Bay" was said
+    -- (VM, 2026-10-16). Check the space really has work under way.
+    local started = false
+    pcall(function()
+        local a, b2 = {}, {}
+        cm:GetRoomCurrentActionTimeBySlot(start, a, b2)
+        started = (a.OutRemainingCycles or -1) > 0
+        if not started then
+            for _, h in ipairs(FindAllOf("STVRoomHull") or {}) do
+                if h:IsValid() and h:BP_GetSlotIndex() == start and h:GetRoomType() ~= 0 then started = true end
+            end
+        end
+    end)
+    if not started then
+        print("[VoyagerAccess] construction: ConfirmBuild did not start a build at " .. start .. "\n")
+        speech.say("The game did not start the build here. Escape closes the ring.", true)
+        return true
+    end
     -- The ring stays open after a build, on its room page (OnCloseRadial is
     -- only an event). Left open, it sat behind the next offer and then
     -- behind Game Over, and its categories took the arrows there (VM,

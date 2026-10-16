@@ -2,6 +2,16 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.26
+
+Settings, the main menu and the Cargo Bay.
+
+- Fixed: the Graphics settings counted section titles, empty rows and settings you can't change, so the numbers jumped, like 6 of 18 straight to 9 of 18. They go 1 to 13 now with nothing skipped.
+- Fixed: on the main menu, if you went into an empty Q Trial slot you couldn't get back out with the keyboard. Backspace takes you back to the slot now, and it works the same from a campaign profile's Continue Game.
+- Fixed: changing what a Cargo Bay stores can make you lose stock, and the game warns you first. The warning said the amount before the sentence, and your arrows stayed in the room behind it. It reads in order now, like "you would lose the following resources: Deuterium -500", and Up and Down move between Continue and Return.
+
+## Friday October 16th 2026
+
 Version 0.3.25
 
 I tells you more about where you are, and a battle setup fix.

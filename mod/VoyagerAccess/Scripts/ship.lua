@@ -128,7 +128,11 @@ local function room_state(h, raw)
         -- Finished work waits for the Construction Report's Close: the cycle
         -- text says "Ready", read "Cargo bay, building, ready" (VM,
         -- 2026-10-16).
-        if cy:lower() == "ready" then return st:lower() .. " done" end
+        if cy:lower() == "ready" then
+            -- A cleared ruin read "Empty building space, removing done".
+            if raw == "None" and st:lower():find("^remov") then return "just cleared" end
+            return st:lower() .. " done"
+        end
         return st:lower() .. (cy ~= "" and (", " .. cy:lower()) or "")
     end)
     if ok and busy then return busy end
