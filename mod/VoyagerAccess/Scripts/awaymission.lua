@@ -596,9 +596,33 @@ end
 -- (WBP_ResourceReward_AwayMissionChoice: the same amount text and icon as
 -- the results' rewards). A sighted player sees "+15" with an icon beside
 -- each choice; it was not read (2026-10-14).
+-- Items have their own widgets beside each resource widget class, with the
+-- item's name in text (same scan: 24 item rewards, none read before).
+local ITEM_CLASSES = {
+    WBP_ResourceReward_AwayMissionChoice_C = "WBP_ItemReward_AwayMissionChoice_C",
+    WBP_ResourceReward_AwayMissionChallengeResult_C = "WBP_ItemReward_AwayMissionChallengeResult_C",
+    WBP_AwayMission_Consequences_ResourceReward_C = "WBP_AwayMission_Consequences_ItemsReward_C",
+}
+local function item_rewards(choice_path, cls, out)
+    for _, w in ipairs(FindAllOf(cls) or {}) do
+        local wp = w:IsValid() and path_of(w)
+        if wp and (choice_path == "" or wp:sub(1, #choice_path + 1) == choice_path .. ".") and screen.shown(w) then
+            local name, amount = "", ""
+            pcall(function() name = plain(text_of(w.ItemNameTextBlock)) end)
+            if name == "" then pcall(function() name = plain(text_of(w.ResourceName)) end) end
+            pcall(function() amount = plain(text_of(w.ItemAmountTextBlock)):gsub("^%+", "") end)
+            if amount == "" then pcall(function() amount = plain(text_of(w.ResourceAmount)):gsub("^%+", "") end) end
+            if name ~= "" then
+                out[#out + 1] = (amount ~= "" and amount ~= "1") and (amount .. " " .. name) or name
+            end
+        end
+    end
+end
+
 local function choice_rewards(choice_path, cls)
     local out = {}
-    for _, w in ipairs(FindAllOf(cls or "WBP_ResourceReward_AwayMissionChoice_C") or {}) do
+    cls = cls or "WBP_ResourceReward_AwayMissionChoice_C"
+    for _, w in ipairs(FindAllOf(cls) or {}) do
         local wp = w:IsValid() and path_of(w)
         if wp and (choice_path == "" or wp:sub(1, #choice_path + 1) == choice_path .. ".") and screen.shown(w) then
             local amount = ""
@@ -608,12 +632,12 @@ local function choice_rewards(choice_path, cls)
             local res = "resources"
             pcall(function()
                 local ro = w.ResourceImage.Brush.ResourceObject
-                if ro and ro:IsValid() then res = ro:GetFName():ToString():match("^MI_UI_(%a+)") or res end
+                if ro and ro:IsValid() then res = require("text").icon_name(ro:GetFName():ToString()) or res end
             end)
-            res = res:gsub("(%l)(%u)", "%1 %2"):lower()
             if amount ~= "" then out[#out + 1] = amount .. " " .. res end
         end
     end
+    if ITEM_CLASSES[cls] then pcall(item_rewards, choice_path, ITEM_CLASSES[cls], out) end
     return table.concat(out, ", ")
 end
 
@@ -861,13 +885,13 @@ local function result_poll()
                         pcall(function()
                             local ro = w.ResourceImage.Brush.ResourceObject
                             if ro and ro:IsValid() then
-                                res = ro:GetFName():ToString():match("^MI_UI_(%a+)") or res
+                                res = require("text").icon_name(ro:GetFName():ToString()) or res
                             end
                         end)
-                        res = res:gsub("(%l)(%u)", "%1 %2"):lower()
                         if amount ~= "" then rewards[#rewards + 1] = amount .. " " .. res end
                     end
                 end
+                pcall(item_rewards, rp, "WBP_ItemReward_AwayMissionChallengeResult_C", rewards)
                 if #rewards > 0 then parts[#parts + 1] = "Reward: " .. table.concat(rewards, ", ") end
                 -- Fatigue: the window's HeroStatus_Choices plaques show
                 -- "Fatigued" in the same hero order as HeroStatus.
@@ -887,24 +911,33 @@ local function result_poll()
                 -- after the text. Look again, anywhere on screen.
                 -- Once a second for up to 15: the reward shows after the story
                 -- text has typed out, 6 s was too short for a long one.
-                if #rewards == 0 then
-                    local function look(tries)
-                        local done = false
+                -- They also come in one at a time: "Reward: 3 dilithium" was
+                -- read while 600 morale and 30 science points were still
+                -- arriving (Kazon Raider, VM, 2026-10-16). Watch for more,
+                -- and once the list has stopped growing for a second, say it
+                -- whole.
+                do
+                    local said_n = #rewards
+                    local base = text:gsub("%s*Reward: [^%.]*%.", "")
+                    local function count(s) return s == "" and 0 or select(2, s:gsub(", ", "")) + 1 end
+                    local function look(tries, last_n)
+                        local done, n = false, last_n
                         pcall(function()
                             local late = choice_rewards(rp, "WBP_ResourceReward_AwayMissionChallengeResult_C")
                             if late == "" then late = choice_rewards("", "WBP_ResourceReward_AwayMissionChallengeResult_C") end
-                            if late ~= "" then
+                            n = count(late)
+                            if n > said_n and n == last_n then
                                 done = true
                                 print("[VoyagerAccess] mission result reward: " .. late .. "\n")
                                 require("speech").say("Reward: " .. late, false)
-                                require("dialogue").remember(text .. " Reward: " .. late .. ".")
+                                require("dialogue").remember(base .. " Reward: " .. late .. ".")
                             end
                         end)
                         if not done and tries > 1 then
-                            ExecuteInGameThreadWithDelay(1000, function() look(tries - 1) end)
+                            ExecuteInGameThreadWithDelay(1000, function() look(tries - 1, n) end)
                         end
                     end
-                    ExecuteInGameThreadWithDelay(1000, function() look(15) end)
+                    ExecuteInGameThreadWithDelay(1000, function() look(15, -1) end)
                 end
             end
             return

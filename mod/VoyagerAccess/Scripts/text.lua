@@ -10,11 +10,23 @@
 local M = {}
 
 -- "SciencePoints" -> "science points", "BioNeuralGelPack" -> "bio-neural gel packs"
+-- XP, Crews and SectorThreat are reward icons whose names do not say the
+-- reward (scan of every away mission and event reward, 2026-10-16).
 local UNITS = { BioNeuralGelPack = "bio-neural gel packs", SciencePoints = "science points", Cycles = "cycles",
-                Cycle = "cycles", BorgNanites = "Borg nanites", CombatPower = "combat power" }
+                Cycle = "cycles", BorgNanites = "Borg nanites", CombatPower = "combat power",
+                XP = "experience", Crews = "crew", SectorThreat = "sector threat level" }
 local function unit(id)
+    id = id:gsub("_.*$", "")
     if UNITS[id] then return UNITS[id] end
-    return (id:gsub("_.*$", ""):gsub("(%l)(%u)", "%1 %2"):lower())
+    return (id:gsub("(%l)(%u)", "%1 %2"):lower())
+end
+
+-- A reward icon's material ("MI_UI_SciencePoints_white",
+-- "MI_UI_XP_Reward_HeroPortraits") as the words for its resource, or nil.
+function M.icon_name(material)
+    local id = type(material) == "string" and material:gsub("^MI_UI_RichImage_", ""):match("^MI_UI_(%a+)")
+        or (type(material) == "string" and material:gsub("^MI_UI_RichImage_", ""):match("^(%a+)"))
+    return id and unit(id) or nil
 end
 
 local IMG = '<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'

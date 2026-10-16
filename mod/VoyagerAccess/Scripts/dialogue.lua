@@ -411,6 +411,11 @@ function M.remember(text)
     last_spoken = text
 end
 
+-- Who said the last line, for I.
+function M.speaker()
+    return last_speaker
+end
+
 function M.repeat_line()
     -- An open window (an event, a room, a detail view) is read again in
     -- full, as when it opened: R gave only an event's locked option and the

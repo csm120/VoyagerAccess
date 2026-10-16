@@ -152,12 +152,39 @@ function M.sweep(done)
     -- Any failure ends the sweep and still says the option: a sweep left
     -- marked as running would skip every later one (review, 2026-10-15).
     local finished = false
+    -- The option that had focus when the sweep began. The game moves focus
+    -- to the option under the mouse, so the sweep left it on the last one:
+    -- the player heard "Safely search ..., 1 of 2" and Enter picked "Leave
+    -- for now" (Abandoned Mining Station, VM, 2026-10-16). The mouse goes
+    -- back over the first one it was seen on, and focus back to it.
+    local orig_key, orig_y = nil, nil
+    pcall(function()
+        local cur = require("focus").current_path()
+        for _, b in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+            local p = b:IsValid() and path_of(b)
+            if p and cur and (cur == p or cur:sub(1, #p + 1) == p .. ".") then orig_key = key_of(b) end
+        end
+    end)
+    local okv0, rr, ww, hh = false, nil, nil, nil
     local function finish()
         if finished then return end
         finished = true
-        sweeping = false
         print("[VoyagerAccess] events: chances read from the game, " .. uncaptured() .. " option(s) without\n")
-        if done then pcall(done) end
+        local function after()
+            sweeping = false
+            pcall(function()
+                for _, b in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+                    if b:IsValid() and orig_key and key_of(b) == orig_key then b:SetFocus() end
+                end
+            end)
+            if done then pcall(done) end
+        end
+        if orig_y and okv0 then
+            pcall(speech.ring_mouse, (0.83 * ww - ww / 2) / rr, (orig_y - hh / 2) / rr)
+            ExecuteInGameThreadWithDelay(300, function() pcall(after) end)
+        else
+            after()
+        end
     end
     local okv, w, h = pcall(function()
         local pc = FindFirstOf("PlayerController")
@@ -167,11 +194,13 @@ function M.sweep(done)
     if not (okv and w and h and h > 0) then return finish() end
     sweeping = true
     local r = 350 / 1080 * h   -- the helper's ring radius
+    okv0, rr, ww, hh = true, r, w, h
     local x = 0.83 * w
     local ys = {}
     for y = 0.40 * h, 0.96 * h, 0.025 * h do ys[#ys + 1] = y end
     local i = 0
     local function step()
+        if orig_key and not orig_y and i > 0 and captured[orig_key] then orig_y = ys[i] end
         i = i + 1
         if i > #ys or uncaptured() == 0 then return finish() end
         speech.ring_mouse((x - w / 2) / r, (ys[i] - h / 2) / r)
@@ -283,7 +312,9 @@ local function rewards(b)
                 local ro = img.Brush.ResourceObject
                 if ro and ro:IsValid() then icon = ro:GetFName():ToString() end
             end)
-            local res = icon and icon:match("^MI_UI_(%a+)") or "resources"
+            -- "SciencePoints" read as one word; text.icon_name says "science
+            -- points", "experience", "crew" (reward scan, 2026-10-16).
+            local res = icon and require("text").icon_name(icon) or "resources"
             if amount ~= "" then out[#out + 1] = "up to " .. amount .. " " .. res end
         end)
     end)
@@ -310,6 +341,22 @@ local HERO_NAMES = { Char_Tom_Paris = "Tom Paris", Char_Neelix = "Neelix", Char_
 local ATTR = nil
 local chosen = {}   -- option path -> index into its heroes (1 is no hero)
 
+-- The game's own name for a hero id. HERO_NAMES has the campaign's starting
+-- crew only, and the game has dozens more (Seven, Kashyk, Ransom, Burke;
+-- data scan, 2026-10-16), which were read as their raw ids.
+local function hero_name(id)
+    local name = nil
+    pcall(function()
+        local hm = FindFirstOf("STVHeroManager")
+        local out = {}
+        if hm and hm:IsValid() and hm:TryGetHeroDisplayNameFromId(FName(id), out) then
+            name = out.OutHeroName:ToString()
+        end
+    end)
+    if name and name ~= "" then return name end
+    return HERO_NAMES[id] or (id:gsub("^Char_", ""):gsub("_", " "))
+end
+
 local function attribute_of(o)
     ATTR = ATTR or StaticFindObject("/Script/STVoyager.ESTVHeroAttribute")
     local name = nil
@@ -329,7 +376,7 @@ local function heroes_of(b)
             local id = ""
             pcall(function() id = h.CurrentHeroId:ToString() end)
             out[#out + 1] = { button = h, none = none,
-                name = none and "No hero" or (HERO_NAMES[id] or id:gsub("^Char_", ""):gsub("_", " ")),
+                name = none and "No hero" or hero_name(id),
                 value = text_of(h.AbilityValue_TXT):gsub("^0+(%d)", "%1"),
                 tired = h.isFatigued == true, usable = h.bHeroSelectable ~= false }
         end)

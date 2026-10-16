@@ -63,6 +63,20 @@ function M.context()
             return "event"
         end
     end
+    -- An offer or notice over a room window: I said "Workshop, level 1,
+    -- active. Continue." for the offer's Continue (VM, 2026-10-16). The
+    -- window holding the focused button is the one in front.
+    local over = false
+    pcall(function()
+        local cur = require("focus").current_path()
+        local b = cur and StaticFindObject(cur)
+        if not (b and b:IsValid()) then return end
+        for _, wp in ipairs(require("popups").open_windows()) do
+            if (wp:find("WBP_MultipleChoiceWidget_C", 1, true) or wp:find("WBP_CommonInfoWidget_C", 1, true))
+                and screen.inside(b, wp) then over = true end
+        end
+    end)
+    if over then return "menu" end
     -- Not a room left open behind the System Map (rooms.lua).
     if require("rooms").window_open() then return "room" end
     local focus = require("focus").context()
@@ -127,7 +141,32 @@ function M.say_where()
             parts[2] = require("ship").where() or "No room selected"
         elseif ctx == "system" then
             parts[2] = require("system").where() or "Nothing selected"
-        elseif ctx == "dialogue" or ctx == "cutscene" or ctx == "story" then
+        elseif ctx == "dialogue" then
+            -- I said only "Dialogue." (VM, 2026-10-16): the focused choice,
+            -- or who is speaking; R repeats the line itself.
+            local label = require("focus").current_label()
+            -- An away mission challenge's result said "Dialogue. R repeats
+            -- the line." (VM, 2026-10-16).
+            local result = nil
+            pcall(function()
+                for _, r in ipairs(FindAllOf("WBP_AwayMission_ChallengeResult_C") or {}) do
+                    if r:IsValid() and r:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(r) then
+                        result = r.MissionResult_Text:GetText():ToString()
+                    end
+                end
+            end)
+            if result then
+                parts[1] = "Away mission result"
+                parts[2] = result ~= "" and result or nil
+                parts[3] = "R repeats it, Enter continues"
+            elseif label and label:find("^Choice %d") then
+                parts[2] = label
+            else
+                local who = require("dialogue").speaker()
+                if who and who ~= "" then parts[1] = "Dialogue with " .. who end
+                parts[2] = "R repeats the line"
+            end
+        elseif ctx == "cutscene" or ctx == "story" then
             parts[2] = nil
         elseif ctx == "combat" then
             -- An open order wheel first, then the ships.

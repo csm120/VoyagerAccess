@@ -610,6 +610,9 @@ end
 
 local function poll()
     M.setup_sync()
+    -- When the setup was last up: focus.lua does not open Orders on the
+    -- Enter that started the battle.
+    if M.setup_up() then M.setup_last = os.time() end
     if not hooked and M.screen_up() then energy_hooks() end
     if not M.active() then
         said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil

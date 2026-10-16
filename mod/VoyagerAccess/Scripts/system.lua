@@ -78,6 +78,38 @@ local function system_marks(actor)
             end
         end
     end)
+    -- The badge is not always drawn: the campaign's "Examine the Kazon
+    -- wreckage" Shipwreck and Q Trials mission points had none (VM,
+    -- 2026-10-16). A point's own EventIds name its story line
+    -- ("QuestLines.Maneuvers -> DA_Main_02_..."), and the event subsystem
+    -- says which one is live (Activatable).
+    pcall(function()
+        local have = {}
+        for _, m in ipairs(marks) do have[m] = true end
+        local es = FindFirstOf("STVEventSubsystem")
+        local E = StaticFindObject("/Script/STVoyager.ESTVEventState")
+        local poi = nil
+        local apath = actor:GetFullName()
+        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
+            if c:IsValid() then
+                local o = c:GetOwner()
+                if o and o:IsValid() and o:GetFullName() == apath then poi = c end
+            end
+        end
+        if not (poi and es and E) then return end
+        poi.EventIds:ForEach(function(_, v)
+            local id = v:get()
+            local s = id:ToString()
+            local kind = s:find("-> DA_Main_", 1, true) and "main mission" or (s:find("-> DA_Side_", 1, true) and "side mission") or nil
+            if kind and not have[kind] then
+                local okst, st = pcall(function() return E:GetNameByValue(es:GetEventStateById(id)):ToString() end)
+                if okst and st and st:find("Activatable", 1, true) then
+                    have[kind] = true
+                    marks[#marks + 1] = kind
+                end
+            end
+        end)
+    end)
     return marks
 end
 
@@ -435,7 +467,12 @@ local function watch_arrival(name, target, start_d)
                 local j = FindFirstOf("STVJourneySubsystem")
                 return j and j:IsValid() and j:IsTravelling()
             end)
-            if far and okt and trav == false and start_d and d3 <= start_d * 0.5 then far = false end
+            -- Within a big planet's orbit range, not a call mid-trip.
+            -- On the Sector Map distances are far larger: within a tenth of
+            -- the trip counts too ("Arrived at System 4544.4" was said over
+            -- Harry Kim's arrival line, VM, 2026-10-16).
+            if far and okt and trav == false and start_d and d3 < start_d - 50
+                and (d3 <= 2500 or d3 <= start_d * 0.1) then far = false end
             if not far then
                 travel = nil
                 print("[VoyagerAccess] course: conversation opened at " .. name .. "\n")
@@ -548,7 +585,18 @@ function M.declare_travel(name, target, start_d)
                 speech.say("Under way to " .. name, false)
                 watch_arrival(name, target, start_d)
             else
-                print(string.format("[VoyagerAccess] course: DeclareTravel did not move (d=%s, start=%s), trying the mouse\n", tostring(d), tostring(start_d)))
+                -- Not with a conversation or a window up: the arrival
+                -- conversation at a planet Voyager is already orbiting would
+                -- take the click (review, 2026-10-16).
+                local busy = false
+                pcall(function() busy = require("dialogue").active() ~= nil end)
+                pcall(function()
+                    for _, w in ipairs(require("popups").open_windows()) do
+                        if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then busy = true end
+                    end
+                end)
+                print(string.format("[VoyagerAccess] course: DeclareTravel did not move (d=%s, start=%s)%s\n", tostring(d), tostring(start_d), busy and ", a window is up" or ", trying the mouse"))
+                if busy then return end
                 fire_course(name, target, 1)
             end
         end)

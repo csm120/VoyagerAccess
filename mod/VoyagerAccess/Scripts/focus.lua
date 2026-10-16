@@ -1130,10 +1130,15 @@ label_for = function(b, path)
             pcall(function()
                 local list = b:GetParent()
                 local n, index = 0, nil
+                -- Not an option that cannot be picked: focus skips it, and
+                -- Down went from "2 of 4" to "4 of 4" (Pursuit of Happiness,
+                -- VM, 2026-10-16). The window's text names it as "Not
+                -- available".
+                local all = not b:GetIsEnabled()
                 for i = 0, list:GetChildrenCount() - 1 do
                     local c = list:GetChildAt(i)
                     if c and c:IsValid() and c:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C"
-                        and require("screen").shown(c) then
+                        and require("screen").shown(c) and (all or c:GetIsEnabled()) then
                         n = n + 1
                         if c:GetFullName() == b:GetFullName() then index = n end
                     end
@@ -2176,6 +2181,10 @@ function M.install()
         if require("dialogue").active() then return false end
         local b = resolve(current)
         if b and require("screen").shown(b) then return false end
+        -- A room page with nothing to focus (the Aeroshuttle Bay's Trading
+        -- tab, "Awaiting new trade offers") passed Down to the ship view
+        -- behind the window (VM, 2026-10-16).
+        if require("rooms").window_open() then return false end
         return ship.active()
     end
     local system = require("system")
@@ -2205,7 +2214,11 @@ function M.install()
         -- Resolve opened Orders there, and that started the battle by hand.
         -- The setup counted as not shown at that moment (Casey's machine,
         -- 2026-10-15, Vidiian ambush).
-        if require("combat").active() and not (current and current:find(".HeroLoadout.", 1, true)) then
+        -- Nor just after the setup closed: the Enter that started the battle
+        -- reached the mod after focus had moved into it, and opened Orders
+        -- (1 of 3 starts, Casey's machine, 2026-10-16).
+        local recent_setup = os.time() - (require("combat").setup_last or -100) < 2
+        if require("combat").active() and not recent_setup and not (current and current:find(".HeroLoadout.", 1, true)) then
             local fb = resolve(current)
             if not (fb and require("screen").shown(fb)) then return require("combat").open_orders() end
         end
@@ -2251,7 +2264,29 @@ function M.install()
         go_in_until = ticks + 5
         local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
             or require("view").nav_close() or (map_mode() and system.menu_close())
-        if closed then undo_pause() end
+        if closed then undo_pause() return end
+        -- A window whose controls are all disabled has nothing for the game
+        -- to focus, and the game's Escape does nothing without focus: a
+        -- damaged Aeroshuttle Bay with no free work team could not be
+        -- closed (VM, 2026-10-16). Its back action closes it, as the
+        -- game's Escape would.
+        local b = resolve(current)
+        if b and require("screen").shown(b) then return end
+        local targets = {}
+        if M.virtual_active() and M.virtual_window() then targets[#targets + 1] = M.virtual_window() end
+        if require("rooms").window_open() then
+            for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
+                if w:IsValid() and require("screen").shown(w) then targets[#targets + 1] = path_of(w) end
+            end
+        end
+        for _, p in ipairs(targets) do
+            local w = StaticFindObject(p)
+            if w and w:IsValid() and pcall(function() w:CallBackAction() end) then
+                print("[VoyagerAccess] escape: back action on " .. p:match("([%w_]+)$") .. "\n")
+                undo_pause()
+                return
+            end
+        end
     end)
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.

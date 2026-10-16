@@ -2,6 +2,18 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.27
+
+Rooms you couldn't close, events, battles and I.
+
+- Fixed: a room window where nothing can be pressed, like a damaged Aeroshuttle Bay with no free work team, couldn't be closed, and Down on its Trading tab moved you around the ship behind it. Escape closes it now, and the arrows stay in the window.
+- Fixed: in an event, Enter sometimes picked the last option, like "Leave for now", even though you'd just heard the first one. Enter picks the option you heard now.
+- Fixed: the Enter that starts a battle could open the Orders wheel right away. It waits a moment now.
+- Changed: map points with a story waiting say "main mission" or "side mission", like "Debris Field, main mission".
+- Changed: I in a conversation says the choice you're on, or who's talking, instead of just "Dialogue". On an away mission result it says "Away mission result" and how it went, and over a room window it names the offer or message in front.
+
+## Friday October 16th 2026
+
 Version 0.3.26
 
 Settings, the main menu and the Cargo Bay.
