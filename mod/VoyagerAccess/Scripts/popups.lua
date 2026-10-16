@@ -190,7 +190,10 @@ local function parts_under(path)
                     seen_obj[tp] = true
                     local ok, s = pcall(function() return t:GetText():ToString() end)
                     s = ok and plain(s) or ""
-                    if s ~= "" and s:sub(1, 1) ~= "#" and not NOISE[s:upper()] then
+                    -- By the button it sits in too: the German tutorial read
+                    -- "Tutorial: Erschöpfung. SCHLIESSEN" (VM, 2026-10-16).
+                    local in_close = tp:find("%.Close[%w_]*Button[%w_]*%.") or tp:find("%.EnterShip[%w_]*%.")
+                    if s ~= "" and s:sub(1, 1) ~= "#" and not NOISE[s:upper()] and not in_close then
                         parts[#parts + 1] = { name = tp:match("([^%.]+)$"), text = s, path = tp }
                     end
                 end
@@ -328,11 +331,13 @@ local function poi_result(parts, by, path)
             local waste = ""
             pcall(function() if screen.shown(r.WasteAmount_Text) then waste = txt(r.WasteAmount_Text):gsub("^%-", "") end end)
             local icon = icon_name(r.Reward_Image)
-            local res = (icon and icon:match("^MI_UI_(%a+)")) or "resources"
-            res = res:gsub("(%l)(%u)", "%1 %2"):lower()
-            local stored = line:find("in total stored", 1, true) ~= nil
+            local res = (icon and require("text").icon_name(icon)) or "resources"
+            -- By shape, not English words: in German the lines are "65%
+            -- Belohnungsverteilung" and "insgesamt gelagert" (VM, 2026-10-16).
+            -- The rate line has a percentage; the other line is the total.
+            local pct = line:match("(%d+)%%")
+            local stored = not pct and (line:find("in total stored", 1, true) ~= nil or line:match("%a") ~= nil)
             local text
-            local pct = line:match("(%d+)%% reward distribution")
             -- The game's "65% reward distribution" is the outcome's rate, and
             -- "of the possible reward" contradicted the option's "Up to 447"
             -- when 447 came (demo, VM, 2026-10-15); the outcome says it.

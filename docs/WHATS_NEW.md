@@ -2,6 +2,14 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.31
+
+More fixes for games in other languages.
+
+- Fixed: in a game set to another language, event results read the reward share the English version leaves out, like "65% Belohnungsverteilung", and named the total oddly. They read the same way as in English now, like "Outcome: gut. 454 deuterium stored."
+
+## Friday October 16th 2026
+
 Version 0.3.30
 
 Away missions in any language, and choices you can't take.
