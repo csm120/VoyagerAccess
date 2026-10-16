@@ -567,8 +567,15 @@ local function chosen(h)
     return yes
 end
 
+-- Ready to confirm: the game enables the button once a hero is on the
+-- choice. Matching its English word "Confirm" broke every away mission in
+-- another language: no hero was ever "selected" and Confirm said to pick a
+-- hero first (a forum player in the cornfield; reproduced in German, VM,
+-- 2026-10-16).
 local function is_active(c)
     local cb = c.ConfirmButton
+    local ok, en = pcall(function() return cb:GetIsEnabled() end)
+    if ok and en ~= nil then return en end
     return plain(text_of(cb and cb.Name_TextBlock)):lower() == "confirm"
 end
 
@@ -601,7 +608,10 @@ local function fatigued(window)
         local hp = path_of(h) .. "."
         for _, t in ipairs(FindAllOf("TextBlock") or {}) do
             local tp = t:IsValid() and path_of(t)
-            if tp and tp:sub(1, #hp) == hp and screen.shown(t) and plain(text_of(t)) == "Fatigued" then
+            -- By the label's name too: in German it reads "Erschöpft" (VM,
+            -- 2026-10-16).
+            if tp and tp:sub(1, #hp) == hp and screen.shown(t)
+                and (tp:find("%.CommonTextBlock_184$") or plain(text_of(t)) == "Fatigued") then
                 tired[#tired + 1] = names[i] or ("Hero " .. i)
             end
         end
@@ -819,6 +829,10 @@ function M.mission_enter()
             -- this", VM, 2026-10-15): Enter presses it again (the game
             -- toggles it), and the hero is said with its new state.
             print("[VoyagerAccess] mission: select " .. it.name .. "\n")
+            -- As the label says it: chosen() was true for a hero the game had
+            -- refused (the choice is not active until a valid hero is on it).
+            local was = false
+            pcall(function() was = (item_label(it) or ""):find(", selected%.$") ~= nil end)
             press(h.Button)
             -- Picked, the hero is said with where to go next.
             ExecuteInGameThreadWithDelay(600, function()
@@ -826,7 +840,21 @@ function M.mission_enter()
                     local cur = mission_items[mission_index]
                     local label = cur and item_label(cur)
                     if not label then return end
-                    if label:find(", selected%.$") then label = label .. " Confirm is after the heroes." end
+                    if label:find(", selected%.$") then
+                        label = label .. " Confirm is after the heroes."
+                    elseif not was then
+                        -- The game refused the hero without a sound: a choice
+                        -- that needs a trait takes only heroes who have it
+                        -- (Kes on "Trait: Talaxian", Rise, VM, 2026-10-16).
+                        local c = StaticFindObject(it.choice)
+                        local want = c and c:IsValid() and (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
+                        local has = trait_of(it.name)
+                        if want and not (has ~= "" and has:lower():find(want:lower(), 1, true)) then
+                            label = it.name .. " cannot take this choice: it needs a hero with the " .. want .. " trait."
+                        else
+                            label = it.name .. " was not selected. " .. label
+                        end
+                    end
                     require("speech").say(label, true)
                 end)
             end)

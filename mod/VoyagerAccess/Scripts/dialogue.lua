@@ -196,6 +196,8 @@ end
 -- choice's number button and text button get explicit rules to the same
 -- buttons of the choices above and below, in the panel's order.
 local wired_sig = nil
+local unavailable_said = nil   -- the choice set whose unavailable choices were read
+
 local function shown_choices()
     local list = {}
     for _, cls in ipairs({ "WBP_Dialogue_Choice_C", "WBP_Dialogue_Choice_Sector_C" }) do
@@ -402,6 +404,31 @@ function M.choice_label(path)
             end
         end)
         text = "Choice " .. number .. (count > 0 and (" of " .. count) or "") .. ": " .. text
+    end
+    -- Choices that cannot be taken get no focus, so the arrows skipped them
+    -- unheard: of five at the Nezu colony only 4 and 5 were reachable (Rise,
+    -- VM, 2026-10-16). A disabled one says so; the first time a set is read,
+    -- the ones out of reach are added, as events add their locked options.
+    local okd, disabled = pcall(function() return not c.LeftButton:GetIsEnabled() end)
+    if okd and disabled then
+        text = text:gsub("%.$", "") .. ". Not available."
+    else
+        local others, names = {}, {}
+        for _, it in ipairs(shown_choices()) do
+            names[#names + 1] = it.c:GetFName():ToString()
+            local ok2, off = pcall(function() return not it.c.LeftButton:GetIsEnabled() end)
+            if ok2 and off and it.c:GetFullName() ~= c:GetFullName() then
+                local okl, l = pcall(M.choice_label, it.c:GetFullName():match("^%S+%s+(.+)$") .. ".LeftButton")
+                if okl and l then
+                    others[#others + 1] = (l:gsub("%s*Not available%.$", ""):gsub("%.$", ""):gsub("^Choice (%d+) of %d+:", "Choice %1:"))
+                end
+            end
+        end
+        local sig = table.concat(names, "|")
+        if #others > 0 and unavailable_said ~= sig then
+            unavailable_said = sig
+            text = text .. " Not available: " .. table.concat(others, "; ") .. "."
+        end
     end
     return text
 end

@@ -2397,6 +2397,27 @@ function M.install()
             or require("view").nav_close() or (map_mode() and system.menu_close())
         if closed then undo_pause() return end
         if require("awaymission").is_hero_button(current or "") then M.restore_slot_hero() return end
+        -- A ring (radial menu) whose only action is disabled keeps the
+        -- focus on that button, and the game's Escape left it open ("Clear
+        -- Debris. No available work team", Q Trial, VM, 2026-10-16). If a
+        -- ring is still up shortly after Escape, its back action closes it.
+        local rings = {}
+        for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+            if w:IsValid() and require("screen").shown(w) then rings[#rings + 1] = path_of(w) end
+        end
+        if #rings > 0 then
+            ExecuteInGameThreadWithDelay(400, function()
+                for _, p in ipairs(rings) do
+                    pcall(function()
+                        local w = StaticFindObject(p)
+                        if w and w:IsValid() and require("screen").shown(w) then
+                            w:CallBackAction()
+                            print("[VoyagerAccess] escape: back action on " .. p:match("([%w_]+)$") .. "\n")
+                        end
+                    end)
+                end
+            end)
+        end
         -- A window whose controls are all disabled has nothing for the game
         -- to focus, and the game's Escape does nothing without focus: a
         -- damaged Aeroshuttle Bay with no free work team could not be

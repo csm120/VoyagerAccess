@@ -33,9 +33,24 @@ local IMG = '<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'
 
 function M.prep(s)
     if type(s) ~= "string" or s == "" then return s or "" end
-    -- Icon then number (a colour tag around the number is optional).
-    s = s:gsub(IMG .. "%s*<%w+>%s*([%+%-]?[%d,%.]+)%s*</>", function(id, n) return n .. " " .. unit(id) end)
-    s = s:gsub(IMG .. "%s*([%+%-]?%d[%d,%.]*)", function(id, n) return n .. " " .. unit(id) end)
+    -- An icon right after its own name ("+80 <ColorDeuterium>Deuterium</>
+    -- <img id="Deuterium"/>") adds nothing; dropped first, so the rule below
+    -- cannot pair it with the next line's number ("+80 Deuterium +8
+    -- deuterium Duranium", Waste Disassembler, VM, 2026-10-16).
+    local function own(word, id) return word:lower() == id:lower() or word:lower() .. "s" == id:lower() end
+    -- Whole names in a colour tag, letters only: "SCIENCE POINTS" with
+    -- SciencePoints, "EX BORG" with ExBorg, "BIO-NEURAL GEL PACK" with
+    -- GelPack (all 117 icon strings in the game checked, 2026-10-16).
+    s = s:gsub("(<%w+>([^<>]+)</>)[ \t]*" .. IMG, function(whole, phrase, id)
+        local a, b = phrase:lower():gsub("[^%a]", ""), id:lower()
+        if a == b or a .. "s" == b or a:find(b, 1, true) or b:find(a, 1, true) then return whole end
+    end)
+    s = s:gsub("(%a+)</>[ \t]*" .. IMG, function(word, id) if own(word, id) then return word .. "</>" end end)
+    s = s:gsub("(%a+)[ \t]*" .. IMG, function(word, id) if own(word, id) then return word end end)
+    -- Icon then number (a colour tag around the number is optional), on
+    -- the same line only.
+    s = s:gsub(IMG .. "[ \t]*<%w+>[ \t]*([%+%-]?[%d,%.]+)[ \t]*</>", function(id, n) return n .. " " .. unit(id) end)
+    s = s:gsub(IMG .. "[ \t]*([%+%-]?%d[%d,%.]*)", function(id, n) return n .. " " .. unit(id) end)
     -- Number then icon: "3 <img id="Cycles"/>".
     s = s:gsub("(%d)%s*" .. IMG, function(d, id) return d .. " " .. unit(id) end)
     -- "per" then an icon: "-2 morale per <img id="Cycle"/>" read "-2 morale

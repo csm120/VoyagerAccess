@@ -2,6 +2,16 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.30
+
+Away missions in any language, and choices you can't take.
+
+- Fixed: if your game is set to a language other than English, away missions couldn't be finished. Picking a hero never said "selected", and Confirm kept saying to select a hero first. They work in every language now, including the cornfield on the first away mission. Tired heroes are called fatigued in every language too.
+- Fixed: in a conversation, choices you can't take were skipped by the arrows and never read. Now the first time the choices come up you also hear the ones that aren't available and why, like "Not available: Choice 1: Block the asteroid with Voyager. Needs Shield Generator Level 0".
+- Changed: on an away mission, if a hero can't take a choice because it needs a certain trait, Enter tells you, like "Kes cannot take this choice: it needs a hero with the Talaxian trait". Before, nothing happened.
+
+## Friday October 16th 2026
+
 Version 0.3.29
 
 Q Trials modifiers, scans, counts and a few safety nets.
