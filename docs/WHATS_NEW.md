@@ -2,6 +2,15 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.25
+
+I tells you more about where you are, and a battle setup fix.
+
+- Changed: I now names the event or message you're in. An event says its name, like "Ecosphere Planet", instead of "Point of interest". A mission offer says its title, like "Duranium Reserves. Acknowledged.", instead of "Menu".
+- Fixed: in some Q Trials ambushes Surrender and Use Cloak can't be used, and Down from the last hero slot got stuck on Surrender with no way off it. Up and Down skip those now and go straight to Auto Resolve.
+
+## Friday October 16th 2026
+
 Version 0.3.24
 
 Small fixes from playing the campaign further.

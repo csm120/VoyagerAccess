@@ -950,8 +950,37 @@ local function wire_rows(path)
     -- 2026-10-14).
     local list = {}
     for _, b in ipairs(all) do
-        if not require("warpcore").handles(path_of(b)) then list[#list + 1] = b end
+        -- Not disabled buttons: a Q Trials ambush disables Surrender and
+        -- Use Cloak, Down from the last slot went onto Surrender, and focus
+        -- could not leave it (VM, 2026-10-16).
+        local enabled = true
+        pcall(function() enabled = b:GetIsEnabled() end)
+        if enabled and not require("warpcore").handles(path_of(b)) then list[#list + 1] = b end
     end
+    -- Focus on a disabled button moves on to the next usable one the way
+    -- the player was going.
+    pcall(function()
+        local cur = resolve(path)
+        if not (cur and cur:IsValid()) or cur:GetIsEnabled() then return end
+        -- Only just after an arrow: Auto Resolve disables its own button as
+        -- its window opens, and focus was sent off somewhere hidden (VM,
+        -- 2026-10-16).
+        if not (arrow_tick and ticks and ticks - arrow_tick <= 3) then return end
+        local at = nil
+        for i, b in ipairs(all) do if path_of(b) == path then at = i end end
+        if not at then return end
+        local dir = (last_dir == -1) and -1 or 1
+        local i = at + dir
+        while all[i] do
+            local okn, en = pcall(function() return all[i]:GetIsEnabled() and require("screen").shown(all[i]) end)
+            if okn and en then
+                print("[VoyagerAccess] focus: off disabled " .. path:match("([^%.]+)$") .. "\n")
+                all[i]:SetFocus()
+                return
+            end
+            i = i + dir
+        end
+    end)
     local names = {}
     for i, b in ipairs(list) do names[i] = path_of(b) end
     local key, sig = path_of(root), table.concat(names, "|")
@@ -1020,6 +1049,15 @@ label_for = function(b, path)
         local t = win and require("popups").auto_resolve_text(win) or ""
         local tail = (t:match("(Survival chance [^%.]+)") or "") .. ". " .. (t:match("(Torpedoes added [^%.]+)") or "")
         label = (path:find("Add$") and "Add torpedo" or "Remove torpedo") .. ". " .. tail
+    elseif cls == "WBP_Resource_C" then
+        -- A resource readout used as a button (the Q Trials sector results
+        -- list ten of them): "0000, 0, +255, -24" (VM, 2026-10-16). Its
+        -- widget is named after the resource; say "Deuterium 1,000".
+        local key = path:match("([%w_]+)$") or ""
+        local NAMES = { SciencePoints = "Science points", BioNeuralGelPack = "Bio-neural gel packs", BorgNanites = "Borg nanites" }
+        local okv, v = pcall(function() return b.CurrentResourceAmountText:GetText():ToString() end)
+        v = okv and v and v:gsub("^0+(%d)", "%1") or ""
+        label = (NAMES[key] or key) .. (v ~= "" and (" " .. v) or "")
     elseif cls == "WBP_AeroShuttleBay_TradeOffer_C" then
         label = require("rooms").trade_offer_label(b)
     elseif cls == "WBP_ResourceSelectionButton_C" then

@@ -103,6 +103,18 @@ function M.say_where()
         local ctx = M.context()
         parts[1] = PLACES[ctx] or "Game"
         if ctx == "system" and require("system").sector() then parts[1] = "Sector map" end
+        -- An event by its own name ("Ecosphere Planet"), not "Point of
+        -- interest" (VM, 2026-10-16).
+        if ctx == "event" then
+            pcall(function()
+                for _, w in ipairs(FindAllOf("WBP_POIMultipleChoice_C") or {}) do
+                    if w:IsValid() and require("screen").shown(w) then
+                        local h = w.Header_Text:GetText():ToString()
+                        if h and h ~= "" then parts[1] = h end
+                    end
+                end
+            end)
+        end
         if ctx == "room" then
             for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
                 if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
@@ -141,6 +153,26 @@ function M.say_where()
                     end
                 end
                 if title and title ~= "" then parts[1] = title end
+            end
+            -- A window the focused button sits in, when it is not a list:
+            -- a mission offer said only "Menu. Acknowledged." (Q Trial, VM,
+            -- 2026-10-16). Its title, as for the lists above.
+            if parts[1] == "Menu" and ctx == "menu" then
+                pcall(function()
+                    local cur = f.current_path()
+                    local b = cur and StaticFindObject(cur)
+                    if not (b and b:IsValid()) then return end
+                    local screen = require("screen")
+                    for _, wp in ipairs(require("popups").open_windows()) do
+                        if (wp:find("WBP_MultipleChoiceWidget_C", 1, true) or wp:find("WBP_CommonInfoWidget_C", 1, true))
+                            and screen.inside(b, wp) then
+                            local t = require("popups").text_under(wp)
+                            local title = t and t:match("^([^%.:]+)")
+                            if title and title ~= "" then parts[1] = title end
+                            return
+                        end
+                    end
+                end)
             end
             parts[2] = f.current_label()
             -- The team screen said "Menu" (demo, VM, 2026-10-15).
