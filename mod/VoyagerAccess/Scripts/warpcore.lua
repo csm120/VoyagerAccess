@@ -52,7 +52,22 @@ function M.label(path)
     if cm and cm:IsValid() then
         local ok1, selected = pcall(function() return cm:GetSelectedWarpcoreLevel() end)
         local ok2, max = pcall(function() return cm:GetMaxSelectableWarpcoreLevel() end)
-        if ok1 and selected == level then text = text .. ", selected" end
+        if ok1 and selected == level then
+            text = text .. ", selected"
+            -- What the running tier makes and burns (STVWarpcoreInfo); the
+            -- tiers never said their energy or fuel (open since 2026-10-14).
+            -- Only the active tier's figures exist; the other tiers' panels
+            -- hold designer placeholders ("+999").
+            pcall(function()
+                -- WarpcoreDeuteriumInput read 5 where the panel said -24;
+                -- the panel's figure is energy over energy per deuterium.
+                local info = cm:GetWarpcoreInfo()
+                local e, per = info.WarpcoreEnergyOutputMax, cm:GetEnergyProducedPerDeuterium()
+                if level > 0 and e and e > 0 and per and per > 0 then
+                    text = text .. string.format(", makes %d energy, burns %d deuterium per cycle", e, math.ceil(e / per))
+                end
+            end)
+        end
         if ok2 and level > max then text = text .. ", locked" end
     end
     return text

@@ -82,6 +82,10 @@ local WATCH = {
     "WBP_PauseMenu_Confirms_C",
     -- The main menu's Delete Profile warning, its own class (2026-10-15)
     "WBP_DeleteProfileWarning_C",
+    -- "Display Settings. Display settings have been changed. Do you want to
+    -- save and apply them?" with REJECT and ACCEPT, after a resolution
+    -- change (created in the VM, 2026-10-15; the VM has one resolution only)
+    "WBP_ConfirmUserSettingDisplay_C",
     -- From the coverage list (every widget in the game, 2026-10-15), each
     -- created in the VM to check its parts: Game Over (Return to Main Menu,
     -- Reload Save), No Way Back before the endgame (YES, NO), the Crafting
@@ -240,10 +244,28 @@ local function poi_detail(parts)
     -- Anything else the window shows, after the known parts.
     local known = { LocationNameTextBlock = true, SystemNameTextBlock = true, System_TextBLock = true,
         ResourceEventNameTextBlock = true, UpgradeText = true }
+    local extras = {}
     for _, p in ipairs(parts) do
         -- A stray "System" label is left over once the system is named.
-        if not known[p.name] and not p.name:find("^Resource") and p.text ~= "System" then out[#out + 1] = p.text end
+        if not known[p.name] and not p.name:find("^Resource") and p.text ~= "System" then
+            out[#out + 1] = p.text
+            if not p.text:find("%-Zone$") and not p.text:find("NO DATA") and not p.text:find("^Scan ") then
+                extras[#extras + 1] = p.text
+            end
+        end
     end
+    -- What the point holds, for the System Map list: the full game's event
+    -- ids ("S1RE8") do not name the resource, so every scanned point read
+    -- just "scanned" (Q Trial, VM, 2026-10-15).
+    local names = {}
+    if by.ResourceEventNameTextBlock and by.ResourceEventNameTextBlock ~= "Resources" then
+        names[#names + 1] = by.ResourceEventNameTextBlock
+    end
+    for _, p in ipairs(parts) do
+        if p.name == "ResourceNameTextBlock" then names[#names + 1] = p.text end
+    end
+    for _, e in ipairs(extras) do names[#names + 1] = e end
+    if #names > 0 then pcall(function() require("system").note_found(table.concat(names, ", ")) end) end
     return table.concat(out, ". ")
 end
 

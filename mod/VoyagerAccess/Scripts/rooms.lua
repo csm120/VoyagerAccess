@@ -562,6 +562,45 @@ function M.patients_text()
     return table.concat(out, ". ") .. "."
 end
 
+-- A quarters room's Crew Info tab (WBP_CrewQuartersInteraction: CrewCount
+-- "12/12", rows WBP_CrewMemberInfo with CrewName, Condition, Workplace, "-"
+-- when there is none), none of it focusable, so only "Crew Info tab" was
+-- said (Emergency quarters, VM, 2026-10-15). "Inhabitants 12 of 12: Jelan
+-- K'Var, injured; Jacob Baker, Science Laboratory; ...", or nil.
+function M.crew_text()
+    local module = nil
+    for _, w in ipairs(FindAllOf("WBP_CrewQuartersInteraction_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then module = w end
+    end
+    if not module then return nil end
+    local mp = path_of(module) .. "."
+    local rows = {}
+    for _, r in ipairs(FindAllOf("WBP_CrewMemberInfo_C") or {}) do
+        local rp = r:IsValid() and path_of(r)
+        if rp and rp:sub(1, #mp) == mp and screen.shown(r) then
+            local i = 0
+            pcall(function() i = r:GetParent():GetChildIndex(r) end)
+            rows[#rows + 1] = { i = i, r = r }
+        end
+    end
+    table.sort(rows, function(a, b) return a.i < b.i end)
+    local items = {}
+    for _, row in ipairs(rows) do
+        local r = row.r
+        local item = plain(text_of(r.CrewName))
+        local cond = plain(text_of(r.Condition))
+        local work = plain(text_of(r.Workplace))
+        if cond ~= "" and cond ~= "-" then item = item .. ", " .. cond:lower() end
+        if work ~= "" and work ~= "-" then item = item .. ", " .. work end
+        if item ~= "" then items[#items + 1] = item end
+    end
+    local count = plain(text_of(module.CrewCount))
+    local a, b = count:match("^(%d+)%s*/%s*(%d+)$")
+    local head = a and ("Inhabitants " .. a .. " of " .. b) or "Inhabitants"
+    if #items == 0 then return head .. "." end
+    return head .. ": " .. table.concat(items, "; ") .. "."
+end
+
 -- The Aeroshuttle Bay's Trading tab: "New trade offer in 14 cycles.
 -- Awaiting new trade offers" twice, none of it focusable; only "Trading
 -- tab" was said (Q Trials, VM, 2026-10-15). Its texts in order, each once;
@@ -719,6 +758,7 @@ function M.switch_tab(dir)
                         -- still counts as shown (review, 2026-10-15).
                         local t = name:lower():find("patient", 1, true) and M.patients_text()
                             or name:lower():find("trading", 1, true) and M.trading_text()
+                            or name:lower():find("crew", 1, true) and M.crew_text()
                         if t then require("speech").say(t, false) end
                     end)
                     pcall(function()
@@ -756,6 +796,22 @@ function M.window_text(path)
     -- Sickbay opens on Manage Patients.
     local okp, patients = pcall(M.patients_text)
     if okp and patients then out[#out + 1] = patients end
+    -- Quarters open on Crew Info.
+    local okc, crew = pcall(M.crew_text)
+    if okc and crew then out[#out + 1] = crew end
+    -- A cargo bay's "Stock" bar (WBP_Cargo_FillPercentModule, FillPercentBar),
+    -- a bar with no number, never read (room widget scan, VM, 2026-10-15).
+    -- Its outer is the game instance, not the window; one room window is
+    -- open at a time, so a shown one is this window's.
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_Cargo_FillPercentModule_C") or {}) do
+            if w:IsValid() and screen.shown(w) then
+                local pct = math.floor(w.FillPercentBar.Percent * 100 + 0.5)
+                out[#out + 1] = "Stock " .. pct .. " percent full"
+                break
+            end
+        end
+    end)
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
     return table.concat(out, ". ") .. "."
 end

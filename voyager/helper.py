@@ -11,10 +11,54 @@ tails that file and sends each line to the running screen reader through Tolk
 """
 import argparse
 import ctypes
+import logging
 import os
 import sys
 import time
 from pathlib import Path
+
+log = logging.getLogger("voyager.helper")
+
+
+def enable_dpi_awareness(user32=None):
+    """Make window sizes and cursor positions real pixels on every monitor.
+
+    A forum player's Set course never selected its target on a 2560-wide
+    game (2026-10-15, "selected=none" twice, windowed and full screen): a
+    DPI-unaware helper gets scaled sizes from the game window and scaled
+    cursor positions, and with monitors at different scales Windows maps
+    them with the wrong factor. Per-monitor awareness (v2) removes the
+    scaling; on one monitor at 150 percent the old path also worked (VM).
+    Returns the way that took, or None."""
+    user32 = user32 or ctypes.windll.user32
+    try:
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):  # PER_MONITOR_AWARE_V2
+            return "per-monitor v2"
+    except (AttributeError, OSError):
+        pass
+    try:
+        if ctypes.windll.shcore.SetProcessDpiAwareness(2) == 0:  # PROCESS_PER_MONITOR_DPI_AWARE
+            return "per-monitor"
+    except (AttributeError, OSError):
+        pass
+    return None
+
+
+def _log_mouse(what, hwnd, width, height, x, y):
+    """One line per cursor move, so a player's report shows where it went."""
+    try:
+        user32 = ctypes.windll.user32
+
+        class _P(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+        got = _P()
+        user32.GetCursorPos(ctypes.byref(got))
+        dpi = user32.GetDpiForWindow(hwnd) if hasattr(user32, "GetDpiForWindow") else 0
+        log.info("mouse %s: window %dx%d dpi %d, to %d,%d, cursor at %d,%d",
+                 what, width, height, dpi, x, y, got.x, got.y)
+    except Exception:  # logging must never stop the helper
+        pass
 
 REPO = Path(__file__).resolve().parent.parent
 DEFAULT_FILE = Path(os.environ.get("LOCALAPPDATA", ".")) / "VoyagerAccess" / "speech.txt"
@@ -119,6 +163,8 @@ def ring_mouse(nx, ny, then_click=False):
         click(pt.x, pt.y)
     else:
         user32.SetCursorPos(pt.x, pt.y)
+    _log_mouse("ring click" if then_click else "ring", hwnd,
+               rect.right - rect.left, h, pt.x, pt.y)
 
 
 def center_mouse():
@@ -139,6 +185,7 @@ def center_mouse():
     pt = _Point((rect.right - rect.left) // 2, (rect.bottom - rect.top) // 2)
     user32.ClientToScreen(hwnd, ctypes.byref(pt))
     user32.SetCursorPos(pt.x, pt.y)
+    _log_mouse("center", hwnd, rect.right - rect.left, rect.bottom - rect.top, pt.x, pt.y)
 
 
 class _MouseInput(ctypes.Structure):
@@ -322,6 +369,7 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
     """
     speech_file = Path(speech_file)
     speech_file.parent.mkdir(parents=True, exist_ok=True)
+    log.info("DPI awareness: %s", enable_dpi_awareness() or "not set")
     tailer = Tailer(speech_file)
     keys_file = speech_file.parent / DEFAULT_KEYS.name
     keys_file.write_text("")

@@ -164,6 +164,8 @@ function M.say_objective()
 end
 
 local last_missions = nil   -- the list behind last, once read this session
+local settle_text, settle_polls = nil, 0   -- a changed list waiting to hold still
+local loaded_at = -100                     -- os.clock() when a loading screen was last seen
 
 local function poll()
     crumb.at("quest: poll")
@@ -179,6 +181,10 @@ local function poll()
         for _, w in ipairs(FindAllOf(cls) or {}) do
             if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
                 last_missions = nil
+                -- And the objective itself, so a save loaded from here is
+                -- read once even when it is the one just left (nothing was
+                -- said after the wait for the list to fill, 2026-10-15).
+                last = nil
                 return
             end
         end
@@ -187,6 +193,16 @@ local function poll()
     -- while the game moves to its next objective: "Mission ended: Maneuvers"
     -- was said as the Kazon battle began, and "New mission: Maneuvers" after
     -- it (Casey's machine, 2026-10-15). The change is said once both are over.
+    -- A loaded save's missions arrive one at a time for a few seconds: the
+    -- two-poll wait alone still gave "Objective: Maneuvers" and then "New
+    -- mission" for the rest (VM, 2026-10-15). Nothing is said until four
+    -- seconds after the loading screen.
+    for _, w in ipairs(FindAllOf("WBP_Loading_Screen_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+            loaded_at = os.clock()
+        end
+    end
+    if os.clock() - loaded_at < 4 then return end
     local okd, talking = pcall(function() return require("dialogue").active() ~= nil end)
     if (okd and talking) or require("combat").screen_up() then return end
     -- Nor over a cutscene or Q's voiced story: "Objective: The Long Way
@@ -201,6 +217,18 @@ local function poll()
     -- counts too: "Store DEUTERIUM (552/900)" drops every cycle as fuel
     -- burns, and the objective was read four times in one trip (VM,
     -- 2026-10-15). O reads the current counts.
+    -- The list fills in over a second or two after a load: "Objective:
+    -- Maneuvers" came alone, then "New mission: Faces. New mission: Hull
+    -- Integrity Low..." for missions that were there all along (VM,
+    -- 2026-10-15). A change is said once the list has held for two polls.
+    if now and (not last or bare(now) ~= bare(last)) then
+        if bare(now) ~= settle_text then
+            settle_text, settle_polls = bare(now), 1
+            return
+        end
+        settle_polls = settle_polls + 1
+        if settle_polls < 2 then return end
+    end
     if now and (not last or bare(now) ~= bare(last)) then
         print("[VoyagerAccess] objective: " .. now .. "\n")
         -- After the first reading, only what changed is said; the whole

@@ -5,7 +5,30 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from voyager.helper import (  # noqa: E402
-    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, is_center_mouse, is_game_exe, parse_click, parse_line, parse_ring)
+    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, enable_dpi_awareness, is_center_mouse, is_game_exe,
+    parse_click, parse_line, parse_ring)
+
+
+class FakeUser32:
+    def __init__(self, result):
+        self.result, self.calls = result, []
+
+    def SetProcessDpiAwarenessContext(self, ctx):
+        self.calls.append(ctx.value)
+        return self.result
+
+
+class DpiAwarenessTests(unittest.TestCase):
+    def test_asks_for_per_monitor_v2(self):
+        user32 = FakeUser32(1)
+        self.assertEqual(enable_dpi_awareness(user32), "per-monitor v2")
+        import ctypes
+        self.assertEqual(user32.calls, [ctypes.c_void_p(-4).value])  # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2
+
+    def test_falls_back_when_refused(self):
+        # Refused (already set, or an old Windows): the shcore fallback runs
+        # or nothing is set; the helper never stops over it.
+        self.assertIn(enable_dpi_awareness(FakeUser32(0)), ("per-monitor", None))
 
 
 class ParseLineTests(unittest.TestCase):

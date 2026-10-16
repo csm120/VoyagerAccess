@@ -26,6 +26,14 @@ local NAMES = {
 }
 
 local selected = nil   -- path of the selected point's owner actor
+local found = {}       -- point path -> what its detail window named (note_found)
+
+-- popups.lua reports what a point's detail window names after a scan or a
+-- selection ("Kazon-Relora Trade Hub, Dilithium"); the full game's event ids
+-- do not say it, so the list said only "scanned" (Q Trial, VM, 2026-10-15).
+function M.note_found(summary)
+    if selected and summary and summary ~= "" then found[selected] = summary end
+end
 
 local function path_of(o)
     return o:GetFullName():match("^%S+%s+(.+)$")
@@ -156,8 +164,21 @@ local function resources(poi)
 end
 
 local function status(p)
+    -- The game's gamepad-only Inspect (ActionView.InspectPOIButton,
+    -- IA_Sector_InspectPoi; BP_SectorPawn TryToInspectPOI on SelectedActor,
+    -- allowed when CanInspectPOI(actor, ESTVScanTarget::PoiView = 4)). None
+    -- was inspectable in a Q Trial's first system (VM, 2026-10-15); logged
+    -- so the first one met can be explored before the mod offers it.
+    pcall(function()
+        for _, pw in ipairs(FindAllOf("STVSectorPawn") or {}) do
+            if pw:IsValid() and path_of(pw):find("PersistentLevel", 1, true) and pw:CanInspectPOI(p.actor, 4, false) then
+                print("[VoyagerAccess] INSPECTABLE: " .. p.path .. "\n")
+            end
+        end
+    end)
     if not explored(p.actor) then return "not scanned" end
     local res = resources(p.poi)
+    if res == "" then res = found[p.path] or "" end
     return res ~= "" and res or "scanned"
 end
 
@@ -562,6 +583,7 @@ local function run(action, p)
                 if not q then return end
                 if explored(q.actor) then
                     local res = resources(q.poi)
+                    if res == "" then res = found[q.path] or "" end
                     -- The full game's event IDs are not ResourceEvent_Generated_*,
                     -- so "nothing found" followed a panel listing Tritanium
                     -- (Q Trial, VM, 2026-10-14); the panel says what was found.

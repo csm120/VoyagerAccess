@@ -62,7 +62,9 @@ follows them.
    switch tabs, Escape closes it (the game's own Escape). In a room's hero
    list, Backspace closes the list and keeps the room's hero; the game's own
    Escape empties the room's hero slot. Sickbay's Manage Patients tab reads
-   each patient with their condition and the cycles to recover; the Bridge's
+   each patient with their condition and the cycles to recover; a quarters
+   room's Crew Info tab reads its inhabitants with their condition and
+   where they work; the Bridge's
    Combat Allies tab reads the ally's combat power, recruitment cost and
    upkeep. Rooms say their
    place on the deck ("3 of 6"). J lists the ship's rooms (not ruined rooms

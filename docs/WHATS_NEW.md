@@ -2,6 +2,20 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.19
+
+More from going through the ship's rooms one by one.
+
+- New: quarters rooms read who lives there on their Crew Info tab, for example "Inhabitants 12 of 12: Jelan K'Var, injured; Jacob Baker, Science Laboratory; ..." It used to say only "Crew Info tab".
+- New: Main Engineering's selected warp core tier says what it makes and burns, for example "Tier 1, selected, makes 120 energy, burns 24 deuterium per cycle".
+- New: a cargo bay says how full it is when you open it, for example "Stock 14 percent full".
+- Fixed: after loading a save, the objectives came in pieces, one mission and then "New mission" for each of the others, or sometimes not at all. They're read once, all together, a few seconds after the load.
+- New: in the full game, a point you scan keeps what was found in the System Map list, like "Shipwreck, Tritanium", instead of just "scanned".
+- New: the "Display settings have been changed" question after changing the resolution is read with its Reject and Accept buttons.
+- Changed: for players whose Set course says "not set" every time. The helper now handles screens with different display scaling, which may be the cause, and it notes each mouse move in the report you copy with the backtick key, so if it still happens, a new report will show why.
+
+## Thursday October 15th 2026
+
 Version 0.3.18
 
 From a run through the third sector, including a battle screen that wouldn't do what you chose.
