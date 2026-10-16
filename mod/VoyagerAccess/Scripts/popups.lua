@@ -30,6 +30,10 @@ local WATCH = {
     "WBP_Toast_ChoiceHasImpact_C", "WBP_Toast_Error_C", "WBP_Toast_Receive_C",
     "WBP_Toast_Warning_C", "WBP_SingleNotification_Default_C",
     "WBP_SingleNotification_Error_C",
+    -- "Cannot save now" (RichText), checked in the VM 2026-10-15 from the
+    -- coverage list. Not WBP_Toast_Quip: every one of Q's 45 quips has a
+    -- voice clip (SXW_VO_*Quip*, asset list, 2026-10-15).
+    "WBP_Toast_SaveBlocked_Error_C",
     -- Reports and info windows
     "WBP_CrewLossInfoWidget_C", "WBP_EnergyLossInfoWidget_C",
     "WBP_MissionInfoWidget_C", "WBP_CommonInfoWidget_C", "WBP_CommonInfoWidget_MissionInfo_C",
@@ -625,12 +629,10 @@ local function log_multitab(_, path)
         end
     end
     local out = {}
-    local body = by.TextBlock or ""
-    -- The body starts with the header again ("Personal Log, Lieutenant Tuvok.").
-    if by.Header and body:sub(1, #by.Header) == by.Header then body = body:sub(#by.Header + 1):gsub("^[%.%s]+", "") end
     if by.Header then out[#out + 1] = by.Header end
     if tabs > 1 then out[#out + 1] = (cur and (cur .. " tab") or "Tab") .. ", Left and Right switch logs" end
-    if body ~= "" then out[#out + 1] = body end
+    -- The body is not spoken: the game plays the officer reading the log
+    -- (Casey, 2026-10-15, "the personal log has audio").
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
     return table.concat(out, ". ") .. "."
 end

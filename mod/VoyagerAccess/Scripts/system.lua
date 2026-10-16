@@ -374,10 +374,44 @@ local function watch_arrival(name, target, start_d)
             end
             return false
         end)
+        -- An event can also open mid-trip ("Lost Starship" after "Halfway",
+        -- full game, VM, 2026-10-15), and the ship then arrived with nothing
+        -- said. While the ship is still well short of the target, the watch
+        -- waits out the event and carries on. (The journey reports "not
+        -- travelling" while the event is open, so distance decides; the
+        -- ship stops 900 from a point, so more than 1200 is still on the way.)
         if oke and event_open then
+            local okd2, d2 = pcall(target_distance, target)
+            local far = okd2 and d2 and d2 > 1200
+            if far then
+                if not travel.paused then
+                    travel.paused = true
+                    print("[VoyagerAccess] course: event opened on the way to " .. name .. ", waiting\n")
+                end
+                last, still = nil, 0
+                left = left - 1
+                if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
+                return
+            end
             travel = nil
             print("[VoyagerAccess] course: event opened at " .. name .. "\n")
             return
+        end
+        travel.paused = nil
+        -- A conversation on arrival ("Harry Kim: Captain, we reached our
+        -- destination. Orders?") came before "Arrived at", which was then
+        -- said over its choices (Casey's machine, 2026-10-15). The
+        -- conversation says where you are; stop quietly once the ship has
+        -- stopped and it is up.
+        local okd, talking = pcall(function() return require("dialogue").active() ~= nil end)
+        if okd and talking then
+            local okd3, d3 = pcall(target_distance, target)
+            local far = okd3 and d3 and d3 > 1200
+            if not far then
+                travel = nil
+                print("[VoyagerAccess] course: conversation opened at " .. name .. "\n")
+                return
+            end
         end
         local ok, d = pcall(target_distance, target)
         if not (ok and d) then travel = nil return end

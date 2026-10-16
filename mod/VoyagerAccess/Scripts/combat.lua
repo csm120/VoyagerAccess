@@ -371,7 +371,73 @@ local function pause_poll(w)
     said_pause = p or false
 end
 
+-- The battle setup (HeroLoadout): Start Combat (HeroLoadout.ProceedButton)
+-- has CommonUI's "Start" input action, so Enter anywhere on the setup
+-- pressed Start Combat, whichever button had focus. Enter on Auto Resolve,
+-- Surrender or a hero slot started the fight, and with the mod's click as
+-- well it jammed half in setup and half in battle (VM, 2026-10-15; the
+-- button's TriggeringInputAction row is "Start", and taking the combat input
+-- map away did not stop it). While focus is on another setup button the
+-- action is taken off Start Combat, so Enter does only what that button
+-- does; on Start Combat, and when the setup closes, it is put back, so
+-- starting a battle stays the game's own Enter. focus.lua calls sync on
+-- every focus change (the game acts on Enter before the mod hears it).
+local taken = nil   -- { path, dt, row } while the action is off the button
+
+local function start_button()
+    local w = main()
+    local ok, b = pcall(function() return w.HeroLoadout.ProceedButton end)
+    return ok and b and b:IsValid() and b or nil
+end
+
+function M.result_up()
+    local w = main()
+    if not w then return false end
+    local ok, R = pcall(function() return w.CombatResultView end)
+    return ok and R and R:IsValid() and screen.shown(R) or false
+end
+
+function M.setup_up()
+    local w = main()
+    if not w then return false end
+    local ok, L = pcall(function() return w.HeroLoadout end)
+    if ok and L and L:IsValid() and screen.shown(L) then return true end
+    -- Auto Resolve's window belongs to the setup (VM, 2026-10-15).
+    local oka, A = pcall(function() return w.AutoResolveWidget end)
+    return oka and A and A:IsValid() and screen.shown(A) or false
+end
+
+local function put_back(why)
+    local g = taken
+    taken = nil
+    local b = g and StaticFindObject(g.path)
+    if b and b:IsValid() then
+        local ok = pcall(function() b:SetTriggeringInputAction({ DataTable = g.dt, RowName = FName(g.row) }) end)
+        print("[VoyagerAccess] combat: " .. why .. ", " .. g.row .. (ok and " put back" or " NOT put back") .. "\n")
+    end
+end
+
+function M.setup_sync()
+    local up = main() and M.setup_up()
+    local path = require("focus").current_path() or ""
+    local on_start = path:find("HeroLoadout%.WidgetTree_%d+%.ProceedButton$") ~= nil
+    if up and not on_start and not taken then
+        local b = start_button()
+        if not b then return end
+        local ok, row = pcall(function() return b.TriggeringInputAction.RowName:ToString() end)
+        if not ok or row == "None" then return end
+        local okd, dt = pcall(function() return b.TriggeringInputAction.DataTable end)
+        if pcall(function() b:SetTriggeringInputAction({ DataTable = nil, RowName = FName("None") }) end) then
+            taken = { path = b:GetFullName():match("^%S+%s+(.+)$"), dt = okd and dt or nil, row = row }
+            print("[VoyagerAccess] combat: setup, Enter no longer starts the battle (" .. row .. " taken off)\n")
+        end
+    elseif taken and (not up or on_start) then
+        put_back(up and "focus on Start Combat" or "setup closed")
+    end
+end
+
 local function poll()
+    M.setup_sync()
     if not M.active() then said_goal = nil said_target = nil said_pause = false ability_state = {} return end
     abilities_poll()
     target_poll(main())

@@ -2,6 +2,23 @@
 
 ## Thursday October 15th 2026
 
+Version 0.3.18
+
+From a run through the third sector, including a battle screen that wouldn't do what you chose.
+
+- Fixed: before a battle, Enter always started the fight, whatever you were on. Enter on a hero slot now opens the hero list, Enter on Auto Resolve opens Auto Resolve, and Enter on Start Combat starts the battle. Auto Resolve used to leave the game stuck halfway into the fight.
+- New: in the orders wheel, an order the game won't let you use in that fight, like Surrender or Flee, says "not available now", and Enter on it tells you so instead of doing nothing.
+- Changed: personal logs are read aloud by the game, so the mod only reads the log's title, its tabs and Close.
+- Fixed: the first line after you pick a dialogue choice could be read with the wrong speaker's name, for example Janeway for a line that's Tuvok's.
+- Fixed: objectives no longer talk during conversations, battles or Q's speeches. They wait until it's over. As a battle began, the main mission was announced as ended when it had only moved to its next objective.
+- Fixed: "System map. Nothing selected" was read after "Game Over".
+- Fixed: I during a battle added the trip you were on before it.
+- Changed: a dialogue choice's chance with a hero bonus is read as "chance 40%, plus 45% bonus" instead of "40% + 45%".
+- Fixed: arriving somewhere that starts a conversation said "Arrived" over the conversation's choices.
+- New: when the game can't save right now, its message is read.
+
+## Thursday October 15th 2026
+
 Version 0.3.17
 
 From playing the campaign on into its third sector.

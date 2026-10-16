@@ -143,7 +143,9 @@ function M.say_where()
         if p and p ~= "" then out[#out + 1] = (p:gsub("%.%s*$", "")) end
     end
     -- A trip under way, wherever L is pressed (Casey, 2026-10-14).
-    local trip = require("system").travel_status()
+    -- Not in a battle or its result: "Traveling to System 9 2 8 point 2, 96
+    -- percent of the way" ended the defeat screen's I (2026-10-15).
+    local trip = not require("combat").screen_up() and require("system").travel_status()
     if trip then out[#out + 1] = trip end
     local text = table.concat(out, ". ") .. "."
     print("[VoyagerAccess] where: " .. text .. "\n")
@@ -188,7 +190,9 @@ local function view_poll()
     if require("focus").virtual_active() then v = "other" end
     -- The confirmation opens before its button list exists (heard again in
     -- the VM with the check above alone).
-    for _, cls in ipairs({ "WBP_PauseMenu_Confirms_C", "WBP_PauseMenu_C" }) do
+    -- Game Over too: "System map. Nothing selected" came after "Game Over.
+    -- The hull ruptured..." (Casey's machine, 2026-10-15).
+    for _, cls in ipairs({ "WBP_PauseMenu_Confirms_C", "WBP_PauseMenu_C", "WBP_GameOver_C" }) do
         for _, w in ipairs(FindAllOf(cls) or {}) do
             if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
                 v = "other"

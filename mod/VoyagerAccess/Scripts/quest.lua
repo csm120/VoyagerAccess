@@ -183,6 +183,18 @@ local function poll()
             end
         end
     end
+    -- During a conversation or a battle the main mission's line is gone
+    -- while the game moves to its next objective: "Mission ended: Maneuvers"
+    -- was said as the Kazon battle began, and "New mission: Maneuvers" after
+    -- it (Casey's machine, 2026-10-15). The change is said once both are over.
+    local okd, talking = pcall(function() return require("dialogue").active() ~= nil end)
+    if (okd and talking) or require("combat").screen_up() then return end
+    -- Nor over a cutscene or Q's voiced story: "Objective: The Long Way
+    -- Home" talked over Q opening a Q Trial (Casey, 2026-10-15).
+    local okc, scene = pcall(function()
+        return require("dialogue").cutscene_playing() or require("story").active()
+    end)
+    if okc and scene then return end
     local now, missions = M.objective()
     -- A side mission's countdown changes every cycle; only a change in
     -- the objectives themselves is announced (VM, 2026-10-14). Progress

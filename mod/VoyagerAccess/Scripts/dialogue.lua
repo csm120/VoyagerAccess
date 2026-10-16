@@ -16,6 +16,7 @@ local window_path = nil
 local last_line = nil       -- last line spoken
 local typing = nil          -- line seen on the previous poll
 local speaker_wait = {}     -- { line, polls } while waiting for a speaker name
+local last_speaker = nil    -- the name said with the last line
 local last_spoken = nil     -- "Speaker: line", kept after the window closes, for R
 local continue_action = nil
 -- Declared here because poll() uses them; declared below it, poll() saw
@@ -33,8 +34,10 @@ end
 -- FindAllOf did not return the side panel for the first class, so each
 -- class is listed. All have DialogueText, DialogueSpeakerText and the popup.
 -- The away mission window too (2026-10-11: its text was never read).
+-- WBP_Dialogue_Window_Intro_C is a subclass of the Sector one (the Intro_Text
+-- dialogue tables); FindAllOf skips subclasses, so it is listed too (2026-10-15).
 local WINDOW_CLASSES = { "WBP_Dialogue_Window_C", "WBP_Dialogue_Window_SideView_C", "WBP_Dialogue_Window_Sector_C",
-    "WBP_Dialogue_Window_AwayMission_C" }
+    "WBP_Dialogue_Window_Intro_C", "WBP_Dialogue_Window_AwayMission_C" }
 
 local function find_window()
     if window_path then
@@ -154,11 +157,16 @@ local function poll()
     -- so "Kathryn Janeway" was left off (2026-10-14, twice). Give the name
     -- up to about a second; a window that never shows one (away missions)
     -- is read after that.
-    if speaker == "" and sp and sp:IsValid() then
-        if speaker_wait.line ~= line then speaker_wait = { line = line, polls = 0 } end
-        speaker_wait.polls = speaker_wait.polls + 1
-        if speaker_wait.polls <= 7 then return end
-    end
+    if speaker_wait.line ~= line then speaker_wait = { line = line, polls = 0 } end
+    speaker_wait.polls = speaker_wait.polls + 1
+    if speaker == "" and sp and sp:IsValid() and speaker_wait.polls <= 7 then return end
+    -- The first line of the next dialogue table shows the old name for a
+    -- moment: "Kathryn Janeway: Captain, the source appears to be a...
+    -- Federation beacon" is Tuvok's (DT_DR_Main_02_Maneuvers_Part_01a,
+    -- after her choice; Casey's machine, 2026-10-15). The same name as the
+    -- last line waits up to two polls (0.3 s) for a new one.
+    if speaker ~= "" and speaker == last_speaker and speaker_wait.polls <= 2 then return end
+    last_speaker = speaker
     last_line = line
     speak_story(speaker ~= "" and (speaker .. ": " .. line) or line)
 end
@@ -364,6 +372,9 @@ function M.choice_label(path)
         -- "Phaser Control Room Level 1- Chance: 50% + 35%" has no space
         -- before the dash (Mirror, Mirror, VM, 2026-10-15).
         req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub("%s*%-%s*Chance:", ", chance")
+        -- The second number is the hero's bonus, shown highlighted: "chance
+        -- 40% + 45%" read as a sum to work out (Jetrel, 2026-10-15).
+        req = (req:gsub("chance (%d+%%) %+ (%d+%%)", "chance %1, plus %2 bonus"))
         parts[#parts + 1] = (unmet and "Needs " or "") .. req
     end
     local reward = ""

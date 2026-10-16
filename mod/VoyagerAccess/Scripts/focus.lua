@@ -475,6 +475,7 @@ local function say_virtual()
     -- focus moved to its real first button (VM, 2026-10-15).
     local label = label_for(b, virtual.buttons[virtual.index])
     if not label or label == "" then return end
+    if M.wheel_locked(b) then label = label:gsub("%.$", "") .. ", not available now" end
     -- An event option already says its place ("1 of 2, 2 locked, 1 of 2",
     -- VM, 2026-10-14).
     if not label:find("%d+ of %d+") then
@@ -717,9 +718,23 @@ function M.virtual_edge(last)
     say_virtual()
 end
 
+-- A combat order the game has locked (bLocked; its icon is dimmed): Surrender
+-- and Flee in a fight that cannot be left. Enter on them did nothing, on
+-- Casey's machine and in the VM (2026-10-15).
+function M.wheel_locked(b)
+    local ok, locked = pcall(function()
+        return b:GetClass():GetFName():ToString():find("^WBP_RadialButtonCombat") ~= nil and b.bLocked == true
+    end)
+    return ok and locked
+end
+
 function M.virtual_enter()
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
+    if M.wheel_locked(b) then
+        speech.say("Not available now", true)
+        return
+    end
     print("[VoyagerAccess] enter: window button " .. virtual.buttons[virtual.index] .. "\n")
     click(b)
     -- DARKER and BRIGHTER only move a bar; the bar's own widgets do not
@@ -1179,6 +1194,8 @@ local function poll()
     -- between them): see the Enter guard in activate().
     local was_choice = current ~= nil and require("dialogue").is_choice(current)
     current = path
+    -- The battle setup's Start action follows focus (combat.lua).
+    if path and path:find(".HeroLoadout.", 1, true) then pcall(require("combat").setup_sync) end
     if path and not was_choice and require("dialogue").is_choice(path) then focus_tick = ticks end
     if path then
         local ok, err = pcall(wire_rows, path)
@@ -1982,7 +1999,11 @@ function M.install()
         if away.keys_active() then return away.mission_enter() end
         if M.virtual_active() then return M.virtual_enter() end
         -- In battle with no wheel open, Enter opens Orders (combat.lua).
-        if require("combat").active() then
+        -- Not while focus is in the battle setup (HeroLoadout): Enter on Auto
+        -- Resolve opened Orders there, and that started the battle by hand.
+        -- The setup counted as not shown at that moment (Casey's machine,
+        -- 2026-10-15, Vidiian ambush).
+        if require("combat").active() and not (current and current:find(".HeroLoadout.", 1, true)) then
             local fb = resolve(current)
             if not (fb and require("screen").shown(fb)) then return require("combat").open_orders() end
         end
