@@ -87,6 +87,7 @@ return function()
     if not f then return end
     f:close()
     print("[VoyagerAccess] development commands enabled\n")
+    pcall(function() require("unread").install() end)
     LoopInGameThreadWithDelay(500, function()
         local ok, err = pcall(run)
         if not ok then print("[VoyagerAccess] cmd loop error: " .. tostring(err) .. "\n") end

@@ -163,8 +163,21 @@ function M.say_where()
                 parts[2] = label
             else
                 local who = require("dialogue").speaker()
+                -- A story card keeps the last line's speaker ("Dialogue with
+                -- Harry Kim" over Verdant World, VM, 2026-10-16).
+                -- Only while the card is up: focus stays on its hidden
+                -- Continue afterwards, and the lines after it lost their
+                -- speaker (Sobras, VM, 2026-10-16).
+                local cur = require("focus").current_path() or ""
+                if cur:find("WBP_Dialogue_Popup", 1, true) then
+                    local b = StaticFindObject(cur)
+                    if b and b:IsValid() and require("screen").shown(b) then who = nil end
+                end
                 if who and who ~= "" then parts[1] = "Dialogue with " .. who end
-                parts[2] = "R repeats the line"
+                -- A story card has no speaker, only its Continue: I said
+                -- just "Dialogue. R repeats the line." (VM, 2026-10-16).
+                if not (who and who ~= "") and label and label ~= "" then parts[#parts + 1] = label end
+                parts[#parts + 1] = "R repeats the line"
             end
         elseif ctx == "cutscene" or ctx == "story" then
             parts[2] = nil

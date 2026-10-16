@@ -1805,8 +1805,53 @@ local function poll()
     if #spoken > 0 then require("dialogue").remember(table.concat(spoken, ". ")) end
 end
 
+-- Windows built on a watched one: FindAllOf finds only the exact class, so
+-- a subclass (WBP_Dialogue_Window_Intro, coverage report 2026-10-15) was
+-- silent. Every few seconds the top-level widgets on screen are checked
+-- once per class; one whose parent class is watched is watched too, with
+-- its parent's layout (technique review, 2026-10-16).
+local watched_set, checked = nil, {}
+local function adopt_subclasses()
+    if not watched_set then
+        watched_set = {}
+        for _, c in ipairs(WATCH) do watched_set[c] = true end
+    end
+    local lib = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
+    local uw = StaticFindObject("/Script/UMG.UserWidget")
+    local pc = FindFirstOf("PlayerController")
+    if not (lib and uw and pc and pc:IsValid()) then return end
+    local found = {}
+    lib:GetAllWidgetsOfClass(pc, found, uw, true)
+    for _, e in pairs(found) do
+        local w = e:get()
+        if w and w:IsValid() then
+            local cls = w:GetClass()
+            local name = cls:GetFName():ToString()
+            if not checked[name] and not watched_set[name] then
+                checked[name] = true
+                local s, d = cls:GetSuperStruct(), 0
+                while s and s:IsValid() and d < 5 do
+                    local sn = s:GetFName():ToString()
+                    if watched_set[sn] then
+                        WATCH[#WATCH + 1] = name
+                        watched_set[name] = true
+                        if LAYOUTS[sn] and not LAYOUTS[name] then LAYOUTS[name] = LAYOUTS[sn] end
+                        print("[VoyagerAccess] popups: watching " .. name .. " as a kind of " .. sn .. "\n")
+                        break
+                    end
+                    s, d = s:GetSuperStruct(), d + 1
+                end
+            end
+        end
+    end
+end
+
 function M.install()
     load_announced()
+    LoopInGameThreadWithDelay(3000, function()
+        local ok, err = pcall(adopt_subclasses)
+        if not ok then print("[VoyagerAccess] popups adopt error: " .. tostring(err) .. "\n") end
+    end)
     LoopInGameThreadWithDelay(INTERVAL_MS, function()
         local ok2, err = pcall(poll)
         if not ok2 then print("[VoyagerAccess] popups error: " .. tostring(err) .. "\n") end

@@ -1683,6 +1683,15 @@ local function activate()
         local okl, l = pcall(label_for, b, current)
         M.room_hero_before = okl and type(l) == "string" and l:match("^Assigned hero: ([^%.]+)") or nil
     end
+    -- The same for an away team or battle slot: leaving its list with
+    -- Escape or Backspace emptied the slot (Harry Kim left a battle slot,
+    -- VM, 2026-10-16). See restore_slot_hero.
+    M.slot_before = nil
+    if require("awaymission").is_slot(current) then
+        local okl, l = pcall(require("awaymission").slot_label, current)
+        local hero = okl and type(l) == "string" and l:match("slot %d+ of %d+: ([^,%.]+)")
+        if hero then M.slot_before = { path = current, hero = hero } end
+    end
     -- Enter on a settings row opens nothing, so it is not a place to go back to.
     if not is_setting(b) and back_stack[#back_stack] ~= current then
         back_stack[#back_stack + 1] = current
@@ -1937,11 +1946,58 @@ local function activate()
     end
 end
 
+-- After Escape or Backspace leaves an away team or battle hero list: the
+-- game takes the slot's hero out when its list closes without a choice.
+-- If the slot Enter opened is now empty, open it again and choose the same
+-- hero, quietly, then say the slot.
+function M.restore_slot_hero()
+    local before = M.slot_before
+    if not before then return end
+    -- Quiet from the key on: "Combat slot 1 of 3, empty" was said before
+    -- the hero came back.
+    M.hush_focus_until = os.clock() + 1
+    ExecuteInGameThreadWithDelay(500, function()
+        pcall(function()
+            local away = require("awaymission")
+            local okl, l = pcall(away.slot_label, before.path)
+            if not (okl and type(l) == "string" and l:find("empty", 1, true)) then return end
+            M.slot_before = nil
+            local slot = StaticFindObject(before.path)
+            if not (slot and slot:IsValid()) then return end
+            print("[VoyagerAccess] back: choosing " .. before.hero .. " again\n")
+            M.hush_focus_until = os.clock() + 3
+            click(slot)
+            ExecuteInGameThreadWithDelay(600, function()
+                pcall(function()
+                    for _, hb in ipairs(away.hero_buttons()) do
+                        local okn, nm = pcall(function() return hb.HeroPlaque.HeroNameText:GetText():ToString() end)
+                        if okn and hb:IsValid() and live(hb) and require("screen").shown(hb)
+                            and nm:match("^%s*(.-)%s*$") == before.hero then
+                            click(hb)
+                            break
+                        end
+                    end
+                end)
+                ExecuteInGameThreadWithDelay(600, function()
+                    M.hush_focus_until = 0
+                    pcall(function()
+                        local s = StaticFindObject(before.path)
+                        if s and s:IsValid() then s:SetFocus() end
+                        local okk, l2 = pcall(away.slot_label, before.path)
+                        speech.say(okk and l2 or before.hero, true)
+                    end)
+                end)
+            end)
+        end)
+    end)
+end
+
 -- Backspace: return focus to the button Enter was last pressed on. The game
 -- has no keyboard Back of its own (Escape does not close the save panel).
 local function go_back()
     crumb.at("key: backspace")
     if require("qtrials").back(current) then return end
+    if require("awaymission").is_hero_button(current or "") then M.restore_slot_hero() end
     -- A hero list (a room's WBP_RoomHeroPickerSelection, the away team's
     -- WBP_AwayMissionHeroPickerSelection): close it the way Escape does,
     -- which puts focus back on the slot or "Assign a hero" ("Nothing to go
@@ -2265,6 +2321,7 @@ function M.install()
         local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
             or require("view").nav_close() or (map_mode() and system.menu_close())
         if closed then undo_pause() return end
+        if require("awaymission").is_hero_button(current or "") then M.restore_slot_hero() return end
         -- A window whose controls are all disabled has nothing for the game
         -- to focus, and the game's Escape does nothing without focus: a
         -- damaged Aeroshuttle Bay with no free work team could not be

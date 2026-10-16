@@ -2,6 +2,18 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.28
+
+Team picks, battles, story cards and stories you're parked on.
+
+- Fixed: on an away team or battle slot, leaving the hero list with Escape or Backspace took that hero off the team. The hero stays now.
+- Changed: the battle setup tells you when Surrender or Use Cloaking can't be used in this fight, like "Not available: Surrender, Use Cloaking". If you can't surrender, losing can end the game, so it's worth knowing before you start.
+- Changed: End in the battle setup goes to Start Combat, the same way it reaches Start Mission on an away team.
+- Changed: if you set course for a story point Voyager is already sitting at, it now says the story starts when Voyager arrives, and to fly to another point and back. Before, it just said Voyager was already there and nothing happened.
+- Fixed: I on a story card says its Continue button, and in the lines after a card it names who's talking again.
+
+## Friday October 16th 2026
+
 Version 0.3.27
 
 Rooms you couldn't close, events, battles and I.

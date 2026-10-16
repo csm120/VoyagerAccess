@@ -156,6 +156,20 @@ function M.combat_prep_text(L)
         if not ok or shown then count = count + 1 end
     end) end)
     if count > 0 then parts[#parts + 1] = "Choose up to " .. count .. (count == 1 and " hero" or " heroes") end
+    -- Surrender and Use Cloaking can be greyed out, and the arrows skip
+    -- them, so they went unmentioned; a battle with no surrender can end
+    -- the game (Kazon ambush, sector 4, VM, 2026-10-16).
+    local off = {}
+    for _, want in ipairs({ { "SurrenderButton", "Surrender" }, { "UseCloakButton", "Use Cloaking" } }) do
+        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+            local bp = b:IsValid() and path_of(b)
+            if bp and bp:sub(1, #prefix) == prefix and bp:find("%." .. want[1] .. "$") and screen.shown(b) then
+                local ok, en = pcall(function() return b:GetIsEnabled() end)
+                if ok and en == false then off[#off + 1] = want[2] end
+            end
+        end
+    end
+    if #off > 0 then parts[#parts + 1] = "Not available: " .. table.concat(off, ", ") end
     return sentences(parts)
 end
 
@@ -255,7 +269,10 @@ function M.loadout_edge(path, last)
         local lp = path_of(L) .. "."
         for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
             local bp = b:IsValid() and path_of(b)
-            if bp and bp:sub(1, #lp) == lp and bp:find("%.StartMissionButton$") and screen.shown(b) then want = b end
+            -- The battle's Start Combat is its ProceedButton: End stopped on
+            -- slot 3 (VM, 2026-10-16).
+            if bp and bp:sub(1, #lp) == lp and (bp:find("%.StartMissionButton$") or bp:find("%.ProceedButton$"))
+                and screen.shown(b) then want = b end
         end
     end
     local picker = last and pickers[#pickers] or pickers[1]

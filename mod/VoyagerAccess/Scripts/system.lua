@@ -603,6 +603,21 @@ function M.declare_travel(name, target, start_d)
     end)
     return true
 end
+-- "Voyager is already at X", and when X has a story waiting, how to start
+-- it: the game starts a point's story only on arrival, so a story that
+-- became ready while Voyager was there (Sobras, the Kazon Raider, VM,
+-- 2026-10-16) waited for a trip away and back.
+local function already_at(name, actor)
+    local text = "Voyager is already at " .. name
+    pcall(function()
+        if type(actor) == "string" then actor = StaticFindObject(actor) end
+        local marks = (actor and actor:IsValid()) and system_marks(actor) or {}
+        if table.concat(marks, ","):find("mission", 1, true) then
+            text = text .. ". Its story starts when Voyager arrives: set course to another point, then back here"
+        end
+    end)
+    return text
+end
 local function verify_course(name, target, attempt)
     local ship = voyager()
     local start = ship and ship:K2_GetActorLocation()
@@ -666,7 +681,7 @@ local function verify_course(name, target, attempt)
         -- after its event): the game sets no course because Voyager is
         -- there; "was not set" sent Casey round again (2026-10-14).
         if start_d and start_d <= 1000 then
-            speech.say("Voyager is already at " .. name, false)
+            speech.say(already_at(name, target), false)
             return
         end
         if attempt == 1 then
@@ -731,7 +746,7 @@ local function run(action, p)
         -- route runs, so the game can show its own reason.
         local d0 = target_distance(p.path)
         if d0 and d0 <= 1000 then
-            speech.say("Voyager is already at " .. name, false)
+            speech.say(already_at(name, p.actor), false)
             return
         end
         pcall(function() pw:SetFocusPoint(p.actor) end)   -- the camera follows, as before
