@@ -428,6 +428,14 @@ local function watch_arrival(name, target, start_d)
         if okd and talking then
             local okd3, d3 = pcall(target_distance, target)
             local far = okd3 and d3 and d3 > 1200
+            -- A big planet's orbit is farther out: Avery III's arrival
+            -- conversation came at 1,598, and "Arrived" was said over it
+            -- (VM, 2026-10-16). A ship that is no longer travelling is there.
+            local okt, trav = pcall(function()
+                local j = FindFirstOf("STVJourneySubsystem")
+                return j and j:IsValid() and j:IsTravelling()
+            end)
+            if far and okt and trav == false and start_d and d3 <= start_d * 0.5 then far = false end
             if not far then
                 travel = nil
                 print("[VoyagerAccess] course: conversation opened at " .. name .. "\n")
@@ -456,6 +464,25 @@ local function watch_arrival(name, target, start_d)
             travel = nil
             print("[VoyagerAccess] course: arrived at " .. name .. (battle and " (in battle, not said)" or "") .. "\n")
             if not battle then speech.say("Arrived at " .. name, false) end
+            return
+        end
+        -- No progress at all and the game not travelling: the trip ended at
+        -- once. Avery III (a story planet, Voyager already in its orbit
+        -- 1,598 from the centre) took the course and never moved, and I
+        -- said "0 percent of the way, not moving" for good (VM, 2026-10-16).
+        if still >= 4 and start_d and d > start_d * 0.9 and not (okj and moving == true) and not battle then
+            travel = nil
+            print("[VoyagerAccess] course: no movement towards " .. name .. "\n")
+            -- Not over an arrival conversation or a window: it was said over
+            -- Avery III's "Send away team" choice (VM, 2026-10-16).
+            local busy = (okd and talking) or false
+            pcall(function()
+                for _, w in ipairs(require("popups").open_windows()) do
+                    -- Map markers are windows too and always up here.
+                    if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then busy = true end
+                end
+            end)
+            if not busy then speech.say("Voyager did not move. It may already be at " .. name .. ".", false) end
             return
         end
         if start_d and start_d > 0 and not halfway and d <= start_d / 2 then
@@ -511,12 +538,18 @@ function M.declare_travel(name, target, start_d)
             local j = FindFirstOf("STVJourneySubsystem")
             local d = target_distance(target)
             local moving = j and j:IsValid() and j:IsTravelling()
-            if moving or (d and start_d and d < start_d - 1) or (d and d <= 1000) then
+            -- Only real movement counts: Avery III (a story planet, Voyager
+            -- 1,598 from its centre) took the call, did not move, and was
+            -- announced "Under way" because its distance drifted (VM,
+            -- 2026-10-16). Then the mouse route runs, which has its own
+            -- check and messages.
+            if moving or (d and start_d and d < start_d - 50) then
                 print("[VoyagerAccess] course: under way (DeclareTravel)\n")
                 speech.say("Under way to " .. name, false)
                 watch_arrival(name, target, start_d)
             else
-                speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
+                print(string.format("[VoyagerAccess] course: DeclareTravel did not move (d=%s, start=%s), trying the mouse\n", tostring(d), tostring(start_d)))
+                fire_course(name, target, 1)
             end
         end)
     end)

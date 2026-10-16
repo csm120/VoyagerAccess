@@ -2,6 +2,18 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.24
+
+Small fixes from playing the campaign further.
+
+- Fixed: Set course to a planet you're already orbiting said "Under way" and then nothing, forever. It tells you now: "Voyager did not move. It may already be at Avery III." And "Arrived" isn't said over the conversation when you get to a big planet anymore.
+- Fixed: before a battle, if you pressed Start Combat with an empty slot, the warning came up but your keys went to the screen behind it. You can move through its Return and Continue now.
+- Fixed: after adding a work team in the Engineering Office, you couldn't reach the new team with the arrows. New buttons join the list as they appear now, and you stay where you were.
+- Fixed: Add work team did nothing when the office already had all the teams it can hold. It says so now.
+- Fixed: the Workshop said "2 of 2" when there was only one blueprint.
+
+## Friday October 16th 2026
+
 Version 0.3.23
 
 More battle sounds made into words, trading with the Aeroshuttle, and the hero list in the campaign.

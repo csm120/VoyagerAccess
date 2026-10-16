@@ -101,7 +101,11 @@ function M.workteam_label(path)
             return "Remove work team" .. (teams and (". " .. teams) or "") .. "."
         elseif name == "AddWorkTeamButton" then
             local crew = texts_under(path).CrewAmount
-            return "Add work team" .. (crew and (". Costs " .. crew .. " crew") or "") .. (teams and (". " .. teams) or "") .. "."
+            -- At its limit the game ignores the button and says nothing
+            -- ("01/01", demo, VM, 2026-10-16).
+            local full = have and total and tonumber(have) >= tonumber(total)
+            return "Add work team" .. (full and ". Not possible: this office has all the work teams it can hold" or "")
+                .. (crew and (". Costs " .. crew .. " crew") or "") .. (teams and (". " .. teams) or "") .. "."
         end
         return nil
     end

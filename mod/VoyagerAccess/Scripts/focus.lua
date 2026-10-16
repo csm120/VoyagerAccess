@@ -570,6 +570,7 @@ local PAUSE_CONFIRM = "WBP_PauseMenu_Confirms_C"
 local CONFIRMS = { PAUSE_CONFIRM, "WBP_DeleteProfileWarning_C" }
 -- The save window's other warnings (Overwrite Savegame and the like).
 for _, c in ipairs(require("popups").SAVE_WARNINGS) do CONFIRMS[#CONFIRMS + 1] = c end
+for _, c in ipairs(require("popups").ROOM_WARNINGS) do CONFIRMS[#CONFIRMS + 1] = c end
 local function is_confirm(p)
     for _, c in ipairs(CONFIRMS) do if p:find(c, 1, true) then return true end end
     return false
@@ -623,7 +624,13 @@ local function track_unfocused_window()
     local modal = nil
     for _, p in ipairs(windows) do
         if p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true)
-            or is_confirm(p) then modal = p end
+            or is_confirm(p) then
+            -- Only one on screen: the battle setup's start warning has a
+            -- hidden twin, and taking it left the real one with no list, so
+            -- the keys went to the setup behind it (VM, 2026-10-16).
+            local mw = resolve(p)
+            if mw and require("screen").shown(mw) then modal = p end
+        end
     end
     if modal then windows = { modal } end
     if virtual then
@@ -637,6 +644,33 @@ local function track_unfocused_window()
             if not (vb and require("screen").shown(vb)) then all_there = false break end
         end
         if all_there and w and require("screen").shown(w) and (not modal or virtual.window == modal) then
+            -- Buttons that appear later join the list where the window has
+            -- them, and the place in it is kept: a work team added in the
+            -- Engineering Office never got its row (VM, 2026-10-16).
+            -- Checked about once a second.
+            virtual.recheck = (virtual.recheck or 0) + 1
+            if virtual.recheck >= 3 then
+                virtual.recheck = 0
+                local okf, fresh = pcall(window_buttons, virtual.window)
+                if okf and fresh and #fresh > 0 then
+                    local known = {}
+                    for _, bp in ipairs(virtual.buttons) do known[bp] = true end
+                    local added = false
+                    for _, bp in ipairs(fresh) do if not known[bp] then added = true end end
+                    if added then
+                        local at = virtual.buttons[virtual.index]
+                        -- Buttons from other windows in the list stay at the end.
+                        local in_fresh = {}
+                        for _, bp in ipairs(fresh) do in_fresh[bp] = true end
+                        for _, bp in ipairs(virtual.buttons) do
+                            if not in_fresh[bp] then fresh[#fresh + 1] = bp end
+                        end
+                        virtual.buttons = fresh
+                        for i, bp in ipairs(fresh) do if bp == at then virtual.index = i end end
+                        print("[VoyagerAccess] window list: " .. #fresh .. " buttons now\n")
+                    end
+                end
+            end
             -- Its first button, once the window's message has been read.
             if virtual.unsaid and require("popups").was_announced(virtual.window) then
                 virtual.unsaid = nil
@@ -758,6 +792,17 @@ function M.virtual_enter()
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
     if ring_back(virtual.buttons[virtual.index]) then return end
+    -- A room button the game will ignore says why instead of clicking
+    -- (the Engineering Office's Add work team at its limit, 2026-10-16).
+    -- (A trade offer that cannot be paid can still be dismissed.)
+    if not virtual.buttons[virtual.index]:find("TradeOff", 1, true) then
+        local okl, l = pcall(label_for, b, virtual.buttons[virtual.index])
+        local why = okl and type(l) == "string" and l:match("Not possible: ([^%.]+)")
+        if why then
+            speech.say("Not possible: " .. why, true)
+            return
+        end
+    end
     if M.wheel_locked(b) then
         speech.say("Not available now", true)
         return
@@ -784,7 +829,13 @@ function M.number_buttons(all, all_names)
     -- tree too, and the Heroes tab's one slot was "6 of 6".
     local list, names = {}, {}
     for i, b in ipairs(all) do
-        if require("screen").shown(b) then
+        -- Nor the Workshop's crafting status, a button that can never take
+        -- focus: one blueprint was "2 of 2" (VM, 2026-10-16).
+        local status = false
+        pcall(function()
+            status = all_names[i]:find("%.CraftingButton$") ~= nil and not b:IsInteractionEnabled()
+        end)
+        if require("screen").shown(b) and not status then
             list[#list + 1] = b
             names[#names + 1] = all_names[i]
         else

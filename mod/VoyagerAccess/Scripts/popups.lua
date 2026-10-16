@@ -103,7 +103,12 @@ local WATCH = {
     "WBP_LeaveSector_C",
     -- Q Trials results (sector end or game over): sandbox_result
     "WBP_SandboxSectorResult_C",
+    -- Room warnings found by the asset scan and opened in the VM
+    -- (2026-10-16): removing a work team that is busy on a room, and a
+    -- Cargo Bay change that would lose stock ("500 Deuterium").
+    "WBP_EngineeringOffice_Confirmation_C", "WBP_CargoSwap_Confirmation_C",
 }
+M.ROOM_WARNINGS = { "WBP_EngineeringOffice_Confirmation_C", "WBP_CargoSwap_Confirmation_C" }
 
 -- The save window's warnings, laid out like the Delete Profile warning
 -- (heading, ReportContent, BACK and ACCEPT). Restart Sector's "Overwrite
@@ -1191,6 +1196,22 @@ local function without_buttons(parts, path)
     return #out > 0 and (table.concat(out, ". ") .. ".") or ""
 end
 
+-- Cargo Bay swap warning: the lost stock came before the sentence that
+-- introduces it ("Warning. 500 Deuterium. Due to the capacity change, you
+-- would lose the following resources:", VM, 2026-10-16).
+local function cargo_swap(parts, path)
+    local head, info, lose = nil, nil, {}
+    for _, p in ipairs(parts) do
+        local name = p.path:match("([^%.]+)$") or ""
+        if name:find("^HeaderTextBlock") then head = head or p.text
+        elseif name == "InfoTextBlock" then info = p.text
+        elseif name:find("^ResourceChange") then lose[#lose + 1] = p.text end
+    end
+    if not info then return without_buttons(parts, path) end
+    info = info:gsub("[%s:]+$", "")
+    return (head and (head .. ". ") or "") .. info .. (#lose > 0 and (": " .. table.concat(lose, ", ")) or "") .. "."
+end
+
 -- Leave Sector: "Leave Sector: Vidiian Sector. Choose next sector. 70,000
 -- light years to home. Earth distance remaining 64,000 of 70,000 light
 -- years." The entries are the focusable list (M.leave_sector_entry).
@@ -1348,6 +1369,7 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     WBP_FirstPerformanceSelection_C = without_buttons, WBP_GammaCorrection_C = without_buttons,
     WBP_GameOver_C = without_buttons, WBP_NoWayBackWidget_C = without_buttons, WBP_CraftingResult_C = without_buttons,
     WBP_ConfirmationWidget_C = without_buttons, WBP_HeroUnavailableWidget_C = without_buttons,
+    WBP_EngineeringOffice_Confirmation_C = without_buttons, WBP_CargoSwap_Confirmation_C = cargo_swap,
     WBP_SectorExitEventWidget_C = sector_exit_event, WBP_CombatAutoResolve_C = auto_resolve,
     WBP_LogEventWidget_Multitab_C = log_multitab,
     WBP_SectorExitDetailView_C = function(parts) return M.sector_exit_detail(parts) or "" end,
@@ -1407,14 +1429,43 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
     -- A side mission's end: "Phage. CONTINUE. Mission Failed" had its
     -- button's label in the middle (VM, 2026-10-15). The button is said
     -- on its own after the window.
-    WBP_SideMissionFinished_C = function(parts)
-        local out, seen = {}, {}
+    -- With rewards the parts came in screen order: "250. Faces. XP. +5.
+    -- Mission Successful" (Faces, VM, 2026-10-16). Now the title, the
+    -- outcome, then each reward row as "250 XP" or "5 dilithium" (the
+    -- resource is the row's Reward_Image).
+    WBP_SideMissionFinished_C = function(parts, path)
+        local head, outcome, other, seen = nil, nil, {}, {}
         for _, p in ipairs(parts) do
-            if not p.path:find("Button[%w_]*%.") and not seen[p.text] then
+            local name = p.path:match("([^%.]+)$") or ""
+            if not p.path:find("Button[%w_]*%.") and not p.path:find("WBP_PoIMultipleChoice_Reward_C", 1, true) and not seen[p.text] then
                 seen[p.text] = true
-                out[#out + 1] = (p.text:gsub("%.%s*$", ""))
+                if name == "HeaderTextBlock" then head = p.text
+                elseif name == "ContentTextBlock" then outcome = p.text
+                else other[#other + 1] = (p.text:gsub("%.%s*$", "")) end
             end
         end
+        local rewards = {}
+        for _, r in ipairs(FindAllOf("WBP_PoIMultipleChoice_Reward_C") or {}) do
+            if r:IsValid() and path and screen.inside(r, path) and screen.shown(r) then
+                local function txt(w) local ok, s = pcall(function() return w:GetText():ToString() end); return ok and s or "" end
+                local xp = ""
+                pcall(function() if screen.shown(r.XPAmount_Text) then xp = txt(r.XPAmount_Text) end end)
+                if xp ~= "" then
+                    rewards[#rewards + 1] = xp:gsub("^%+", "") .. " experience"
+                else
+                    local amount = txt(r.RewardAmount_Text):gsub("^%+", "")
+                    local icon = icon_name(r.Reward_Image)
+                    local res = (icon and icon:match("^MI_UI_(%a+)")) or "resources"
+                    if amount ~= "" then rewards[#rewards + 1] = amount .. " " .. res:gsub("(%l)(%u)", "%1 %2"):lower() end
+                end
+            end
+        end
+        local out = {}
+        if head then out[#out + 1] = head end
+        if outcome then out[#out + 1] = outcome end
+        for _, s in ipairs(other) do out[#out + 1] = s end
+        if #rewards > 0 then out[#out + 1] = "Rewards: " .. table.concat(rewards, ", ") end
+        for i, s in ipairs(out) do out[i] = (s:gsub("%.%s*$", "")) end
         return table.concat(out, ". ") .. "."
     end,
     WBP_RoomManagementV2_C = function(_, path) return require("rooms").window_text(path) end,
@@ -1600,7 +1651,9 @@ local function poll()
                 end)
             end
             if p:find("FewerHeroesConfirmWidget", 1, true) then
-                text = text:gsub("^Continue%. Return%. ", ""):gsub("^Return%. Continue%. ", "")
+                -- Also after the title: "Warning. Return. Continue. You
+                -- still have unassigned slots" (battle setup, VM, 2026-10-16).
+                text = text:gsub("Continue%. Return%. ", ""):gsub("Return%. Continue%. ", "")
             end
             -- The away mission summary counts up as it fills in, and was
             -- read three times over (2026-10-14): it is read once its text
@@ -1634,6 +1687,7 @@ local function poll()
                     or p:find("WBP_DeleteProfileWarning_C", 1, true) or p:find("WBP_GameOver_C", 1, true)
                     or p:find("WBP_NoWayBackWidget_C", 1, true) or p:find("WBP_CraftingResult_C", 1, true)
                     or p:find("WBP_ConfirmationWidget_C", 1, true) or p:find("WBP_HeroUnavailableWidget_C", 1, true)
+                    or p:find("WBP_EngineeringOffice_Confirmation_C", 1, true) or p:find("WBP_CargoSwap_Confirmation_C", 1, true)
                     or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
                     or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
                     -- Inside the combat widget it is named CombatResultView.
