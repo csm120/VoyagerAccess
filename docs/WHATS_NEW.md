@@ -2,6 +2,15 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.21
+
+Set course without the mouse.
+
+- Changed: Set course now goes through the game directly first, with no mouse at all, so "Under way" comes right away. The mouse is only tried when the game says the trip isn't possible. If your Set course kept saying "not set", this is the fix.
+- Fixed: choosing Surrender before a battle works with Enter, same as the other battle setup buttons.
+
+## Friday October 16th 2026
+
 Version 0.3.20
 
 Building rooms and the installer, checked with JAWS this time, and a fix for a player who couldn't set a course.

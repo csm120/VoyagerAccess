@@ -643,6 +643,18 @@ local function run(action, p)
         end)
     else
         speech.say("Setting course for " .. name, true)
+        -- The game's own travel call first, no mouse (Casey, 2026-10-16:
+        -- "why not do everything without the reliance on the mouse"). The
+        -- mouse route showed no confirmation of its own on a Sector Map trip
+        -- either, so nothing is skipped. When CanTravel says no, the mouse
+        -- route runs, so the game can show its own reason.
+        local d0 = target_distance(p.path)
+        if d0 and d0 <= 1000 then
+            speech.say("Voyager is already at " .. name, false)
+            return
+        end
+        pcall(function() pw:SetFocusPoint(p.actor) end)   -- the camera follows, as before
+        if M.declare_travel(name, p.path, d0) then return end
         fire_course(name, p.path, 1)
     end
 end
