@@ -2,6 +2,18 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.29
+
+Q Trials modifiers, scans, counts and a few safety nets.
+
+- Fixed: the Q Modifier cards at the end of a Q Trials sector only said "Q Modifier". They read their name and what they do now, like "Party Ship. Grants a permanent morale bonus of +20 per cycle but increases the time to build, repair, upgrade or deconstruct rooms by 100%." Pressing Enter on the card you already chose takes it back, and it says so.
+- Changed: when a scan doesn't go through, it tells you why, like "the scanner needs a working Stellar Cartography".
+- Changed: if the game's language changes, you hear it, like "Game language changed to Spanish". Moving through the Language setting switches the language right away, so it's easy to land in another one by accident.
+- Fixed: counts are right where a list sits beside a single button. The graphics choices you get on first start said "4 of 4" while Confirm said "5 of 5", and the main menu's profiles said "1 of 3" while the menu said "of 8". It's all one list now, the way the arrows move through it, and Home reaches the top of it.
+- Fixed: I names a warning that pops up over a room, like the Cargo Bay's "Warning" when you switch what it stores, instead of the room behind it. On the Game Over screen it no longer adds the trip you were on.
+
+## Friday October 16th 2026
+
 Version 0.3.28
 
 Team picks, battles, story cards and stories you're parked on.

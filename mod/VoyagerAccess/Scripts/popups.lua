@@ -769,6 +769,11 @@ function M.meta_reward_label(b, path)
         pcall(function() skills = require("rooms").skills_of(card.HeroStatSheet) end)
         if skills ~= "" then out[#out + 1] = skills end
         if by.HeroCombatAbility_TXT then out[#out + 1] = "Combat ability: " .. by.HeroCombatAbility_TXT end
+    elseif by.AmusementName then
+        -- A Q Modifier card: its name and what it does ("Party Ship" was
+        -- read only as "Q Modifier", VM, 2026-10-16).
+        out[#out + 1] = kind .. ": " .. by.AmusementName
+        if by.AmusementDesc then out[#out + 1] = by.AmusementDesc end
     elseif #res > 0 then
         out[#out + 1] = kind .. ": " .. table.concat(res, ", ")
     else

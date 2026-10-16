@@ -38,6 +38,22 @@ local HELP = {
         .. "I says where you are. R repeats the last line. Ctrl+F12 lists what is new in Voyager Access.",
 }
 
+-- Windows that open in front of a room or the map and hold the focused
+-- button: offers, notices and confirmations (a Cargo Bay stock-loss warning
+-- was named "Cargo Bay", VM, 2026-10-16).
+local FRONT = { "WBP_MultipleChoiceWidget_C", "WBP_CommonInfoWidget_C", "WBP_CargoSwap_Confirmation_C",
+    "WBP_ConfirmationWidget_C", "WBP_EngineeringOffice_Confirmation_C" }
+local function front_window(wp)
+    -- By class too: inside a room the warning is a named part
+    -- ("...ResourceCapacityChangeConfirmWidget"), not a class in the path.
+    local cls = ""
+    pcall(function() cls = StaticFindObject(wp):GetClass():GetFName():ToString() end)
+    for _, c in ipairs(FRONT) do
+        if wp:find(c, 1, true) or cls == c then return true end
+    end
+    return false
+end
+
 -- Which kind of screen is in front, most specific first.
 function M.context()
     local dialogue = require("dialogue")
@@ -72,9 +88,16 @@ function M.context()
         local b = cur and StaticFindObject(cur)
         if not (b and b:IsValid()) then return end
         for _, wp in ipairs(require("popups").open_windows()) do
-            if (wp:find("WBP_MultipleChoiceWidget_C", 1, true) or wp:find("WBP_CommonInfoWidget_C", 1, true))
+            if front_window(wp)
                 and screen.inside(b, wp) then over = true end
         end
+    end)
+    -- The same window read as the mod's button list (the game's focus is
+    -- empty when its buttons cannot take focus).
+    pcall(function()
+        local f = require("focus")
+        local vw = f.virtual_active() and f.virtual_window()
+        if vw and front_window(vw) then over = true end
     end)
     if over then return "menu" end
     -- Not a room left open behind the System Map (rooms.lua).
@@ -216,7 +239,7 @@ function M.say_where()
                     if not (b and b:IsValid()) then return end
                     local screen = require("screen")
                     for _, wp in ipairs(require("popups").open_windows()) do
-                        if (wp:find("WBP_MultipleChoiceWidget_C", 1, true) or wp:find("WBP_CommonInfoWidget_C", 1, true))
+                        if front_window(wp)
                             and screen.inside(b, wp) then
                             local t = require("popups").text_under(wp)
                             local title = t and t:match("^([^%.:]+)")
@@ -238,7 +261,15 @@ function M.say_where()
     -- A trip under way, wherever L is pressed (Casey, 2026-10-14).
     -- Not in a battle or its result: "Traveling to System 9 2 8 point 2, 96
     -- percent of the way" ended the defeat screen's I (2026-10-15).
-    local trip = not require("combat").screen_up() and require("system").travel_status()
+    -- Nor over Game Over ("Traveling to Class J Planet, 73 percent of the
+    -- way" after the ship was destroyed, VM, 2026-10-16).
+    local over = false
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_GameOver_C") or {}) do
+            if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then over = true end
+        end
+    end)
+    local trip = not over and not require("combat").screen_up() and require("system").travel_status()
     if trip then out[#out + 1] = trip end
     local text = table.concat(out, ". ") .. "."
     print("[VoyagerAccess] where: " .. text .. "\n")

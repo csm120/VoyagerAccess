@@ -834,6 +834,7 @@ end
 -- grouped by the nearest panel holding two or more of them, so a room's
 -- Power, Dismantle and Upgrade count together and its tab bar does not.
 local positions = {}   -- button path -> "2 of 5"
+local groups = {}      -- button path -> the paths counted with it, in order
 function M.number_buttons(all, all_names)
     -- Only buttons really on screen: a room's other tab pages are in the
     -- tree too, and the Heroes tab's one slot was "6 of 6".
@@ -858,6 +859,7 @@ function M.number_buttons(all, all_names)
             names[#names + 1] = all_names[i]
         else
             positions[all_names[i]] = nil
+            groups[all_names[i]] = nil
         end
     end
     local chains = {}
@@ -872,22 +874,65 @@ function M.number_buttons(all, all_names)
         end
         chains[i] = { chain = chain, set = set }
     end
-    for i = 1, #list do
-        positions[names[i]] = nil
+    local function tab(n) return n:find("TabButton$") ~= nil end
+    -- The buttons under panel a that count with button i.
+    local function group_at(i, a)
         -- An event's CONTINUE was counted with the HUD's own buttons
         -- ("CONTINUE, 16 of 16", VM, 2026-10-15): a button that is not the
         -- HUD's does not count the HUD's.
         local in_hud = names[i]:find("WBP_HUD_C_", 1, true) ~= nil
         -- Nor a room's tab bar: a damaged Aeroshuttle Bay's only action was
         -- "Repair, 6 of 6" with the five tab buttons (VM, 2026-10-15).
-        local function tab(n) return n:find("TabButton$") ~= nil end
         local is_tab = tab(names[i])
+        local group = {}
+        for j = 1, #list do
+            if chains[j].set[a] and (in_hud or not names[j]:find("WBP_HUD_C_", 1, true))
+                and (is_tab or not tab(names[j])) then
+                group[#group + 1] = j
+            end
+        end
+        return group
+    end
+    -- Each button's nearest panel holding two or more counted buttons.
+    local near = {}
+    for i = 1, #list do
         for _, a in ipairs(chains[i].chain) do
-            local group = {}
-            for j = 1, #list do
-                if chains[j].set[a] and (in_hud or not names[j]:find("WBP_HUD_C_", 1, true))
-                    and (is_tab or not tab(names[j])) then
-                    group[#group + 1] = j
+            if #group_at(i, a) >= 2 then near[i] = a break end
+        end
+    end
+    for i = 1, #list do
+        positions[names[i]] = nil
+        groups[names[i]] = nil
+        for k, a in ipairs(chains[i].chain) do
+            local group = group_at(i, a)
+            -- A list in its own box with lone buttons beside it in the panel
+            -- above (the first-launch graphics options "of 4" and CONFIRM
+            -- "5 of 5", while Down goes through all five; VM, 2026-10-16):
+            -- counted as one list. Only when every extra button is alone
+            -- there, and not side by side (HorizontalBox, see below).
+            -- The first panel above that holds more buttons than the list's
+            -- own box (the graphics options sit two boxes below CONFIRM's).
+            local a2, group2 = nil, nil
+            if #group >= 2 then
+                for m = k + 1, math.min(#chains[i].chain, k + 6) do
+                    local g = group_at(i, chains[i].chain[m])
+                    if #g > #group then a2, group2 = chains[i].chain[m], g break end
+                end
+            end
+            if a2 then
+                local inner = {}
+                for _, j in ipairs(group) do inner[j] = true end
+                local extra, lone = 0, true
+                for _, j in ipairs(group2) do
+                    if not inner[j] then
+                        extra = extra + 1
+                        if near[j] ~= a2 then lone = false end
+                    end
+                end
+                local cls2 = "?"
+                pcall(function() cls2 = StaticFindObject(a2):GetClass():GetFName():ToString() end)
+                if extra > 0 and lone and cls2 ~= "HorizontalBox" and #group2 <= 40 then
+                    group, a = group2, a2
                 end
             end
             if #group >= 2 then
@@ -912,6 +957,10 @@ function M.number_buttons(all, all_names)
                     for k, j in ipairs(group) do
                         if j == i then positions[names[i]] = k .. " of " .. #group end
                     end
+                    -- The counted list, for Home and End (edge).
+                    local members = {}
+                    for _, j in ipairs(group) do members[#members + 1] = names[j] end
+                    groups[names[i]] = members
                 end
                 break
             end
@@ -1653,6 +1702,13 @@ local function activate()
         ExecuteInGameThreadWithDelay(300, function()
             pcall(function()
                 local n = popups.meta_reward_count()
+                -- Enter on the chosen card takes it back: that was said as
+                -- "Chosen, rewards selected 0 of 1" (VM, 2026-10-16).
+                if n:match("^0 ") then
+                    popups.meta_chosen = nil
+                    speech.say("Choice removed, rewards selected " .. n, true)
+                    return
+                end
                 speech.say("Chosen" .. (n ~= "" and (", rewards selected " .. n) or "") .. ". Confirm is at the end of the list.", true)
             end)
         end)
@@ -2180,9 +2236,28 @@ local function edge(last)
     local b = resolve(current)
     if not b then return end
     if require("dialogue").choice_edge(current, last) then return end
-    local list = b:GetParent()
-    if not (list and list:IsValid()) then return end
     BUTTON = BUTTON or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+    -- A button with no button siblings (Confirm below the Q Modifier
+    -- cards, which live outside the window; Home and End did nothing, VM,
+    -- 2026-10-16): the list it is counted in.
+    local list = b:GetParent()
+    local siblings = 0
+    pcall(function()
+        for i = 0, list:GetChildrenCount() - 1 do
+            local row = list:GetChildAt(i)
+            if row and row:IsValid() and row:IsA(BUTTON) and require("screen").shown(row) then siblings = siblings + 1 end
+        end
+    end)
+    local members = groups[current]
+    if siblings < 2 and members and #members >= 2 then
+        local from, to, step = 1, #members, 1
+        if last then from, to, step = #members, 1, -1 end
+        for i = from, to, step do
+            local row = resolve(members[i])
+            if row and require("screen").shown(row) then row:SetFocus() return end
+        end
+    end
+    if not (list and list:IsValid()) then return end
     local n = list:GetChildrenCount()
     local from, to, step = 0, n - 1, 1
     if last then from, to, step = n - 1, 0, -1 end

@@ -714,6 +714,23 @@ local function run(action, p)
             return
         end
         speech.say("Scanning " .. name, true)
+        -- Why a scan is refused: the game builds its message from the
+        -- missing scanner tags (Ability.Scan.CanScan when Stellar
+        -- Cartography is damaged or off; "The scan did not finish" was all
+        -- the mod said, sector 5, VM, 2026-10-16). Hooked once per load,
+        -- after the pawn's class exists.
+        M.scan_missing = nil
+        if not M.scan_hooked then
+            M.scan_hooked = pcall(RegisterHook,
+                "/Game/STVoyager/JourneyGenerator/Blueprints/BP_SectorPawn.BP_SectorPawn_C:GenerateScannerErrorMessage",
+                function(_, tags)
+                    local out = {}
+                    pcall(function()
+                        tags:get().GameplayTags:ForEach(function(_, t) out[#out + 1] = t:get().TagName:ToString() end)
+                    end)
+                    M.scan_missing = out
+                end)
+        end
         require("popups").reread_for("POIDetailView")
         pw:TryToScanPOI(p.poi)
         -- The result shows at once (Ship revealed Deuterium within a second).
@@ -733,7 +750,12 @@ local function run(action, p)
                     -- (Q Trial, VM, 2026-10-14); the panel says what was found.
                     speech.say(res ~= "" and ("Found " .. res) or "Scan complete", false)
                 else
-                    speech.say("The scan did not finish", false)
+                    local why = ""
+                    for _, t in ipairs(M.scan_missing or {}) do
+                        if t:find("CanScan", 1, true) then why = ": the scanner needs a working Stellar Cartography"
+                        elseif t:find("Forbid", 1, true) then why = ": a Q Trials rule forbids scanning here" end
+                    end
+                    speech.say("The scan did not finish" .. why, false)
                 end
             end)
         end)
