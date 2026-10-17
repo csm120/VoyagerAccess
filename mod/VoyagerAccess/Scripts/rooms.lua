@@ -969,12 +969,26 @@ function M.switch_tab(dir)
                     pcall(function()
                         -- Only on that tab: just after leaving it, its page
                         -- still counts as shown (review, 2026-10-15).
-                        local t = name:lower():find("patient", 1, true) and M.patients_text()
-                            or name:lower():find("trading", 1, true) and M.trading_text()
-                            or name:lower():find("crew", 1, true) and M.crew_text()
-                            or name:lower():find("bio", 1, true) and M.biolab_text()
-                            or name:lower():find("work team", 1, true) and M.workteams_text()
-                            or name:lower():find("allies", 1, true) and M.allies_text()
+                        local n = name:lower()
+                        local known = n:find("patient", 1, true) or n:find("trading", 1, true) or n:find("crew", 1, true)
+                            or n:find("bio", 1, true) or n:find("work team", 1, true) or n:find("allies", 1, true)
+                        local t = n:find("patient", 1, true) and M.patients_text()
+                            or n:find("trading", 1, true) and M.trading_text()
+                            or n:find("crew", 1, true) and M.crew_text()
+                            or n:find("bio", 1, true) and M.biolab_text()
+                            or n:find("work team", 1, true) and M.workteams_text()
+                            or n:find("allies", 1, true) and M.allies_text()
+                        -- In another language the tab names match none of
+                        -- these words, and the page was never read (outside
+                        -- review, 2026-10-17): then each reader is asked, and
+                        -- the one whose page is shown answers.
+                        if not t and not known then
+                            for _, f in ipairs({ M.patients_text, M.trading_text, M.crew_text, M.biolab_text,
+                                    M.workteams_text, M.allies_text }) do
+                                local okf, s = pcall(f)
+                                if okf and s then t = s break end
+                            end
+                        end
                         if t then require("speech").say(t, false) end
                     end)
                     pcall(function()

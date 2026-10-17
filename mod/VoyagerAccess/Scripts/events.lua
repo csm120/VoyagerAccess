@@ -285,8 +285,15 @@ local function room_names(o)
                     local t = e:get().RoomType
                     if t and t > 0 and not seen[t] then
                         seen[t] = true
-                        local raw = ROOM_ENUM:GetNameByValue(t):ToString():gsub("^ESTVRoomType::", "")
-                        names[#names + 1] = (raw:gsub("(%l)(%u)", "%1 %2"))
+                        -- The game's own room name (ship.lua, RoomTypeToText),
+                        -- as everywhere else: the enum gave "Engineering
+                        -- Offices", English in any language (VM, French,
+                        -- 2026-10-17).
+                        local okn, name = pcall(function() return require("ship").type_name(t) end)
+                        if not (okn and name and name ~= "") then
+                            name = (ROOM_ENUM:GetNameByValue(t):ToString():gsub("^ESTVRoomType::", ""):gsub("(%l)(%u)", "%1 %2"))
+                        end
+                        names[#names + 1] = name
                     end
                 end)
             end
@@ -356,6 +363,7 @@ local function hero_name(id)
     if name and name ~= "" then return name end
     return HERO_NAMES[id] or (id:gsub("^Char_", ""):gsub("_", " "))
 end
+M.hero_name = hero_name
 
 local function attribute_of(o)
     ATTR = ATTR or StaticFindObject("/Script/STVoyager.ESTVHeroAttribute")

@@ -66,6 +66,10 @@ function M.say(text, interrupt)
     -- Species 8472 is said digit by digit, as the crew and the Borg say it,
     -- not "eight thousand four hundred..." (Casey, 2026-10-17).
     text = text:gsub("%f[%d]8472%f[%D]", "8 4 7 2")
+    -- French and other languages group thousands with a narrow or plain
+    -- no-break space ("-1 170", U+202F or U+00A0), which a reader may say
+    -- as two numbers (VM, French, 2026-10-17). Joined between digits.
+    text = text:gsub("(%d)\226\128\175(%d)", "%1%2"):gsub("(%d)\194\160(%d)", "%1%2")
     -- Brackets round a name: "the [TECH TREE]" (room descriptions) and
     -- "[Sick bay] got damaged" (a sabotage toast), VM, 2026-10-16.
     -- Placeholders like "[{Shuttle}]" are left to their readers.

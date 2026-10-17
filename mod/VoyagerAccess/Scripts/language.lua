@@ -16,6 +16,13 @@ local function current()
     return k and k:GetCurrentCulture():ToString() or nil
 end
 
+-- True when the game is in English, or the language cannot be read. For
+-- checks that know an English word but also have a fallback by widget name.
+function M.english()
+    local ok, c = pcall(current)
+    return not (ok and c) or c:match("^en") ~= nil
+end
+
 function M.install()
     LoopInGameThreadWithDelay(1000, function()
         pcall(function()

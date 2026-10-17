@@ -81,7 +81,9 @@ follows them.
    while you move through it (it re-sorts nearest first after 15 seconds
    without a move). Set course says "Under way to", "Halfway to" and
    "Arrived at"; I adds the trip's progress and says "not moving" if the
-   ship has stopped short. When the chosen point is off screen (after story
+   ship has stopped short. A point whose events are all over says "done";
+   arriving there again opens nothing. Arriving at any other point opens its
+   event by itself. When the chosen point is off screen (after story
    scenes, for example), Set course zooms the map out by itself first. In an event at a point of interest, Up and Down
    move through the options; where an option can take a hero (Q Trials),
    Left and Right choose one ("No hero" first) and Enter carries the option
@@ -92,6 +94,7 @@ follows them.
    ACCEPT as a list.
 8. Tech tree (Science Laboratory, Research): a list of the five tiers, then
    the current category's technologies in tier order, each with its state.
+   Each tier names the technologies it opens.
    Up, Down, Home, End move; Left and Right switch category; Enter opens the
    item's panel, which is read (costs, description, and whether Enter begins
    the research); Escape closes the panel, then the tree.

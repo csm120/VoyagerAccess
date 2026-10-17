@@ -2,6 +2,18 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.42
+
+Two good questions from the forum, and more work on playing in other languages. Thanks, SightlessPsycho!
+
+- New: on the System Map, a point you've already finished says "done", like "Shipwreck, done". Flying back there opens nothing, so now you know before you go. Any other point opens its event by itself when Voyager arrives.
+- New: each tier in the tech tree names the technologies it opens, like "Tier 2, available, opens 9: Workshop Level 2, Hyperspanner, Cargo Bay Level 2..." Before, you only heard "Tier 2".
+- Fixed: when the game isn't in English, room tabs and the Overview tabs are now found and read.
+- Fixed: an event's "Better with" names the room in the game's own words and language.
+- Fixed: numbers grouped with a space, like "1 170" in French, are said as one number.
+
+## Saturday October 17th 2026
+
 Version 0.3.41
 
 From the campaign's sector 7, and a careful outside review by Firefly. Thank you!

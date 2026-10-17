@@ -211,6 +211,23 @@ local function status(p)
     if not explored(p.actor) then return "not scanned" end
     local res = resources(p.poi)
     if res == "" then res = found[p.path] or "" end
+    -- A point whose events are all over (ESTVEventState Completed 5 or
+    -- Failed 7) has nothing left: arriving there again opens nothing, and a
+    -- player asked how to collect at a planet (forum, 2026-10-17).
+    local done = nil
+    pcall(function()
+        local es = FindFirstOf("STVEventSubsystem")
+        if not (es and es:IsValid()) then return end
+        p.poi.EventIds:ForEach(function(_, e)
+            local s = es:GetEventStateById(e:get())
+            if s == 5 or s == 7 then
+                if done == nil then done = true end
+            else
+                done = false
+            end
+        end)
+    end)
+    if done then return (res ~= "" and (res .. ", ") or "") .. "done" end
     return res ~= "" and res or "scanned"
 end
 

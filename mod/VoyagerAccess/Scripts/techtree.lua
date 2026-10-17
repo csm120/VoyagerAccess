@@ -111,6 +111,27 @@ local function build()
         if a.row ~= b.row then return a.row < b.row end
         return a.col < b.col
     end)
+    -- A tier has no description of its own in the game (its window shows
+    -- only the cost), so it says which technologies it opens: "Tier 2" alone
+    -- told a player nothing (forum, SightlessPsycho, 2026-10-17).
+    local opens = {}
+    for _, t in ipairs(techs) do
+        if t.row > 0 then
+            opens[t.row] = opens[t.row] or {}
+            table.insert(opens[t.row], (t.text:match("^(.-), tier %d+")))
+        end
+    end
+    for _, t in ipairs(tiers) do
+        local names = opens[t.n]
+        if names and #names > 0 then
+            local known, unknown = {}, 0
+            for _, n in ipairs(names) do
+                if n == "Unknown technology" then unknown = unknown + 1 else known[#known + 1] = n end
+            end
+            if unknown > 0 then known[#known + 1] = unknown .. (unknown == 1 and " unknown technology" or " unknown technologies") end
+            t.text = string.format("%s, opens %d: %s", t.text, #names, table.concat(known, ", "))
+        end
+    end
     for _, t in ipairs(techs) do items[#items + 1] = t end
     return items
 end

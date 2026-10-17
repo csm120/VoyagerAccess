@@ -561,7 +561,7 @@ local OVERVIEW_DROP = { Morale = true, Morale1 = true }
 local function overview(_, path)
     local w = StaticFindObject(path)
     if not (w and w:IsValid()) then return "" end
-    local tab = nil
+    local tab, tab_id = nil, ""
     for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
         local p = b:IsValid() and path_of(b)
         if p and p:sub(1, #path + 1) == path .. "." and p:find("_Tab_Button$") and screen.shown(b) then
@@ -569,13 +569,17 @@ local function overview(_, path)
             if ok and sel then
                 local okt, t = pcall(function() return b.Button_Text:GetText():ToString() end)
                 tab = okt and t or nil
+                -- Which tab by the button's own name (Hero_Tab_Button,
+                -- Combat_Tab_Button): the text is translated, and in French
+                -- the Heroes tab was read whole (VM, 2026-10-17).
+                tab_id = p:match("([%w]+)_Tab_Button$") or ""
             end
         end
     end
     -- The Heroes tab is walked hero by hero (view.lua); read whole, its
     -- ranks came out beside the wrong names and every selection read the
     -- whole tab again (VM, 2026-10-15).
-    if tab and tab:lower():find("hero", 1, true) then
+    if tab and tab_id == "Hero" then
         local n = 0
         pcall(function() n = require("view").hero_count() end)
         return "Overview, " .. tab .. " tab. " .. n .. " heroes. Up and Down choose one and read its details."
@@ -583,7 +587,7 @@ local function overview(_, path)
     -- The Combat tab is two tables (rooms, how many, their combat power)
     -- and a sum; read as a flat list it came out "combat power 0 of 12 ...
     -- Hull 0.112 of 400" (VM, 2026-10-15).
-    if tab and tab:lower():find("combat", 1, true) then
+    if tab and tab_id == "Combat" then
         local panel = nil
         for _, x in ipairs(FindAllOf("WBP_Combat_Overview_C") or {}) do
             if x:IsValid() and path_of(x):find("^/Engine/Transient%.") and screen.shown(x) then panel = x end

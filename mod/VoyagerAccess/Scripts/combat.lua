@@ -185,7 +185,9 @@ function M.abilities()
                 local ab = x.Ability
                 if not (ab and ab:IsValid()) then return end
                 local name = plain(ab.AbilityName:ToString())
-                local hero = ab.HeroID:ToString():gsub("^Char_", ""):gsub("_", " ")
+                -- The game's own name: the id read "Seven Borg" for Seven
+                -- of Nine and "Torres" for B'Elanna (VM, 2026-10-17).
+                local hero = require("events").hero_name(ab.HeroID:ToString())
                 local state = "ready"
                 if (ab.ActiveTimeLeft or 0) > 0 then
                     state = "active, " .. seconds(ab.ActiveTimeLeft) .. " left"
@@ -241,7 +243,13 @@ function M.paused_text(w)
             if name and screen.shown(t) then
                 local s = plain(text_of(t))
                 if s:lower():find("^combat is paused") then by.head = s
-                elseif s ~= "" and (name == "TextBlock_1" or name == "CombatPauseText") then by.detail = s end
+                elseif s ~= "" and (name == "TextBlock_1" or name == "CombatPauseText") then by.detail = s
+                -- In another language, by the heading's own name (full game
+                -- TextBlock_69, demo TextBlock); "Combat is paused" is
+                -- English only (outside review, 2026-10-17).
+                elseif s ~= "" and (name == "TextBlock_69" or name == "TextBlock") and not require("language").english() then
+                    by.head = s
+                end
             end
         end
     end
