@@ -2,6 +2,16 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.37
+
+Smaller fixes from exploring the Q Trials.
+
+- Fixed: a few buttons didn't say anything when you pressed them, though their wording changed. In the Engineering Office, pressing Enter on "Unassign from hull repair" now says "Work Team 1, currently unassigned. Assign to hull repair", and the other way around.
+- Fixed: some event results read leftover numbers that weren't real, like "#999 deuterium. 0 duranium stored" after a reward that didn't fit in storage. They're left out now.
+- Fixed: costs to leave a Q Trials sector said "SciencePoints". They say "289 science points" now, and research rewards read their resources the same way.
+
+## Friday October 16th 2026
+
 Version 0.3.36
 
 Tutorials you can actually finish hearing.

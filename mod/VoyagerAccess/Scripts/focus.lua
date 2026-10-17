@@ -818,7 +818,32 @@ function M.virtual_enter()
         return
     end
     print("[VoyagerAccess] enter: window button " .. virtual.buttons[virtual.index] .. "\n")
+    local bpath = virtual.buttons[virtual.index]
+    local okb, before = pcall(label_for, b, bpath)
     click(b)
+    -- A button whose wording changes said nothing: the Engineering
+    -- Office's "Unassign from hull repair" became "Assign to hull repair"
+    -- silently, its row rebuilt with new object numbers (VM, 2026-10-16).
+    -- Said again once changed, found by its path without the numbers.
+    ExecuteInGameThreadWithDelay(400, function()
+        pcall(function()
+            local nb, np = resolve(bpath), bpath
+            if not (nb and require("screen").shown(nb)) then
+                nb = nil
+                local key = bpath:gsub("_%d+", "")
+                for _, o in ipairs(FindAllOf("CommonButtonBase") or {}) do
+                    local op = o:IsValid() and live(o) and path_of(o)
+                    if op and op:gsub("_%d+", "") == key and require("screen").shown(o) then nb, np = o, op break end
+                end
+            end
+            if not nb then return end
+            local after = label_for(nb, np)
+            if okb and after and after ~= before then
+                print("[VoyagerAccess] changed: " .. after .. "\n")
+                speech.say(after, true)
+            end
+        end)
+    end)
     -- DARKER and BRIGHTER only move a bar; the bar's own widgets do not
     -- hold the value, the engine's display gamma does (2026-10-14).
     local name = virtual.buttons[virtual.index]:match("([^%.]+)$")

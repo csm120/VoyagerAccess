@@ -345,7 +345,11 @@ local function poi_result(parts, by, path)
             elseif stored then text = amount .. " " .. res .. " stored"
             else text = amount .. " " .. res .. (line ~= "" and (", " .. line) or "") end
             if waste ~= "" and waste ~= "0" then text = text .. ". " .. waste .. " " .. res .. " lost, storage full" end
-            rows[#rows + 1] = { text = text, last = stored }
+            -- Template rows left over: "#999 deuterium" and "0 duranium"
+            -- after "80 duranium lost, storage full" (Asteroid Field, Q
+            -- Trial, VM, 2026-10-16). Only rows with a real amount count.
+            local real = amount:match("^%-?[%d,%.]+$") and (amount:match("[1-9]") or (waste ~= "" and waste ~= "0"))
+            if real then rows[#rows + 1] = { text = text, last = stored } end
         end
     end
     table.sort(rows, function(a, b) return (not a.last) and b.last end)
@@ -1014,7 +1018,7 @@ local function research_rewards()
         local rp = r:IsValid() and path_of(r)
         if rp and screen.inside(r, prefix:sub(1, -2)) and screen.shown(r) then
             local icon = icon_name(r.ResourceImage)
-            local name = icon and icon:match("^MI_UI_(%a+)") or "resources"
+            local name = (icon and require("text").icon_name(icon)) or "resources"
             local amount = text_of_widget(r.ResourceAmountTextBlock):gsub("^%+", "")
             if amount ~= "" then res[#res + 1] = amount .. " " .. name end
         end
@@ -1251,7 +1255,9 @@ local function costs_under(path)
         local cp = c:IsValid() and path_of(c)
         if cp and cp:sub(1, #prefix) == prefix and screen.shown(c) then
             local icon = icon_name(c.ResourceImage)
-            local res = icon and icon:match("^MI_UI_(%a+)") or "resources"
+            -- Shared names: "289 science points", not "SciencePoints"
+            -- (Leave Sector, Q Trial, VM, 2026-10-16).
+            local res = (icon and require("text").icon_name(icon)) or "resources"
             costs[#costs + 1] = text_of_widget(c.ResourceAmount) .. " " .. res
         end
     end
@@ -1465,8 +1471,8 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
                 else
                     local amount = txt(r.RewardAmount_Text):gsub("^%+", "")
                     local icon = icon_name(r.Reward_Image)
-                    local res = (icon and icon:match("^MI_UI_(%a+)")) or "resources"
-                    if amount ~= "" then rewards[#rewards + 1] = amount .. " " .. res:gsub("(%l)(%u)", "%1 %2"):lower() end
+                    local res = (icon and require("text").icon_name(icon)) or "resources"
+                    if amount ~= "" then rewards[#rewards + 1] = amount .. " " .. res end
                 end
             end
         end
@@ -1676,6 +1682,9 @@ local function poll()
                 -- Sometimes only one of them: "Warning. Continue. You still
                 -- have unassigned slots" (Q Trial, VM, 2026-10-16).
                 text = text:gsub("^(Warning%.) Continue%. ", "%1 "):gsub("^(Warning%.) Return%. ", "%1 ")
+                -- Or before the title: "Continue. Warning. You still..."
+                -- (campaign battle, VM, 2026-10-16).
+                text = text:gsub("^Continue%. (Warning%.)", "%1"):gsub("^Return%. (Warning%.)", "%1")
             end
             -- The away mission summary counts up as it fills in, and was
             -- read three times over (2026-10-14): it is read once its text

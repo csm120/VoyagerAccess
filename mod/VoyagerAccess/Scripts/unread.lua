@@ -67,10 +67,33 @@ local function poll()
     end
 end
 
+-- Spoken text with no real word in it ("(selected), +1, 20, 120", the Bio
+-- Lab's blueprint before it had a reader) or with a designer placeholder
+-- ("#VERY LONG SECTOR NAME", "???", "X torpedoes"): logged once each as
+-- "weak:", so a sweep through the game finds such labels in bulk
+-- (2026-10-16). speech.lua calls this only while the flag file exists.
+M.on = false
+local weak_seen = {}
+local FILLER = { selected = true, ["of"] = true, ["and"] = true, per = true, cycle = true, cycles = true }
+function M.check_spoken(text)
+    if not M.on or weak_seen[text] then return end
+    local words = 0
+    for w in text:gmatch("%a+") do
+        if #w >= 3 and not FILLER[w:lower()] then words = words + 1 end
+    end
+    local placeholder = text:find("#%u") or text:find("#%d") or text:find("%?%?%?") or text:find("%f[%w]X torpedoes")
+        or text:find("{%a") or text:find("%f[%a]None%f[%A]")
+    if words == 0 or placeholder then
+        weak_seen[text] = true
+        print("[VoyagerAccess] weak: " .. text:sub(1, 160) .. "\n")
+    end
+end
+
 function M.install()
     local f = io.open(FLAG, "r")
     if not f then return end
     f:close()
+    M.on = true
     print("[VoyagerAccess] unread window log on\n")
     LoopInGameThreadWithDelay(2000, function()
         local ok, err = pcall(poll)

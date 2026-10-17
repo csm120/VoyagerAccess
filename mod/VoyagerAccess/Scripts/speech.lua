@@ -69,6 +69,9 @@ function M.say(text, interrupt)
     text = text:gsub("%[([^%[%]{}]+)%]", "%1")
     text = split_words(text)
     if text == "" then return end
+    -- Development sweep for labels with no words (unread.lua).
+    local unread = package.loaded["unread"]
+    if unread and unread.on then pcall(unread.check_spoken, text) end
     if interrupt and (os.time() < hold_until or os.time() < protect_until) then interrupt = false end
     -- The same line queued again right after itself is dropped: the demo's
     -- first event option was read twice in a row (VM, 2026-10-15). A key
