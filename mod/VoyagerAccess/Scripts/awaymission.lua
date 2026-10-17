@@ -532,10 +532,16 @@ local function build()
     for ci, c in ipairs(cs) do
         local cp = path_of(c)
         sig[#sig + 1] = cp
-        items[#items + 1] = { kind = "choice", choice = cp, n = ci, of = #cs }
-        for hi, h in ipairs(heroes_under(cp, "WBP_AwayMission_Choice_HeroSelection_C")) do
+        local head = { kind = "choice", choice = cp, n = ci, of = #cs }
+        items[#items + 1] = head
+        local hs = heroes_under(cp, "WBP_AwayMission_Choice_HeroSelection_C")
+        for hi, h in ipairs(hs) do
             items[#items + 1] = { kind = "hero", choice = cp, hero = path_of(h), name = names[hi] or ("Hero " .. hi) }
         end
+        -- A choice with no heroes shown said nothing about it, and a player
+        -- could not tell why no one could be picked (Ocampa, choice 2,
+        -- German game, outside report, 2026-10-17; cause not yet found).
+        if #hs == 0 then head.no_heroes = true end
         items[#items + 1] = { kind = "confirm", choice = cp }
     end
     return items, table.concat(sig, "|")
@@ -691,6 +697,7 @@ local function item_label(it)
         local label = require("dialogue").away_choice_label(c) or "Choice"
         local ok, reward = pcall(choice_rewards, it.choice)
         if ok and reward ~= "" then label = label:gsub("%.?%s*$", "") .. ". Reward: " .. reward .. "." end
+        if it.no_heroes then label = label:gsub("%.?%s*$", "") .. ". No heroes are listed for this choice." end
         -- Danger: three WBP_AwayyMission_RiskIndicator per choice, each
         -- showing its Risk image or its noRisk image; the Risk ones lit are
         -- the danger level. Read 2026-10-14 when the game's tutorial said
@@ -863,9 +870,29 @@ function M.mission_enter()
                         -- that needs a trait takes only heroes who have it
                         -- (Kes on "Trait: Talaxian", Rise, VM, 2026-10-16).
                         local c = StaticFindObject(it.choice)
+                        -- The game's own reason first, as the choice shows it
+                        -- (Requirement and RequirementText, filled through
+                        -- ShowHeroRequirement): the trait guess below was wrong
+                        -- once, in German (outside review, 2026-10-17).
+                        local why = nil
+                        pcall(function()
+                            local prefix = it.choice .. "."
+                            for _, cls in ipairs({ "CommonRichTextBlock", "CommonTextBlock" }) do
+                                for _, t in ipairs(FindAllOf(cls) or {}) do
+                                    local tp = t:IsValid() and path_of(t)
+                                    local nm = tp and tp:sub(1, #prefix) == prefix and tp:match("([^%.]+)$")
+                                    if not why and (nm == "Requirement" or nm == "RequirementText") and screen.shown(t) then
+                                        local s = plain(text_of(t))
+                                        if s ~= "" and not s:find("^%[") and not s:find("^#") then why = s end
+                                    end
+                                end
+                            end
+                        end)
                         local want = c and c:IsValid() and (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
                         local has = trait_of(it.name)
-                        if want and not (has ~= "" and has:lower():find(want:lower(), 1, true)) then
+                        if why then
+                            label = it.name .. " cannot take this choice: " .. why:gsub("[%.%s]+$", "") .. "."
+                        elseif want and not (has ~= "" and has:lower():find(want:lower(), 1, true)) then
                             label = it.name .. " cannot take this choice: it needs a hero with the " .. want .. " trait."
                         else
                             label = it.name .. " was not selected. " .. label

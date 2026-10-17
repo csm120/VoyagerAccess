@@ -814,7 +814,8 @@ local ORDER_CLASSES = { WBP_RadialButtonCombatOffensive_C = true, WBP_RadialButt
     WBP_RadialButton_C = true }
 confirm_order = function(b, path, said)
     pcall(function()
-        if not (ORDER_CLASSES[b:GetClass():GetFName():ToString()] and require("combat").active()) then return end
+        local cls = b:GetClass():GetFName():ToString()
+        if not (ORDER_CLASSES[cls] and require("combat").active()) then return end
         said = said or radial_said[path]
         if not said and require("combat").handles(b, path) then said = require("combat").button_label(b, path) end
         if not said then said = label_for(b, path) end
@@ -825,7 +826,9 @@ confirm_order = function(b, path, said)
                 for _, m in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
                     if m:IsValid() and path_of(m):find("^/Engine/Transient%.") and require("screen").shown(m) then return end
                 end
-                speech.say(name .. " ordered", false)
+                -- An offensive segment is the enemy system to aim at: "Warp
+                -- Core ordered" read oddly (VM, 2026-10-17).
+                speech.say(cls == "WBP_RadialButtonCombatOffensive_C" and ("Targeting " .. name) or (name .. " ordered"), false)
             end)
         end)
     end)
@@ -1426,6 +1429,18 @@ local function poll()
         if b then M.park_focus() end
         return
     end
+    -- Answering a call leaves keyboard focus on the HUD's invisible
+    -- Incoming calls button, and a No Way Back window that opened then got
+    -- no button list: Down did nothing and YES and NO could not be reached
+    -- (campaign sector 6, VM, 2026-10-17). With a window open, that focus
+    -- does not count.
+    if b and (path_of(b) or ""):find("InvisBackButton", 1, true) then
+        local okw, wins = pcall(function() return require("popups").open_windows() end)
+        if okw and wins and #wins > 0 then
+            b = nil
+            current = nil
+        end
+    end
     if not b then b = focus_first_run_screen() end
     if not b then
         local okr, r = pcall(focus_radial)
@@ -1946,6 +1961,17 @@ local function activate()
         return
     end
     confirm_order(b, current, radial_said[current])
+    -- A Workshop blueprint: say that crafting began, as an analysis says
+    -- "Analysis started" (it said nothing, VM, 2026-10-17).
+    if b:GetClass():GetFName():ToString() == "WBP_ItemButton_C" then
+        local before = require("rooms").crafting_now()
+        ExecuteInGameThreadWithDelay(900, function()
+            pcall(function()
+                local now = require("rooms").crafting_now()
+                if now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
+            end)
+        end)
+    end
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then
         -- A segment the game has locked (bLocked): Clear Debris with no life
         -- support did nothing and said nothing on Enter (VM, 2026-10-15).
@@ -2063,7 +2089,13 @@ local function activate()
                 if p ~= "" then said[#said + 1] = p:gsub("[%.%s]+$", "") .. "." end
             end
             speech.say(table.concat(said, " "), true)
-            if plain(b.DLCEntitlementState) ~= "Installed" then click(b) end
+            -- Clicked only when the card shows its store link: the state
+            -- text is translated ("Installed" only in English), and owned
+            -- and "Coming soon" cards both hide VisitStorePageContainer
+            -- (Casey's machine, 2026-10-17). ShouldShowStorePage returned
+            -- false for every card, owned or not, so it cannot tell them apart.
+            local okv, store = pcall(function() return require("screen").shown(b.VisitStorePageContainer) end)
+            if okv and store then click(b) end
             return
         end
         local before = label_for(b, current)
@@ -2612,14 +2644,20 @@ function M.install()
                 if w:IsValid() and require("screen").shown(w) then targets[#targets + 1] = path_of(w) end
             end
         end
-        for _, p in ipairs(targets) do
-            local w = StaticFindObject(p)
-            if w and w:IsValid() and pcall(function() w:CallBackAction() end) then
-                print("[VoyagerAccess] escape: back action on " .. p:match("([%w_]+)$") .. "\n")
-                undo_pause()
-                return
+        -- Only if it is still up a moment later, as with the rings above: the
+        -- game's own Escape may be closing it at the same time, and a second
+        -- back action left the Overview half open (outside review, 2026-10-17).
+        if #targets == 0 then return end
+        ExecuteInGameThreadWithDelay(400, function()
+            for _, p in ipairs(targets) do
+                local w = StaticFindObject(p)
+                if w and w:IsValid() and require("screen").shown(w) and pcall(function() w:CallBackAction() end) then
+                    print("[VoyagerAccess] escape: back action on " .. p:match("([%w_]+)$") .. "\n")
+                    undo_pause()
+                    return
+                end
             end
-        end
+        end)
     end)
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.

@@ -51,6 +51,10 @@ local function dispatch()
     M.last_key_time = os.time()
     require("speech").release()
     for name in data:gmatch("[^\r\n]+") do
+        -- Every key in UE4SS.log too, so a player's report shows what was
+        -- pressed before something went wrong (the crumb keeps only the
+        -- last one; outside review, 2026-10-17).
+        print("[VoyagerAccess] key: " .. name .. "\n")
         local fn = handlers[name]
         if fn then
             crumb.at("key: " .. name)

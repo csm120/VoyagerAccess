@@ -13,12 +13,32 @@ UE4SS_ZIP = next((REPO / "vendor").glob("UE4SS_*.zip"))
 OUT = REPO / "build" / "payload"
 
 
+# UE4SS's own developer mods, on in its release mods.txt. Keybinds binds
+# object and header dumps to Ctrl+J and Ctrl+H, which can freeze the game
+# for a player who presses them; the console and cheat enablers are for
+# development only (review of an outside guide, 2026-10-17).
+DEV_MODS = ("Keybinds", "ConsoleEnablerMod", "ConsoleCommandsMod", "CheatManagerEnablerMod")
+
+
+def player_mods_txt(text):
+    """mods.txt with the developer mods switched off, everything else kept."""
+    out = []
+    for line in text.splitlines():
+        name = line.split(":", 1)[0].strip()
+        if ":" in line and name in DEV_MODS:
+            line = f"{name} : 0"
+        out.append(line)
+    return "\n".join(out) + "\n"
+
+
 def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
     with zipfile.ZipFile(UE4SS_ZIP) as z:
         z.extractall(OUT)
+    mods = OUT / "ue4ss" / "Mods" / "mods.txt"
+    mods.write_text(player_mods_txt(mods.read_text(encoding="utf-8")), encoding="utf-8")
     shutil.copytree(REPO / "mod" / "VoyagerAccess", OUT / "ue4ss" / "Mods" / "VoyagerAccess")
     # What's new, read in the game with Ctrl+F12 (whatsnew.lua).
     shutil.copy2(REPO / "docs" / "WHATS_NEW.md", OUT / "ue4ss" / "Mods" / "VoyagerAccess" / "whats_new.md")

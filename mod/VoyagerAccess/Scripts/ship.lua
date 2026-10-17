@@ -45,8 +45,28 @@ local function raw_name(t)
     return (ROOM_TYPE:GetNameByValue(t):ToString():gsub("^ESTVRoomType::", ""))
 end
 
+-- The game's own name for a room type, in the game's language
+-- (STVConstructionUtils RoomTypeToText; outside review, 2026-10-17): the
+-- names made from the internal ones differed from what the game shows
+-- ("Main deflector" for Navigational Deflector, "Bio lab" for Bio
+-- Laboratory) and were English only. Kept per type.
+local KEEP = { None = true, TurboShaft = true }
+local game_names = {}
+local function game_name(t)
+    if game_names[t] ~= nil then return game_names[t] or nil end
+    local ok, s = pcall(function()
+        return StaticFindObject("/Script/STVoyager.Default__STVConstructionUtils")
+            :RoomTypeToText(FindFirstOf("STVConstructionManager"), t):ToString()
+    end)
+    if ok and s and s ~= "" then game_names[t] = s; return s end
+    return nil
+end
+
 local function room_name(t)
     local raw = raw_name(t)
+    if KEEP[raw] then return NAMES[raw] end
+    local g = game_name(t)
+    if g then return g end
     if NAMES[raw] then return NAMES[raw] end
     raw = raw:gsub("^Tutorial_", "")
     -- AstrometricsLaboratory -> Astrometrics laboratory

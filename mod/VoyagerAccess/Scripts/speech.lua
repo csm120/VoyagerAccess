@@ -63,6 +63,9 @@ function M.say(text, interrupt)
     -- "Severely Injured & Sick" (Sickbay patients, VM, 2026-10-16): with
     -- punctuation off a screen reader may say nothing for the "&".
     text = text:gsub("%s+&%s+", " and ")
+    -- Species 8472 is said digit by digit, as the crew and the Borg say it,
+    -- not "eight thousand four hundred..." (Casey, 2026-10-17).
+    text = text:gsub("%f[%d]8472%f[%D]", "8 4 7 2")
     -- Brackets round a name: "the [TECH TREE]" (room descriptions) and
     -- "[Sick bay] got damaged" (a sabotage toast), VM, 2026-10-16.
     -- Placeholders like "[{Shuttle}]" are left to their readers.

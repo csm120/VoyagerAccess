@@ -192,7 +192,9 @@ function M.abilities()
                 elseif (ab.CooldownLeft or 0) > 0 then
                     state = "ready in " .. seconds(ab.CooldownLeft)
                 end
-                list[#list + 1] = { i = x.Index, text = string.format("%d, %s, %s, %s", x.Index + 1, name, hero, state) }
+                local okv, vis = pcall(function() return require("screen").shown(x) end)
+                list[#list + 1] = { i = x.Index, key = x.Index .. "|" .. name .. "|" .. hero, shown = okv and vis,
+                    text = string.format("%d, %s, %s, %s", x.Index + 1, name, hero, state) }
             end)
         end
     end
@@ -200,10 +202,20 @@ function M.abilities()
     -- With one hero for three slots, all three ability widgets held Harry
     -- Kim's: "1, Shield Hacking, Harry Kim" three times (Culluh battle,
     -- VM, 2026-10-16). One line per text.
+    -- And by slot, ability and hero, not the whole line: two widgets for
+    -- slot 3 gave "Holographic Distraction, The Doctor, ready in 2 seconds"
+    -- and "... ready in 15 seconds" (bio-ship battle, VM, 2026-10-17). The
+    -- one on screen wins.
     do
         local seen, kept = {}, {}
         for _, it in ipairs(list) do
-            if not seen[it.text] then seen[it.text] = true; kept[#kept + 1] = it end
+            local k = seen[it.key]
+            if not k then
+                seen[it.key] = #kept + 1
+                kept[#kept + 1] = it
+            elseif it.shown and not kept[k].shown then
+                kept[k] = it
+            end
         end
         list = kept
     end

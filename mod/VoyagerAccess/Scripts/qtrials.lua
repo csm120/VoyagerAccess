@@ -251,6 +251,11 @@ local function ship_tabs(wpath)
 end
 
 local function tab_locked(b)
+    -- The lock box itself (Locker_HB), not the word: "Locked" is
+    -- translated, and it is a CommonTextBlock, which FindAllOf("TextBlock")
+    -- does not return (outside review, 2026-10-17).
+    local okh, shown = pcall(function() return b.Locker_HB and b.Locker_HB:IsValid() and screen.shown(b.Locker_HB) end)
+    if okh and shown ~= nil then return shown == true end
     local prefix = path_of(b) .. "."
     for _, t in ipairs(FindAllOf("TextBlock") or {}) do
         local tp = t:IsValid() and path_of(t)

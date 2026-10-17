@@ -2,6 +2,26 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.41
+
+From the campaign's sector 7, and a careful outside review by Firefly. Thank you!
+
+- New: in battle, choosing an order says so, like "Repair Weapons ordered" or "Targeting Warp Core".
+- New: the Workshop says "Crafting Torpedo started" when you start a blueprint.
+- Changed: rooms use the game's own names, so the ship view matches everything else ("Navigational Deflector", "Bio Laboratory", "Shield Generator"), and the names follow the game's language.
+- Changed: Species 8472 is said "8 4 7 2", the way the crew says it.
+- Fixed: after answering a call, a No Way Back warning that came up couldn't be answered, because its YES and NO couldn't be reached. They can now.
+- Fixed: Escape could leave the Overview half open, so it said nothing the next time you opened it.
+- Fixed: the Workshop said "No blueprints to craft" while blueprints were listed.
+- Fixed: the battle status could list the same hero ability twice.
+- Fixed: a locked ship in the Q Trials setup wasn't said as locked.
+- Fixed: on an away mission, a choice with no heroes listed now says so instead of saying nothing.
+- Fixed: the DLC cards relied on the English word "Installed", so in other languages Enter on a DLC you own could open its store page.
+- Fixed: UE4SS came with its developer keys switched on, and Ctrl+J or Ctrl+H could freeze the game. They're off now.
+- Changed: the game log now lists the keys you press, so a report shows what happened just before a problem.
+
+## Saturday October 17th 2026
+
 Version 0.3.40
 
 More from the Scorpion sector, mostly about knowing why things happen.

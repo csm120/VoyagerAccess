@@ -182,10 +182,13 @@ function M.research_label(path)
         -- With no blueprints the list below shows "currently no craftable
         -- blueprints" (only "currently no" is a text widget), and Down had
         -- nowhere to go without a word (VM, 2026-10-15).
-        local mp = path:match("^(.-WBP_Workshop_CraftModule_C_%d+)%.")
-        local none = false
-        for _, text in pairs(mp and texts_under(mp) or {}) do
-            if text:lower():find("^currently no%s+craftable") then none = true end
+        -- By the blueprint buttons shown, not the words: the text matched
+        -- with two blueprints listed ("No blueprints to craft" beside Bio-
+        -- Molecular Disruptor and Torpedoes, VM, 2026-10-17), and it was
+        -- English only.
+        local none = true
+        for _, ib in ipairs(FindAllOf("WBP_ItemButton_C") or {}) do
+            if ib:IsValid() and path_of(ib):find("^/Engine/Transient%.") and screen.shown(ib) then none = false end
         end
         if none then label = label:gsub("%.$", "") .. ". No blueprints to craft" end
         return label .. "."
@@ -210,6 +213,18 @@ function M.research_label(path)
         local label = "Unexplored: " .. (by.AnalysisName or "unknown")
         if by.CyclesText and by.CyclesText:match("%d") then label = label .. ", " .. by.CyclesText .. " cycles to analyze" end
         return label .. "."
+    end
+    return nil
+end
+
+-- What the open Workshop is crafting now (the CraftingButton's
+-- ResearchName), or nil: Enter on a blueprint said nothing (VM, 2026-10-17).
+function M.crafting_now()
+    for _, m in ipairs(FindAllOf("WBP_Workshop_CraftModule_C") or {}) do
+        if m:IsValid() and path_of(m):find("^/Engine/Transient%.") and screen.shown(m) then
+            local ok, s = pcall(function() return plain(text_of(m.CraftingButton.ResearchName)) end)
+            if ok and s and s ~= "" then return s end
+        end
     end
     return nil
 end
