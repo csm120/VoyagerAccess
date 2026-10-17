@@ -1659,11 +1659,23 @@ local function poll()
                 text = text:gsub(":%s*(%a+)(%.?)$", function(w, dot)
                     return SIDES[w] and (": " .. SIDES[w] .. dot) or nil
                 end)
+                -- "Subsystem Destroyed: Weapons" did not say whose.
+                local sys = text:match("Subsystem Destroyed:%s*([%a ]-)%.?$")
+                local low = false
+                if not sys then
+                    sys = text:match("Subsystem HP low:%s*([%a ]-)%.?$")
+                    low = sys ~= nil
+                end
+                local okw, owner = pcall(function() return sys and require("combat").destroyed_owner(sys, low) end)
+                if okw and owner then text = text:gsub(":%s*" .. sys, ": " .. owner .. "'s " .. sys, 1) end
             end
             if p:find("FewerHeroesConfirmWidget", 1, true) then
                 -- Also after the title: "Warning. Return. Continue. You
                 -- still have unassigned slots" (battle setup, VM, 2026-10-16).
                 text = text:gsub("Continue%. Return%. ", ""):gsub("Return%. Continue%. ", "")
+                -- Sometimes only one of them: "Warning. Continue. You still
+                -- have unassigned slots" (Q Trial, VM, 2026-10-16).
+                text = text:gsub("^(Warning%.) Continue%. ", "%1 "):gsub("^(Warning%.) Return%. ", "%1 ")
             end
             -- The away mission summary counts up as it fills in, and was
             -- read three times over (2026-10-14): it is read once its text

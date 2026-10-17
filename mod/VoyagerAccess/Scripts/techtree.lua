@@ -144,6 +144,7 @@ local function refresh(keep_index)
 end
 
 function M.step(dir)
+    require("crumb").at("techtree: step")
     if list.items[list.index + dir] then list.index = list.index + dir end
     say(true)
 end
@@ -302,6 +303,9 @@ function M.switch_tab(dir)
 end
 
 local function poll()
+    -- A crash in the open tree left only "popups: scan" as the last crumb
+    -- (Q Trial, VM, 2026-10-16), so this poll marks itself too.
+    require("crumb").at("techtree: poll")
     local now = open_now()
     if now and not list then
         if refresh(false) then

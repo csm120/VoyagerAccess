@@ -1105,6 +1105,8 @@ label_for = function(b, path)
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
         label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
+    elseif cls == "WBP_BioLab_Production_ItemDisplay_C" then
+        label = require("rooms").biolab_item_label(b)
     elseif cls == "WBP_LeaveSectorEntry_C" then
         label = require("popups").leave_sector_entry(b)
     elseif path:find("WBP_MetaProgressionReward_C_%d+%.WidgetTree_%d+%.Button$") then
@@ -1293,6 +1295,20 @@ local function poll()
     -- In battle the hidden hero setup's slot kept keyboard focus, so the
     -- order wheel's button list never came up (2026-10-14).
     if b and require("combat").active() and not require("screen").shown(b) then b = nil end
+    -- The same in a room window after a tab switch: focus stayed on the
+    -- hidden Management page's Upgrade button, and the Engineering Office's
+    -- Work Team Info tab (hull repair) could not be reached (VM, 2026-10-16).
+    if b and not require("screen").shown(b) then
+        local room_open = false
+        for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
+            if w:IsValid() and live(w) and require("screen").shown(w) then room_open = true end
+        end
+        if room_open then
+            print("[VoyagerAccess] focus: hidden " .. tostring((path_of(b) or ""):match("([^%.]+)$")) .. " in a room window, parked\n")
+            M.park_focus()
+            b = nil
+        end
+    end
     -- Main menu: Down past the last setting moved focus to the DLC tiles
     -- behind Settings, and after leaving Settings, to its hidden tabs
     -- (full game, 2026-10-14). Focus on a hidden main menu button goes

@@ -2,6 +2,18 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.34
+
+Room tabs, hull repair and the Bio Laboratory.
+
+- Fixed: after switching tabs in a room's window, the arrows could stay stuck on the tab you left. The Engineering Office's Work Team Info tab, where work teams are put on hull repair, couldn't be reached at all. The new tab's buttons now take the arrows.
+- Changed: the Work Team Info tab says how fast the hull is being repaired and what it costs, along with the hull itself, like "Hull repair per cycle +3 hull, -1 duranium. Hull 9, -9 per cycle."
+- Changed: the Bio Laboratory reads what it's making and its blueprints, like "1 bio-neural gel pack, selected. Costs 120 food, 20 duranium. 20 cycles". Before, it said "+1, 20, 120".
+- Fixed: in battle, L said "X torpedoes" when the torpedo bay wasn't working. It says "no torpedoes" now.
+- Fixed: the warning about empty hero slots before a battle said "Continue" before its message.
+
+## Friday October 16th 2026
+
 Version 0.3.33
 
 Restart Sector, the Sickbay and a few readings.

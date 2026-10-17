@@ -575,6 +575,100 @@ end
 -- when there is none), none of it focusable, so only "Crew Info tab" was
 -- said (Emergency quarters, VM, 2026-10-15). "Inhabitants 12 of 12: Jelan
 -- K'Var, injured; Jacob Baker, Science Laboratory; ...", or nil.
+-- Bio Laboratory tab (WBP_BioLab, built and opened in the campaign, VM,
+-- 2026-10-16). Every amount is a number beside an icon, so the blueprint
+-- read "(selected), +1, 20, 120": its product is ResourceIcon's material
+-- (MI_UI_BioNeuralGelPack_white), its costs WBP_ResourceCostWidget
+-- children (ResourceImg, Amount), Duration the cycles. ItemName_TXT keeps a
+-- designer placeholder ("#Crystalline Nucleogenic Compound") and is hidden.
+local function icon_of(img)
+    local name = nil
+    pcall(function()
+        local r = img.Brush.ResourceObject
+        if r and r:IsValid() then name = require("text").icon_name(r:GetFName():ToString()) end
+    end)
+    return name
+end
+
+local function amount_of(n, what)
+    n = tostring(n or ""):gsub("^%+", "")
+    if not what then return n end
+    if n == "1" then what = what:gsub("s$", "") end
+    return n .. " " .. what
+end
+
+function M.biolab_item_label(b)
+    local parts = { amount_of(plain(text_of(b.ResourceAmount)), icon_of(b.ResourceIcon) or "item") }
+    if screen.shown(b.Selected_TXT) then parts[#parts + 1] = "selected" end
+    if screen.shown(b.ProdOnHold_Container) then parts[#parts + 1] = "on hold" end
+    local costs = {}
+    pcall(function()
+        local root = b.CraftingCostRoot
+        for i = 0, root:GetChildrenCount() - 1 do
+            local c = root:GetChildAt(i)
+            if c and c:IsValid() and screen.shown(c) then
+                costs[#costs + 1] = amount_of(plain(text_of(c.Amount)), icon_of(c.ResourceImg))
+            end
+        end
+    end)
+    local out = table.concat(parts, ", ")
+    if #costs > 0 then out = out .. ". Costs " .. table.concat(costs, ", ") end
+    local d = plain(text_of(b.Duration))
+    if d:match("^%d+$") then out = out .. ". " .. amount_of(d, "cycles") end
+    return out
+end
+
+-- The crafting slot at the top of the tab, or nil when the tab is not shown.
+function M.biolab_text()
+    local lab = nil
+    for _, w in ipairs(FindAllOf("WBP_BioLab_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then lab = w end
+    end
+    if not lab then return nil end
+    if screen.shown(lab.NoRequirementYet_Crafting_Overlay) then return "Crafting: nothing" end
+    local item = amount_of(plain(text_of(lab.ResourceAmount)), icon_of(lab.ResourceIcon) or "item")
+    local out = "Crafting " .. item
+    if screen.shown(lab.Paused_IMG) or screen.shown(lab.ProdOnHold_Container) then out = out .. ", on hold" end
+    local left = plain(text_of(lab.RemainigCyclesCount_Text))
+    if left:match("^%d+$") then out = out .. ", " .. amount_of(left, "cycles") .. " left" end
+    return out .. "."
+end
+
+-- The Engineering Office's Work Team Info tab: "Hull Repair rate per
+-- cycle" with +3 (HullRepairEffectText) and -1 beside a duranium icon
+-- (WBP_ResourceChangeDisplay), never read (hull at 9 and falling, VM,
+-- 2026-10-16). Said with the ship's hull from the header.
+function M.workteams_text()
+    local m = nil
+    for _, w in ipairs(FindAllOf("WBP_EngineeringOffice_ManageWorkTeamsModule_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then m = w end
+    end
+    if not m then return nil end
+    local out = {}
+    local rate = plain(text_of(m.HullRepairEffectText))
+    if rate:match("%d") then
+        local s = "Hull repair per cycle " .. rate .. " hull"
+        local okc, cost = pcall(function()
+            local d = m.WBP_ResourceChangeDisplay
+            if not screen.shown(d) then return nil end
+            return plain(text_of(d.AmountText)) .. " " .. (icon_of(d.ResourceIcon) or "")
+        end)
+        if okc and cost and cost:match("%d") then s = s .. ", " .. cost:gsub("%s+$", "") end
+        out[#out + 1] = s
+    end
+    pcall(function()
+        for _, h in ipairs(FindAllOf("WBP_HullIntegrity_C") or {}) do
+            if h:IsValid() and screen.shown(h) then
+                local cur, per = plain(text_of(h.CurrentHullValue)), plain(text_of(h.HullValuePerCycle))
+                if cur:match("%d") then
+                    out[#out + 1] = "Hull " .. cur .. (per:match("%d") and (", " .. per .. " per cycle") or "")
+                end
+            end
+        end
+    end)
+    return #out > 0 and (table.concat(out, ". ") .. ".") or nil
+end
+
 function M.crew_text()
     local module = nil
     for _, w in ipairs(FindAllOf("WBP_CrewQuartersInteraction_C") or {}) do
@@ -783,6 +877,8 @@ function M.switch_tab(dir)
                         local t = name:lower():find("patient", 1, true) and M.patients_text()
                             or name:lower():find("trading", 1, true) and M.trading_text()
                             or name:lower():find("crew", 1, true) and M.crew_text()
+                            or name:lower():find("bio", 1, true) and M.biolab_text()
+                            or name:lower():find("work team", 1, true) and M.workteams_text()
                         if t then require("speech").say(t, false) end
                     end)
                     pcall(function()
@@ -829,7 +925,7 @@ function M.window_text(path)
     if not (okp and patients) and not (okc and crew) then
         ExecuteInGameThreadWithDelay(600, function()
             pcall(function()
-                local t = M.patients_text() or M.crew_text()
+                local t = M.patients_text() or M.crew_text() or M.biolab_text() or M.workteams_text()
                 if t then require("speech").say(t, false) end
             end)
         end)

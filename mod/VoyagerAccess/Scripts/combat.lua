@@ -266,7 +266,12 @@ function M.status()
     order = order:gsub(", (%a+)$", function(s) return SIDES[s] and (", " .. SIDES[s]) or nil end)
     if order ~= "" then parts[#parts + 1] = "Order: " .. title(order) end
     local okt, ammo = pcall(function() return plain(text_of(w.FireControlWidget.CT_TorpedoAmmo)) end)
-    if okt and ammo ~= "" then parts[#parts + 1] = ammo .. " torpedoes" end
+    -- With a damaged Torpedo Launch Bay the counter keeps its placeholder
+    -- "X" ("X torpedoes", Q Trial, VM, 2026-10-16).
+    if okt and ammo ~= "" then
+        local n = ammo:match("^%d+$")
+        parts[#parts + 1] = n and (n .. (n == "1" and " torpedo" or " torpedoes")) or "no torpedoes"
+    end
     local abilities = M.abilities()
     if abilities then parts[#parts + 1] = abilities end
     local nrg = M.energy_text()
@@ -282,6 +287,29 @@ end
 -- A repair item says only the system's health ("Repair Weapons, health
 -- 20"); the player's panel has its maximum ("Weapons 20 of 25"). The names
 -- differ a little ("Repair Engine", "Engines"), so they are matched by start.
+-- Whose subsystem a "Subsystem Destroyed: Weapons" toast means: the toast
+-- does not say, and it was Voyager's (Q Trial, VM, 2026-10-16). The ship
+-- whose panel shows that subsystem at 0, Voyager first; nil if neither.
+-- With low set ("Subsystem HP low: Shields", VM, 2026-10-16), the ship
+-- whose matching subsystem is lower as a share of its maximum.
+function M.destroyed_owner(sys, low)
+    local w = main()
+    if not w then return nil end
+    local best, best_share = nil, math.huge
+    for _, view in ipairs({ w.PlayerView, w.EnemyView }) do
+        for _, s in ipairs(panel_subsystems(view) or {}) do
+            local name, cur, max = s:match("^(.-) (%d+) of (%d+)$")
+            local a, b = name and name:lower() or "", sys:lower()
+            if name and (a == b or a:sub(1, #b) == b or b:sub(1, #a) == a) then
+                local share = tonumber(cur) / math.max(tonumber(max), 1)
+                if not low and cur == "0" then return title(plain(text_of(view.ShipNameText))) end
+                if low and share < best_share then best, best_share = title(plain(text_of(view.ShipNameText))), share end
+            end
+        end
+    end
+    return best
+end
+
 function M.repair_label(label)
     -- Already done (button_label, then the window list's own pass).
     if label:find("health %d+ of %d+") then return nil end
@@ -290,8 +318,10 @@ function M.repair_label(label)
     local w = main()
     local subs = w and panel_subsystems(w.PlayerView)
     for _, s in ipairs(subs or {}) do
-        local name, cur, max = s:match("^(.-) (%d+) of (%d+)$")
-        if name and cur == hp then
+        -- By name only: the panel rounds (Warp Core 116) where the button
+        -- says 115, and the maximum was left out (VM, 2026-10-16).
+        local name, max = s:match("^(.-) %d+ of (%d+)$")
+        if name then
             local a, b = name:lower(), sys:lower()
             if a:sub(1, #b) == b or b:sub(1, #a) == a then
                 return (label:gsub(", health %d+", ", health " .. hp .. " of " .. max, 1))
@@ -358,8 +388,13 @@ local function abilities_poll()
                 elseif (ab.CooldownLeft or 0) > 0 then state = "cooldown" end
                 local was = ability_state[key]
                 ability_state[key] = state
-                if was and was ~= state and state ~= "cooldown" then
-                    local text = string.format("%s %s", plain(ab.AbilityName:ToString()), state)
+                -- An instant ability goes straight from ready to its
+                -- cooldown and said nothing (System Recharge, VM,
+                -- 2026-10-16): that is "used".
+                local said = state
+                if was == "ready" and state == "cooldown" then said = "used" end
+                if was and was ~= state and said ~= "cooldown" then
+                    local text = string.format("%s %s", plain(ab.AbilityName:ToString()), said)
                     print("[VoyagerAccess] combat: " .. text .. "\n")
                     speech.say(text, false)
                 end
