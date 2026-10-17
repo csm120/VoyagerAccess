@@ -120,18 +120,26 @@ end
 -- to the Mess Hall." Every step re-read the whole list, five missions long,
 -- when one goal was ticked off (State of Flux, VM, 2026-10-15). nil when
 -- nothing but counts changed.
+-- A goal whose only change is a number ("-5 FOOD per cycle" became "-10
+-- FOOD per cycle") was said as "Done:" and then as a new objective
+-- (Tribble Trouble, VM, 2026-10-17). It is said as changed instead.
+local function shape(s) return (bare(s):gsub("[%+%-]?%d[%d,%.]*", "#")) end
+
 function M.changes(old, new)
     local function index(list)
-        local missions, goals = {}, {}
+        local missions, goals, shapes = {}, {}, {}
         for _, m in ipairs(list) do
             local key = bare(m.name)
             missions[key] = true
-            for _, g in ipairs(m.goals) do goals[key .. "\0" .. bare(g)] = true end
+            for _, g in ipairs(m.goals) do
+                goals[key .. "\0" .. bare(g)] = true
+                shapes[key .. "\0" .. shape(g)] = true
+            end
         end
-        return missions, goals
+        return missions, goals, shapes
     end
-    local old_m, old_g = index(old)
-    local new_m, new_g = index(new)
+    local old_m, old_g, old_s = index(old)
+    local new_m, new_g, new_s = index(new)
     local parts = {}
     local done, ended = {}, {}
     for _, m in ipairs(old) do
@@ -140,7 +148,7 @@ function M.changes(old, new)
             ended[#ended + 1] = m.name ~= "" and m.name:gsub(", %d+ cycles? left", "") or table.concat(m.goals, ". ")
         else
             for _, g in ipairs(m.goals) do
-                if not new_g[key .. "\0" .. bare(g)] then done[#done + 1] = bare(g) end
+                if not new_g[key .. "\0" .. bare(g)] and not new_s[key .. "\0" .. shape(g)] then done[#done + 1] = (g:gsub("%s*%([%d,]+/[%d,]+%)", "")) end
             end
         end
     end
@@ -148,9 +156,16 @@ function M.changes(old, new)
     if #ended > 0 then parts[#parts + 1] = (#ended == 1 and "Mission ended: " or "Missions ended: ") .. table.concat(ended, ", ") end
     for _, m in ipairs(new) do
         local key = bare(m.name)
-        local added = {}
+        local added, changed = {}, {}
         for _, g in ipairs(m.goals) do
-            if not old_g[key .. "\0" .. bare(g)] then added[#added + 1] = g end
+            if not old_g[key .. "\0" .. bare(g)] then
+                if old_m[key] and old_s[key .. "\0" .. shape(g)] then changed[#changed + 1] = g
+                else added[#added + 1] = g end
+            end
+        end
+        if #changed > 0 then
+            local name = (m.name:gsub(", %d+ cycles? left", ""))
+            parts[#parts + 1] = "Changed: " .. (name ~= "" and (name .. ": ") or "") .. table.concat(changed, ". ")
         end
         if #added > 0 then
             local goals = table.concat(added, ". ")
@@ -200,6 +215,11 @@ local function poll()
                 -- read once even when it is the one just left (nothing was
                 -- said after the wait for the list to fill, 2026-10-15).
                 last = nil
+                -- And quiet for a while after it closes: between Reload
+                -- Save and the loading screen the lost game's missions were
+                -- read again, and the save then came out as "Done: Accept
+                -- COMMS request. Missions ended: ..." (VM, 2026-10-17).
+                loaded_at = os.clock() + 8
                 return
             end
         end

@@ -1885,8 +1885,41 @@ local function adopt_subclasses()
     end
 end
 
+-- The save notification ("autosave", WBP_SavegameNotification, seen unread
+-- in the VM log, 2026-10-17): a manual save said nothing at all. Queued, so
+-- it never cuts off what is being read.
+local save_shown = false
+local function save_poll()
+    local shown_now, text = false, nil
+    for _, w in ipairs(FindAllOf("WBP_SavegameNotification_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            shown_now = true
+            local prefix = path_of(w) .. "."
+            for _, cls in ipairs(TEXT_CLASSES) do
+                for _, t in ipairs(FindAllOf(cls) or {}) do
+                    local tp = t:IsValid() and path_of(t)
+                    if not text and tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
+                        local s = t:GetText():ToString():gsub("^%s+", ""):gsub("%s+$", "")
+                        if s ~= "" then text = s end
+                    end
+                end
+            end
+        end
+    end
+    if shown_now and not save_shown then
+        local say = text and (text:sub(1, 1):upper() .. text:sub(2)) or "Saving"
+        print("[VoyagerAccess] save: " .. say .. "\n")
+        speech.say(say, false)
+    end
+    save_shown = shown_now
+end
+
 function M.install()
     load_announced()
+    LoopInGameThreadWithDelay(500, function()
+        local ok, err = pcall(save_poll)
+        if not ok then print("[VoyagerAccess] save poll error: " .. tostring(err) .. "\n") end
+    end)
     LoopInGameThreadWithDelay(3000, function()
         local ok, err = pcall(adopt_subclasses)
         if not ok then print("[VoyagerAccess] popups adopt error: " .. tostring(err) .. "\n") end

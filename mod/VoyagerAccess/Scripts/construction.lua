@@ -261,13 +261,6 @@ function M.enter(b, label)
         speech.say("This space is no longer empty. Escape closes the ring.", true)
         return true
     end
-    -- The ring says what stops it ("Missing resources", "Missing
-    -- technology", "No available work team"); ConfirmBuild would not check.
-    if label and (label:find("Missing", 1, true) or label:find("No available", 1, true)
-        or label:find("Not possible", 1, true)) then
-        speech.say("Cannot build. " .. label, true)
-        return true
-    end
     -- Where it fits first: that reason is more exact than the game's
     -- "Not possible now" (review, 2026-10-16).
     local start = M.fit(hull, M.extent(cmd.RoomType))
@@ -275,8 +268,10 @@ function M.enter(b, label)
         speech.say("Cannot build here. " .. M.fit_text(b), true)
         return true
     end
-    -- The game's own check, for when the reading came from the data and the
-    -- label has no reason in it.
+    -- The game's own check, now. The ring's reading can be out of date:
+    -- with the duranium just in, "Cannot build. Missing resources" was said
+    -- from it (VM, 2026-10-17). The reading is used only when the check
+    -- cannot be made.
     local cm0 = FindFirstOf("STVConstructionManager")
     local okb, why = pcall(function()
         local rc = StaticFindObject(ROOM_CONFIG)
@@ -288,6 +283,11 @@ function M.enter(b, label)
     end)
     if okb and why then
         speech.say("Cannot build. " .. why, true)
+        return true
+    end
+    if not okb and label and (label:find("Missing", 1, true) or label:find("No available", 1, true)
+        or label:find("Not possible", 1, true)) then
+        speech.say("Cannot build. " .. label, true)
         return true
     end
     -- The name as the ring reads it; CommandName is internal ("Build

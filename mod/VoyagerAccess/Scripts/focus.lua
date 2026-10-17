@@ -22,6 +22,7 @@ local back_stack = {}
 local pending_click = nil    -- { button = path, menu = path, polls = n }
 local click
 local label_for
+local confirm_order
 local restore_focus
 
 local function path_of(obj)
@@ -804,6 +805,32 @@ local function ring_back(path)
     return false
 end
 
+-- An order in battle: the wheel closed and nothing was said, so Repair
+-- Warp Core seemed not to take (VM, 2026-10-17). Once the wheel has gone
+-- (a submenu such as Initiate Repairs keeps it open), say the order. The
+-- repair segments are WBP_RadialButtonCombatRepair and are pressed through
+-- the window button list.
+local ORDER_CLASSES = { WBP_RadialButtonCombatOffensive_C = true, WBP_RadialButtonCombatRepair_C = true,
+    WBP_RadialButton_C = true }
+confirm_order = function(b, path, said)
+    pcall(function()
+        if not (ORDER_CLASSES[b:GetClass():GetFName():ToString()] and require("combat").active()) then return end
+        said = said or radial_said[path]
+        if not said and require("combat").handles(b, path) then said = require("combat").button_label(b, path) end
+        if not said then said = label_for(b, path) end
+        local name = said and said:match("^([^,%.]+)")
+        if not name or name:find("^Back") then return end
+        ExecuteInGameThreadWithDelay(900, function()
+            pcall(function()
+                for _, m in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+                    if m:IsValid() and path_of(m):find("^/Engine/Transient%.") and require("screen").shown(m) then return end
+                end
+                speech.say(name .. " ordered", false)
+            end)
+        end)
+    end)
+end
+
 function M.virtual_enter()
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
@@ -826,6 +853,7 @@ function M.virtual_enter()
     print("[VoyagerAccess] enter: window button " .. virtual.buttons[virtual.index] .. "\n")
     local bpath = virtual.buttons[virtual.index]
     local okb, before = pcall(label_for, b, bpath)
+    confirm_order(b, bpath, okb and before or nil)
     click(b)
     -- A button whose wording changes said nothing: the Engineering
     -- Office's "Unassign from hull repair" became "Assign to hull repair"
@@ -1059,8 +1087,15 @@ local function wire_rows(path)
         -- Not disabled buttons: a Q Trials ambush disables Surrender and
         -- Use Cloak, Down from the last slot went onto Surrender, and focus
         -- could not leave it (VM, 2026-10-16).
+        -- Nor the Science Laboratory's Analysis button with no analysis
+        -- running: not focusable, counted ("1 of 2"), and Down never reached
+        -- it (VM, 2026-10-17). Only there: the room's Dismantle and Upgrade
+        -- also say not focusable, and focus does reach them.
         local enabled = true
-        pcall(function() enabled = b:GetIsEnabled() end)
+        pcall(function()
+            enabled = b:GetIsEnabled()
+            if enabled and path_of(b):find("WBP_ScienceLab_ResearchModule_C", 1, true) then enabled = b:GetIsFocusable() end
+        end)
         if enabled and not require("warpcore").handles(path_of(b)) then list[#list + 1] = b end
     end
     -- Focus on a disabled button moves on to the next usable one the way
@@ -1910,15 +1945,29 @@ local function activate()
         end)
         return
     end
+    confirm_order(b, current, radial_said[current])
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then
         -- A segment the game has locked (bLocked): Clear Debris with no life
         -- support did nothing and said nothing on Enter (VM, 2026-10-15).
         -- Say why, from what the ring said for it ("Clear Debris. No Life
         -- Support. ...").
         local okl, locked = pcall(function() return b.bLocked == true end)
+        -- A room to build is checked by construction.enter from the game's
+        -- data; its lock flag can be stale (still set after the duranium
+        -- came in, VM, 2026-10-17).
+        local okr, room = pcall(require("construction").command_of, b)
+        if okr and room then locked = false end
         if okl and locked then
             local said = radial_said[current] or ""
             local name, why = said:match("^([^%.]+)%.%s*([^%.]+)")
+            -- Only a reason the ring gave ("No Life Support", "Missing
+            -- resources: ..."): a segment still locked from before the
+            -- resources came in said "Not possible: Accommodates 10 CREW
+            -- ..." (VM, 2026-10-17). Closing and opening the ring again
+            -- clears that lock.
+            if why and not (why:find("^Missing") or why:find("^No ") or why:find("^Not ")) then
+                why = "the ring may be out of date, Escape and open it again"
+            end
             speech.say("Not possible" .. (why and (": " .. why) or "") .. (name and (". " .. name) or ""), true)
             return
         end

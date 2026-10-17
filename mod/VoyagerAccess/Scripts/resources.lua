@@ -52,6 +52,38 @@ local function lines()
             if change:match("^[%+%-]%d") then
                 t = t .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
             end
+            -- Where the change comes from, as the hull's hover tooltip shows
+            -- it: "minus 12 per cycle" with no reason left no way to tell
+            -- that the offline deflector cost 15 a cycle (VM, 2026-10-17;
+            -- HullDepletionMovement is the tooltip's "Deflector Offline", and
+            -- it applies standing still too). Out parameters of
+            -- STVConstructionManager:GetNextCycleHullChangeInfo.
+            pcall(function()
+                local cm = FindFirstOf("STVConstructionManager")
+                local mv, ph, df, rp, cost, tm, rm, am = {}, {}, {}, {}, {}, {}, {}, {}
+                cm:GetNextCycleHullChangeInfo(mv, ph, df, rp, cost, tm, rm, am)
+                local why = {}
+                local function add(name, n, sign)
+                    n = math.floor((tonumber(n) or 0) * sign + 0.5)
+                    if n > 0 then why[#why + 1] = name .. " plus " .. n
+                    elseif n < 0 then why[#why + 1] = name .. " minus " .. -n end
+                end
+                -- A working deflector deflects the same amount ("minus 15,
+                -- deflected plus 15" once repaired), so only the rest counts.
+                local offline = (tonumber(mv.HullDepletionMovement) or 0) - (tonumber(df.DeflectedHullDamage) or 0)
+                add("deflector offline", math.max(offline, 0), -1)
+                add("plasma storm or asteroid field", ph.HullDepletionPhenomena, -1)
+                add("repairs", rp.HullRepair, 1)
+                add("rooms", rm.RoomHullChange, 1)
+                add("Q", am.AmusementHullChange, 1)
+                if #why > 0 then t = t .. ": " .. table.concat(why, ", ") end
+                -- Which state the Main Deflector is in (Damaged on deck 14,
+                -- VM, 2026-10-17), so you know what to fix.
+                if offline > 0 then
+                    local st = require("ship").state_of("MainDeflector")
+                    if st and st ~= "on" then t = t .. ". Main deflector " .. st:lower() end
+                end
+            end)
             return t
         end)
         if ok and text ~= "Hull " then parts[#parts + 1] = text end

@@ -368,6 +368,17 @@ function M.where()
     return i and describe(list[i], true) or nil
 end
 
+-- The state of the first room of a raw type ("MainDeflector"): "Damaged",
+-- "off", "on" and so on, or nil when the ship has none. For the hull line
+-- in C (resources.lua).
+function M.state_of(raw)
+    for _, r in ipairs(rooms()) do
+        local t = r.hull:GetRoomType()
+        if raw_name(t) == raw then return room_state(r.hull, raw) end
+    end
+    return nil
+end
+
 -- Enter: what a mouse click on the room does.
 function M.open()
     crumb.at("ship: open")

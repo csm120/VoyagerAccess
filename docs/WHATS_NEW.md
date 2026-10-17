@@ -2,6 +2,20 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.40
+
+More from the Scorpion sector, mostly about knowing why things happen.
+
+- New: C now says why the hull is changing, like "Hull 57, minus 12 per cycle: deflector offline minus 15, repairs plus 3. Main deflector damaged." Before, you only heard the total.
+- New: saving says so. You hear "Manual Save" after saving from the menu, and "Autosave" when the game saves by itself.
+- Fixed: when only a number in an objective changed, like "-10 FOOD per cycle" becoming "-20", it was said as "Done:" and then as a new objective. It's now said once as "Changed:".
+- Fixed: after a Game Over and Reload Save, the objectives could say "Done:" or "Mission ended" for things from the game you'd just lost. They're read once, fresh, after the reload.
+- Fixed: a finished task that had a countdown in it was said with the number missing ("within CYCLES").
+- Fixed: the construction ring could refuse a room you could now afford, if the resources came in while the ring was open, and once it gave the room's description as the reason. It checks the game's current data when you press Enter.
+- Fixed: the Science Laboratory said "1 of 2" when no analysis was running, though the second item couldn't be reached.
+
+## Saturday October 17th 2026
+
 Version 0.3.39
 
 More fixes from the campaign's Scorpion sector.
