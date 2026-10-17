@@ -488,7 +488,8 @@ function M.step(path, dir)
     for i, p in ipairs(list) do
         if p == path then
             local t = list[i + dir] and StaticFindObject(list[i + dir])
-            local okE, en = pcall(function() return t:GetIsEnabled() end)
+            -- Valid first: a null object's method can crash past pcall.
+            local okE, en = pcall(function() return valid(t) and t:GetIsEnabled() end)
             if valid(t) and okE and en == false then
                 t:SetFocus()
                 return true

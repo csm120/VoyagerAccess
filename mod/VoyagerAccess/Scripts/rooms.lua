@@ -216,7 +216,8 @@ function M.serving_label(path)
     end
     -- The window describes only the ration in use: say it with that one.
     local b = StaticFindObject(path)
-    local ok, sel = pcall(function() return b:GetSelected() end)
+    -- Valid first: a null object's method can crash past pcall.
+    local ok, sel = pcall(function() return b and b:IsValid() and b:GetSelected() end)
     if ok and sel then
         label = label .. ", selected"
         -- One widget can be found under two class names: keep one text per
@@ -669,6 +670,51 @@ function M.workteams_text()
     return #out > 0 and (table.concat(out, ". ") .. ".") or nil
 end
 
+-- The Bridge's Combat Allies tab (WBP_Bridge_CombatAllyModule): "Combat
+-- ally. Currently no combat allies recruited. Recruit. Currently no
+-- recruitable combat allies", none of it read (demo, VM, 2026-10-16). Its
+-- texts in screen order; allies themselves are buttons in the window list.
+-- Texts in widget-tree order, which follows the layout (the shared reader
+-- gave both headings first, then both messages). "= COMBAT POWER" is an
+-- icon's legend and is left out.
+local function tree_texts(root)
+    local out = {}
+    local function walk(w, depth)
+        if depth > 30 or not (w and w:IsValid()) or not screen.shown(w) then return end
+        local okt, s = pcall(function() return w:GetText():ToString() end)
+        if okt and type(s) == "string" then
+            s = plain(s)
+            if s ~= "" and not s:match("^=") then out[#out + 1] = s end
+            return
+        end
+        local okn, n = pcall(function() return w:GetChildrenCount() end)
+        if okn and type(n) == "number" then
+            for i = 0, n - 1 do
+                local okc, c = pcall(function() return w:GetChildAt(i) end)
+                if okc then walk(c, depth + 1) end
+            end
+            return
+        end
+        local okr, r = pcall(function() return w.WidgetTree.RootWidget end)
+        if okr and r then walk(r, depth + 1) end
+    end
+    walk(root, 0)
+    return out
+end
+
+function M.allies_text()
+    for _, w in ipairs(FindAllOf("WBP_Bridge_CombatAllyModule_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            local parts = tree_texts(w)
+            if #parts > 0 then
+                for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", ""):gsub("^%l", string.upper) end
+                return table.concat(parts, ". ") .. "."
+            end
+        end
+    end
+    return nil
+end
+
 function M.crew_text()
     local module = nil
     for _, w in ipairs(FindAllOf("WBP_CrewQuartersInteraction_C") or {}) do
@@ -879,6 +925,7 @@ function M.switch_tab(dir)
                             or name:lower():find("crew", 1, true) and M.crew_text()
                             or name:lower():find("bio", 1, true) and M.biolab_text()
                             or name:lower():find("work team", 1, true) and M.workteams_text()
+                            or name:lower():find("allies", 1, true) and M.allies_text()
                         if t then require("speech").say(t, false) end
                     end)
                     pcall(function()
@@ -925,7 +972,7 @@ function M.window_text(path)
     if not (okp and patients) and not (okc and crew) then
         ExecuteInGameThreadWithDelay(600, function()
             pcall(function()
-                local t = M.patients_text() or M.crew_text() or M.biolab_text() or M.workteams_text()
+                local t = M.patients_text() or M.crew_text() or M.biolab_text() or M.workteams_text() or M.allies_text()
                 if t then require("speech").say(t, false) end
             end)
         end)

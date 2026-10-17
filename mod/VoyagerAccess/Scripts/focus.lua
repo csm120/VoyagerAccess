@@ -930,7 +930,12 @@ function M.number_buttons(all, all_names)
                     end
                 end
                 local cls2 = "?"
-                pcall(function() cls2 = StaticFindObject(a2):GetClass():GetFName():ToString() end)
+                -- Valid first: GetClass on a null object crashed the game
+                -- (help.lua's front_window, VM, 2026-10-16).
+                pcall(function()
+                    local o = StaticFindObject(a2)
+                    if o and o:IsValid() then cls2 = o:GetClass():GetFName():ToString() end
+                end)
                 if extra > 0 and lone and cls2 ~= "HorizontalBox" and #group2 <= 40 then
                     group, a = group2, a2
                 end
@@ -942,7 +947,10 @@ function M.number_buttons(all, all_names)
                 -- buttons, a button alone in its column gets no count.
                 local columns = false
                 local cls = "?"
-                pcall(function() cls = StaticFindObject(a):GetClass():GetFName():ToString() end)
+                pcall(function()
+                    local o = StaticFindObject(a)
+                    if o and o:IsValid() then cls = o:GetClass():GetFName():ToString() end
+                end)
                 if cls == "HorizontalBox" then
                     local per = {}
                     for _, j in ipairs(group) do
@@ -1141,6 +1149,27 @@ label_for = function(b, path)
         end)
         label = with_value(label_of(path), b)
         if res and label then label = res:gsub("(%l)(%u)", "%1 %2") .. ", " .. label:gsub("%.$", "") .. " storage" end
+        -- All four are disabled while the bay is off (no life support, VM,
+        -- 2026-10-16), and the arrows cannot reach the others then.
+        local oke, en = pcall(function() return b:GetIsEnabled() end)
+        if label and oke and en == false then label = label .. ". Choices locked while the cargo bay is off" end
+        -- The four choices are a 2 by 2 grid: Down from the bottom row went
+        -- nowhere and Right switches the window's tab, so Tritanium could
+        -- not be reached (Q Trial, VM, 2026-10-16). Up and Down go through
+        -- them all in order (EUINavigation Up 2, Down 3; rule Stop 3).
+        pcall(function()
+            local parent = b:GetParent()
+            local list = {}
+            for i = 0, parent:GetChildrenCount() - 1 do
+                local c = parent:GetChildAt(i)
+                if c and c:IsValid() and c:GetClass():GetFName():ToString() == "WBP_ResourceSelectionButton_C"
+                    and require("screen").shown(c) then list[#list + 1] = c end
+            end
+            for i, c in ipairs(list) do
+                if list[i - 1] then c:SetNavigationRuleExplicit(2, list[i - 1]) else c:SetNavigationRuleBase(2, 3) end
+                if list[i + 1] then c:SetNavigationRuleExplicit(3, list[i + 1]) else c:SetNavigationRuleBase(3, 3) end
+            end
+        end)
     elseif cls == "WBP_Shuttle_Status_Button_C" then
         label = require("rooms").shuttle_label(b, path) or with_value(label_of(path), b)
     elseif cls == "WBP_SectorExitBonusFuel_Button_C" then

@@ -47,7 +47,13 @@ local function front_window(wp)
     -- By class too: inside a room the warning is a named part
     -- ("...ResourceCapacityChangeConfirmWidget"), not a class in the path.
     local cls = ""
-    pcall(function() cls = StaticFindObject(wp):GetClass():GetFName():ToString() end)
+    -- Checked valid first: just after a report's Close, its path found a
+    -- null object, and GetClass on it crashed the game (UE4SS reads the
+    -- class at 0x10; pcall cannot catch that). 7 of 10 runs, VM, 2026-10-16.
+    pcall(function()
+        local o = StaticFindObject(wp)
+        if o and o:IsValid() then cls = o:GetClass():GetFName():ToString() end
+    end)
     for _, c in ipairs(FRONT) do
         if wp:find(c, 1, true) or cls == c then return true end
     end

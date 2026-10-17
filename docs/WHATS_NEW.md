@@ -2,6 +2,14 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.35
+
+A crash fix.
+
+- Fixed: the game could crash right after you closed a report, like the Construction Report, when another message opened at the same moment. In testing it crashed 7 times out of 10 that way, and not once in 5 tries after the fix.
+
+## Friday October 16th 2026
+
 Version 0.3.34
 
 Room tabs, hull repair and the Bio Laboratory.
