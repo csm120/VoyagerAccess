@@ -2,6 +2,15 @@
 
 ## Friday October 16th 2026
 
+Version 0.3.36
+
+Tutorials you can actually finish hearing.
+
+- Fixed: a tutorial could get cut off by the next message, like an event or a report opening right behind it, and since tutorials close by themselves there was no getting it back. Now the next message waits until the tutorial has been read, unless you press a key.
+- Changed: pressing R again within 5 seconds goes back one more message each time, like "Earlier: Tutorial: Help...". So if you miss something, R and then R again brings it back.
+
+## Friday October 16th 2026
+
 Version 0.3.35
 
 A crash fix.

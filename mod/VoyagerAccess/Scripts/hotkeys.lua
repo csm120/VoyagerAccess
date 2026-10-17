@@ -18,7 +18,7 @@ local GROUPS = {
         "C: hull, resources, crew, energy, battery and morale, as a list",
         "N: navigation list: ship view, System Map, Sector Map, Overview, Research, Wait one cycle",
         "V: switch between the ship view and the System Map",
-        "R: repeat the last line, tutorial or card",
+        "R: repeat the last line, tutorial or card; R again within 5 seconds goes back through earlier messages",
         "Backtick, the key left of 1: copy a troubleshooting report to the clipboard",
         "F12: check for a Voyager Access update, or restart the game to install one",
         "Control F12: what's new in Voyager Access",

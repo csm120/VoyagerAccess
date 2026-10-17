@@ -1766,7 +1766,12 @@ local function poll()
                     M.result_pending_until = (not options_left) and (os.clock() + 10) or nil
                 else
                 M.result_pending_until = nil
-                speech.say_long(say, first_event and true or nil)
+                -- Tutorials are not cut off by the next window (speech.lua).
+                if p:find("Tutorial", 1, true) then
+                    speech.say_protected(say)
+                else
+                    speech.say_long(say, first_event and true or nil)
+                end
                 -- An offer that opened over the construction ring left focus
                 -- on the ring behind it, and its options could not be reached
                 -- (2026-10-14): focus its first option the player can take.

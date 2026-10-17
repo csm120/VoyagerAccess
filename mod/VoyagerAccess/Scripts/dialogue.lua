@@ -88,8 +88,24 @@ end
 -- "Character Name: Gentlemen, welcome to Voyager." Wait for the real name.
 local PLACEHOLDER_SPEAKER = "Character Name"
 
+-- What R can go back through: the last messages, newest last. Pressing R
+-- again within a few seconds goes one further back, so a tutorial cut off
+-- by the next message can still be heard (forum player, 2026-10-16).
+local history = {}
+local back = 0            -- how far back the last R went
+local last_r = -100       -- os.time() of the last R
+local function push(text)
+    if type(text) ~= "string" or text == "" then return end
+    if history[#history] ~= text then
+        history[#history + 1] = text
+        if #history > 15 then table.remove(history, 1) end
+    end
+    back = 0
+end
+
 local function speak_story(text)
     last_spoken = text
+    push(text)
     print("[VoyagerAccess] dialogue: " .. text .. "\n")
     speech.say_story(text)
 end
@@ -436,6 +452,7 @@ end
 -- Other readers (tutorials, toasts) add their text for R to repeat.
 function M.remember(text)
     last_spoken = text
+    push(text)
 end
 
 -- Who said the last line, for I.
@@ -444,6 +461,21 @@ function M.speaker()
 end
 
 function M.repeat_line()
+    -- R again within 5 seconds: one message further back each time.
+    local again = os.time() - last_r <= 5
+    last_r = os.time()
+    if again then
+        back = back + 1
+        local text = history[#history - back]
+        if text then
+            speech.say("Earlier: " .. text, true)
+        else
+            back = back - 1
+            speech.say("No earlier message", true)
+        end
+        return
+    end
+    back = 0
     -- An open window (an event, a room, a detail view) is read again in
     -- full, as when it opened: R gave only an event's locked option and the
     -- event's own text could not be heard again (2026-10-14). Its locked

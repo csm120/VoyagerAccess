@@ -25,6 +25,11 @@ end
 -- queued instead. os.time has 1 s resolution, so the hold is 1 to 2 s.
 local HOLD_SECONDS = 2
 local hold_until = 0
+-- A tutorial is protected for as long as it takes to say, and only a key
+-- press ends that: a window opening just after (an event, a report) is
+-- read with interrupt and cleared the ordinary hold, so the tutorial was
+-- cut off, and tutorials close themselves (forum player, 2026-10-16).
+local protect_until = 0
 local last_text, last_at = nil, -100
 
 -- Words the game writes run together, which some synthesizers say as one
@@ -64,7 +69,7 @@ function M.say(text, interrupt)
     text = text:gsub("%[([^%[%]{}]+)%]", "%1")
     text = split_words(text)
     if text == "" then return end
-    if interrupt and os.time() < hold_until then interrupt = false end
+    if interrupt and (os.time() < hold_until or os.time() < protect_until) then interrupt = false end
     -- The same line queued again right after itself is dropped: the demo's
     -- first event option was read twice in a row (VM, 2026-10-15). A key
     -- press repeating a line interrupts, and is still said.
@@ -91,9 +96,19 @@ function M.say_long(text, interrupt)
     hold_until = math.max(hold_until, os.time() + math.min(30, math.ceil(words / 3)))
 end
 
+-- A tutorial: queued after what is speaking, and nothing interrupts it
+-- until it has had time to be said or a key is pressed.
+function M.say_protected(text)
+    if type(text) ~= "string" or text == "" then return end
+    local _, words = text:gsub("%S+", "")
+    M.say(text, false)
+    protect_until = math.max(protect_until, os.time() + math.min(60, math.ceil(words / 3) + 1))
+end
+
 -- Any key Casey presses ends a hold: he has chosen to move on.
 function M.release()
     hold_until = 0
+    protect_until = 0
 end
 
 -- Asks the helper for a real left click at screen pixel (x, y).
