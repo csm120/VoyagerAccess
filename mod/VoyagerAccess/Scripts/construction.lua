@@ -144,6 +144,28 @@ local function clean(s)
     return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
+-- "BioneuralGelPack" in the room configs (VM, 2026-10-16); the others read
+-- as the centre has them ("50 Duranium").
+local function res_name(name)
+    if name:lower() == "bioneuralgelpack" then return "bio-neural gel packs" end
+    return (name:gsub("(%l)(%u)", "%1 %2"))
+end
+
+local function shortages(cfg, rm)
+    local short = {}
+    pcall(function()
+        cfg.RequiredResourcesToBuild:ForEach(function(_, e)
+            local r = e:get()
+            local name = r.ResourceName:ToString()
+            local have = rm:GetResourceAmount(name, false)
+            if have < r.ResourceAmount then
+                short[#short + 1] = res_name(name) .. ", " .. math.floor(have) .. " of " .. r.ResourceAmount
+            end
+        end)
+    end)
+    return #short > 0 and table.concat(short, "; ") or nil
+end
+
 function M.blocked(cmd, cm, cfg, tc)
     local ok, can = pcall(function() return cmd:CanExecute(cm) end)
     if not ok or can then return nil end
@@ -170,15 +192,27 @@ function M.blocked(cmd, cm, cfg, tc)
         end
     end)
     if not teams then return "No available work team" end
-    local short = false
-    pcall(function()
-        cfg.RequiredResourcesToBuild:ForEach(function(_, e)
-            local r = e:get()
-            if rm:GetResourceAmount(r.ResourceName:ToString(), false) < r.ResourceAmount then short = true end
-        end)
-    end)
-    if short then return "Missing resources" end
+    -- Which ones and how many you have: a sighted player sees the short cost
+    -- in red; "Missing resources" alone sent you to C to work it out (VM,
+    -- 2026-10-17).
+    local short = shortages(cfg, rm)
+    if short then return "Missing resources: " .. short end
     return "Not possible now"
+end
+
+-- The game's own centre says "Missing resources." with no detail: which
+-- ones, for focus.lua to add after it.
+function M.shortages(b)
+    local cmd = M.command_of(b)
+    if not cmd then return nil end
+    local rc = StaticFindObject(ROOM_CONFIG)
+    if not (rc and rc:IsValid()) then return nil end
+    local out = {}
+    rc:GetRoomConfig(cmd.RoomType, 0, out)
+    local cfg = out.OutConfig
+    local rm = FindFirstOf("STVResourceManager")
+    if not (cfg and cfg:IsValid() and rm and rm:IsValid()) then return nil end
+    return shortages(cfg, rm)
 end
 
 -- What the centre would say for a room choice: { text, check }, check being
@@ -206,12 +240,7 @@ function M.ring_text(b)
     local build = {}
     cfg.RequiredResourcesToBuild:ForEach(function(_, e)
         local r = e:get()
-        -- "BioneuralGelPack" here (VM, 2026-10-16); the others read as the
-        -- centre has them ("50 Duranium").
-        local name = r.ResourceName:ToString()
-        if name:lower() == "bioneuralgelpack" then name = "bio-neural gel packs"
-        else name = name:gsub("(%l)(%u)", "%1 %2") end
-        build[#build + 1] = r.ResourceAmount .. " " .. name
+        build[#build + 1] = r.ResourceAmount .. " " .. res_name(r.ResourceName:ToString())
     end)
     local wt, cy = cfg.RequiredWorkTeamsToBuild, cfg.CyclesToBuild
     build[#build + 1] = wt .. (wt == 1 and " work team" or " work teams")

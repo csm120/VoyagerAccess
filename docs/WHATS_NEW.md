@@ -2,6 +2,19 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.39
+
+More fixes from the campaign's Scorpion sector.
+
+- New: the game shows a cost you can't pay in red. Repair, upgrade and blueprint costs now say "not enough" after that amount, and the construction ring names what you're short of and how much you have, like "Missing resources: Duranium, 38 of 80."
+- Fixed: objectives said "Done:" every cycle on a task with a countdown in it ("within 36 cycles"), and on counts over 999. Only finished tasks are announced now.
+- Fixed: a room that had just started building could be read as "on". It says "building" and the cycles left.
+- Fixed: after you built a wide room, the ship view could name the empty space beside it. It stays on the new room.
+- Fixed: the Science Laboratory didn't say when a research had paused an analysis. The analysis now says "paused".
+- Fixed: right after Repair, the ship view could still say the room was on. When that happens it says the new state a second later.
+
+## Saturday October 17th 2026
+
 Version 0.3.38
 
 Fixes from playing the campaign into sector 6.

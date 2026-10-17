@@ -107,8 +107,14 @@ end
 -- Countdowns and progress counts change on their own every cycle; they are
 -- not a change of objective. A lone count too: "Treat the sick before the
 -- disease spreads. (38)" became (45) and was said as "Done: ..." and then
--- as a new objective (Outbreak, VM, 2026-10-16).
-local function bare(s) return (s:gsub(", %d+ cycles? left", ""):gsub("%s*%(%d+/%d+%)", ""):gsub("%s*%(%d+%)", "")) end
+-- as a new objective (Outbreak, VM, 2026-10-16). And a countdown inside the
+-- goal: "Complete all of the following tasks within 36 CYCLES" was said as
+-- "Done: ..." every cycle (Scorpion, VM, 2026-10-17).
+local function bare(s)
+    -- "(1,000/900)" has a comma (Deuterium running low, VM, 2026-10-17).
+    return (s:gsub(", %d+ cycles? left", ""):gsub("%s*%([%d,]+/[%d,]+%)", ""):gsub("%s*%([%d,]+%)", "")
+        :gsub("([Ww]ithin) %d+ ", "%1 "))
+end
 
 -- What changed between two mission lists, as words: "Done: Assign Neelix
 -- to the Mess Hall." Every step re-read the whole list, five missions long,

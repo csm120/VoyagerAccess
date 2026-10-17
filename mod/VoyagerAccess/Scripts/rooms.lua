@@ -70,7 +70,14 @@ local function costs_under(path)
                 end
             end
             local amount = plain(text_of(w.Amount))
-            if amount ~= "" then out[#out + 1] = amount .. " " .. res end
+            -- A cost you cannot pay is red (1, 0.09, 0.09; the others 0.75,
+            -- 0.75, 0.8): "50 Duranium" with 38 in store (VM, 2026-10-17).
+            local short = false
+            pcall(function()
+                local c = w.Amount.ColorAndOpacity.SpecifiedColor
+                short = c.R > 0.9 and c.G < 0.3 and c.B < 0.3
+            end)
+            if amount ~= "" then out[#out + 1] = amount .. " " .. res .. (short and " not enough" or "") end
         end
     end
     return table.concat(out, ", ")
@@ -126,6 +133,14 @@ end
 -- (WBP_ScienceLab_ResearchModule) have ResearchName, CyclesText and
 -- OnClickAction_TXT; an unexplored find (WBP_RoomMgmt_Analyze_Button) has
 -- AnalysisName and CyclesText.
+local function paused_shown(path)
+    local ok, paused = pcall(function()
+        local b = StaticFindObject(path)
+        return b and b:IsValid() and b.Paused_IMG and b.Paused_IMG:IsValid() and screen.shown(b.Paused_IMG)
+    end)
+    return ok and paused
+end
+
 function M.research_label(path)
     if not path then return nil end
     local name = path:match("([^%.]+)$")
@@ -137,6 +152,10 @@ function M.research_label(path)
             local n = by.CyclesText:gsub("^#", ""):gsub("^0+(%d)", "%1")
             label = label .. ", " .. n .. (n == "1" and " cycle left" or " cycles left")
         end
+        -- Starting a research pauses the analysis: Paused_IMG shows and the
+        -- cycles go hidden, so the row read as if it were running (VM,
+        -- 2026-10-17).
+        if paused_shown(path) then label = label .. ", paused" end
         if name == "ResearchButton" then
             label = label .. ". Enter opens the tech tree"
         elseif by.OnClickAction_TXT and by.OnClickAction_TXT ~= "" then
@@ -152,6 +171,7 @@ function M.research_label(path)
     if path:find("WBP_Workshop_CraftModule_C_%d+%.") and name == "CraftingButton" then
         local by = texts_under(path)
         local label = "Crafting: " .. (by.ResearchName or "")
+        if paused_shown(path) then label = label .. ", paused" end
         if by.CyclesText and by.CyclesText:match("[1-9]") then
             local n = by.CyclesText:gsub("^#", ""):gsub("^0+(%d)", "%1")
             label = label .. ", " .. n .. (n == "1" and " cycle left" or " cycles left")

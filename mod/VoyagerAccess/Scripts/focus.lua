@@ -353,6 +353,12 @@ function M.radial_focus(b, path)
                 text = ring.text
             end
             if not text or text == "" then text = M.radial_label(nb) or "Button" end
+            if text:find("^[^%.]+%. Missing resources%.") then
+                local oks, short = pcall(require("construction").shortages, nb)
+                if oks and short then
+                    text = text:gsub("Missing resources%.", "Missing resources: " .. short:gsub("%%", "%%%%") .. ".", 1)
+                end
+            end
             -- A room to build: its width and whether it fits at the selected
             -- space (construction.lua).
             local okf, fit = pcall(require("construction").fit_text, nb)

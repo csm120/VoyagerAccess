@@ -20,11 +20,13 @@ local function hidden_by_switcher(parent, node)
     return not (valid(active) and active:GetFullName() == node:GetFullName())
 end
 
-local function shown_unsafe(w)
+local function shown_unsafe(w, stop)
     WIDGET = WIDGET or StaticFindObject("/Script/UMG.Widget")
     local node, hops = w, 0
+    local stop_name = stop and stop:GetFullName()
     while valid(node) and hops < 64 do
         hops = hops + 1
+        if stop_name and node:GetFullName() == stop_name then return true end
         if not node:IsVisible() then return false end
         local parent = node:GetParent()
         if valid(parent) then
@@ -43,8 +45,10 @@ local function shown_unsafe(w)
     return true
 end
 
-function M.shown(w)
-    local ok, result = pcall(shown_unsafe, w)
+-- With stop, only up to that widget (not including it): a new room's hull
+-- widget is Hidden while its own state texts are right (VM, 2026-10-17).
+function M.shown(w, stop)
+    local ok, result = pcall(shown_unsafe, w, stop)
     return ok and result
 end
 

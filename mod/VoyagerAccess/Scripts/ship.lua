@@ -121,7 +121,10 @@ local function room_state(h, raw)
     -- room under repair was read "on" (2026-10-14). IsVisible is true on
     -- every room's template text; only screen.shown tells the real ones.
     local ok, busy = pcall(function()
-        if not require("screen").shown(w.StateText) then return nil end
+        -- Up to the hull widget only: a Bio Lab just started was read "on"
+        -- because its whole hull widget was Hidden, with "Building, 10
+        -- cycles" correct inside it (VM, 2026-10-17).
+        if not require("screen").shown(w.StateText, w) then return nil end
         local st = w.StateText:GetText():ToString()
         local cy = w.CycleText:GetText():ToString()
         if st == "" then return nil end
@@ -176,12 +179,30 @@ function M.active()
     return SHIP_CONTEXT ~= nil and sub:HasMappingContext(SHIP_CONTEXT, {})
 end
 
+-- How far a room reaches either side of its centre. A room's position is
+-- its centre, so a Bio Lab built on the space you chose was as near as the
+-- empty space beside it, and "Empty building space" was read after building
+-- (VM, 2026-10-17). Cells are the grid's DefaultRoomExtend.Y (400) wide.
+local half_cache = {}
+local function half_span(t)
+    if half_cache[t] then return half_cache[t] end
+    if NO_POWER[raw_name(t)] then half_cache[t] = 0; return 0 end
+    local ok, half = pcall(function()
+        local cell = FindFirstOf("STVRoomGrid").DefaultRoomExtend.Y
+        local w = require("construction").extent(t)
+        return (w - 1) * cell / 2
+    end)
+    if not (ok and half and half >= 0) then return 0 end
+    half_cache[t] = half
+    return half
+end
+
 local function index_of_selected(list)
     if not selected then return nil end
     local best, best_d = nil, math.huge
     for i, r in ipairs(list) do
         if r.deck == selected.deck then
-            local d = math.abs(r.y - selected.y)
+            local d = math.max(0, math.abs(r.y - selected.y) - half_span(r.hull:GetRoomType()))
             if d < best_d then best, best_d = i, d end
         end
     end

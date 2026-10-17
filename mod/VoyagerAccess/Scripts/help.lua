@@ -351,6 +351,16 @@ local function view_poll()
     local text = (v == "ship" and "Ship view" or map) .. ". " .. here
     print("[VoyagerAccess] view: " .. text .. "\n")
     speech.say(text, true)
+    -- A room's state text changes a moment after its ring closes: "Deck 11,
+    -- Workshop, on" right after Repair, "repairing" a second later (VM,
+    -- 2026-10-17). Say the room again if it changed in that time.
+    if v == "ship" then
+        ExecuteInGameThreadWithDelay(1000, function()
+            if stable_view ~= "ship" then return end
+            local ok, now = pcall(function() return require("ship").where() end)
+            if ok and now and now ~= here then speech.say(now, true) end
+        end)
+    end
 end
 
 -- For the helper's update restart (Casey, 2026-10-14): it closes the game
