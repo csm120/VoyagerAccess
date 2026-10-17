@@ -1,5 +1,16 @@
 # New in Voyager Access
 
+## Saturday October 17th 2026
+
+Version 0.3.38
+
+Fixes from playing the campaign into sector 6.
+
+- Fixed: hero lists said injured heroes were at full strength. They now say "injured" or "severely injured" and read the skill values the game really uses, like "Joe Carey, injured. Command 13, Diplomacy 12, Engineering 20" instead of 26, 24 and 40.
+- Fixed: an away team screen could be read with the previous away mission's description and recommended skills. It reads the mission that's actually on screen now.
+- Fixed: in battle, L could list the same ability three times when one hero filled the team. Each ability is said once.
+- Fixed: after a Game Over in the Q Trials, the results said "Select a reward, 0 of 0". That line is left out when there's nothing to select.
+
 ## Friday October 16th 2026
 
 Version 0.3.37

@@ -492,6 +492,16 @@ local function watch_arrival(name, target, start_d)
             return j and j:IsValid() and j:IsTravelling()
         end)
         if okj and moving == true then still = 0 end
+        -- The No Way Back warning stops the ship until it is answered:
+        -- "Arrived at Borg Cube Debris Field" was said while it waited for
+        -- YES (campaign sector 6, VM, 2026-10-17).
+        local okn, noway = pcall(function()
+            for _, w in ipairs(FindAllOf("WBP_NoWayBackWidget_C") or {}) do
+                if w:IsValid() and require("screen").shown(w) then return true end
+            end
+            return false
+        end)
+        if okn and noway then still = 0 end
         travel.d, travel.still = d, still
         -- A battle that interrupts the trip: "Halfway to" and "Arrived at"
         -- were said over the battle setup (Q Trial, VM, 2026-10-14).

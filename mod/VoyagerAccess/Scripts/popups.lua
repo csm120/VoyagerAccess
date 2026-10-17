@@ -1375,7 +1375,10 @@ local function sandbox_result(parts)
         out[#out + 1] = "Earth distance remaining " .. by.RemainingDistance_TXT .. (total ~= "" and (" of " .. total) or "")
     end
     local function nums(s) return (s:gsub("[()]", ""):gsub("%d+", function(d) return tostring(tonumber(d)) end)) end
-    if by.RewardHeadText then out[#out + 1] = by.RewardHeadText .. ", " .. nums((by.RewardAmount_TXT or ""):gsub("/", " of ")) end
+    -- After a Game Over the rewards are only unlocked, and this read
+    -- "Select a reward, 0 of 0" (Q Trial, VM, 2026-10-16).
+    local pick = nums((by.RewardAmount_TXT or ""):gsub("/", " of "))
+    if by.RewardHeadText and not pick:match("^%s*0 of 0%s*$") then out[#out + 1] = by.RewardHeadText .. ", " .. pick end
     if by.UnlockedRewards_TXT then out[#out + 1] = by.UnlockedRewards_TXT .. ", " .. nums(by.UnlockedRewardsAmount_TXT or "") end
     for i, s in ipairs(out) do out[i] = s:gsub("%s+$", ""):gsub("%.$", ""):gsub("(%d) LY", "%1 light years"):gsub("(%d) ly", "%1 light years") end
     return table.concat(out, ". ") .. "."

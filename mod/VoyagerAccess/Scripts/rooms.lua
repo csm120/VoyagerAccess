@@ -375,7 +375,12 @@ function M.skills_of(sheet)
                 local ro = im.Brush.ResourceObject
                 if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
             end
-            skills[#skills + 1] = skill .. " " .. a.CurrentValue
+            -- The number shown (AttributeValue): an injured hero's is
+            -- reduced, Joe Carey's Command 13 where CurrentValue said 26
+            -- (away team selection, VM, 2026-10-17).
+            local shown_value = nil
+            pcall(function() shown_value = a.AttributeValue:GetText():ToString():match("^%d+$") end)
+            skills[#skills + 1] = skill .. " " .. (shown_value or tostring(a.CurrentValue))
         end
     end
     return table.concat(skills, ", ")
@@ -396,6 +401,15 @@ function M.hero_label(path)
     local head = name
     if by.RankText then head = head .. ", " .. by.RankText:lower() end
     if by.TraitText and by.TraitText ~= "" then head = head .. ", " .. by.TraitText end
+    -- Injured or Severely Injured over the portrait, as in the away team
+    -- list (awaymission.lua plaque_text, 2026-10-17).
+    pcall(function()
+        local st = plaque.HeroRoomText
+        if st and st:IsValid() and screen.shown(st) then
+            local s = plain(text_of(st))
+            if s ~= "" and s:sub(1, 1) ~= "#" and s:lower():find("injur") then head = name .. ", " .. s:lower() .. head:sub(#name + 1) end
+        end
+    end)
     parts[#parts + 1] = head
     local skills = M.skills_of(plaque.HeroStatSheet)
     if skills ~= "" then parts[#parts + 1] = skills end

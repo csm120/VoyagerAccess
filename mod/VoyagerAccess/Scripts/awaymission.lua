@@ -44,11 +44,18 @@ local function sentences(parts)
     return text
 end
 
+-- The one on screen: the previous mission's team screen is kept hidden, and
+-- the Borg cube's team selection was read with Hanon IV's text and
+-- recommended skills (campaign sector 6, VM, 2026-10-17).
 local function loadout()
+    local first = nil
     for _, w in ipairs(FindAllOf("WBP_AwayMissionLoadout_C") or {}) do
-        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") then return w end
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") then
+            if screen.shown(w) then return w end
+            first = first or w
+        end
     end
-    return nil
+    return first
 end
 
 -- "Tom Paris, level 1, Pilot. Command 21, Engineering 11, Medicine 17", or
@@ -60,6 +67,15 @@ local function plaque_text(plaque)
     -- "#Hero Name" (2026-10-14).
     if name == "" or name:sub(1, 1) == "#" then return nil end
     local head = name
+    -- "Injured" or "Severely Injured" over the portrait (HeroRoomText); not
+    -- said before, so an injured hero seemed fit (VM, 2026-10-17).
+    pcall(function()
+        local st = plaque.HeroRoomText
+        if st and st:IsValid() and screen.shown(st) then
+            local s = plain(text_of(st))
+            if s ~= "" and s:sub(1, 1) ~= "#" then head = head .. ", " .. s:lower() end
+        end
+    end)
     local sheet = plaque.HeroStatSheet
     if sheet and sheet:IsValid() then
         local rank = plain(text_of(sheet.HeroRank and sheet.HeroRank.RankText))

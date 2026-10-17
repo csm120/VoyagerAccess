@@ -197,6 +197,16 @@ function M.abilities()
         end
     end
     table.sort(list, function(a, b) return a.i < b.i end)
+    -- With one hero for three slots, all three ability widgets held Harry
+    -- Kim's: "1, Shield Hacking, Harry Kim" three times (Culluh battle,
+    -- VM, 2026-10-16). One line per text.
+    do
+        local seen, kept = {}, {}
+        for _, it in ipairs(list) do
+            if not seen[it.text] then seen[it.text] = true; kept[#kept + 1] = it end
+        end
+        list = kept
+    end
     local out = {}
     for _, it in ipairs(list) do out[#out + 1] = it.text end
     return #out > 0 and ("Abilities: " .. table.concat(out, "; ")) or nil
