@@ -310,7 +310,11 @@ local function setup_label(b, path)
                 if p == path then slot = n end
             end
         end
-        local who = valid(picker) and plaque_parts(picker.HeroPlaque, false) or { "empty" }
+        -- A slot's hidden plaque keeps the last hero's name: slot 1 was read
+        -- "Kes" while the screen showed it empty, after every pick in the
+        -- picker had been undone (VM, 2026-10-18).
+        local okv, shown = pcall(function() return require("screen").shown(picker.HeroPlaque) end)
+        local who = valid(picker) and not (okv and shown == false) and plaque_parts(picker.HeroPlaque, false) or { "empty" }
         who[1] = "Hero slot " .. (slot or "") .. ": " .. who[1]
         return who
     end

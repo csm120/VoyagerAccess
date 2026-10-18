@@ -2243,8 +2243,16 @@ local function activate()
                 pcall(function()
                     local cm = FindFirstOf("STVConstructionManager")
                     local info = cm:GetWarpcoreInfo()
-                    speech.say(string.format("Did not switch. Energy %d, rooms use %d.",
-                        info.EnergyAmount, info.EnergyConsumption), true)
+                    -- Energy only when it is short: a Cargo Bay with 108
+                    -- energy and 51 in use stayed inactive, and naming the
+                    -- energy sent the player the wrong way. The game shows
+                    -- no reason of its own then (Q Trial, VM, 2026-10-18).
+                    if info.EnergyAmount - info.EnergyConsumption < 10 then
+                        speech.say(string.format("Did not switch. Energy %d, rooms use %d.",
+                            info.EnergyAmount, info.EnergyConsumption), true)
+                    else
+                        speech.say("Did not switch. The game shows no reason.", true)
+                    end
                 end)
             end
         end

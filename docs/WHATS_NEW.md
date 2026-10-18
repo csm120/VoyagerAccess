@@ -2,6 +2,15 @@
 
 ## Sunday October 18th 2026
 
+Version 0.3.50
+
+Two small ones from a new Q Trial.
+
+- Fixed: when a room won't switch on, the mod used to name your energy, like "Did not switch. Energy 108, rooms use 51", even with plenty to spare. It only names the energy now when it's really short. Otherwise it says "Did not switch. The game shows no reason", because the screen doesn't show one either.
+- Fixed: in the Q Trials setup, a hero slot you'd emptied in the hero picker still read the last hero's name. It reads "empty" now, as on screen.
+
+## Sunday October 18th 2026
+
 Version 0.3.49
 
 Found while flying a Q Trial through the Hazari and Nebula sectors.
