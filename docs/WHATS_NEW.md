@@ -1,5 +1,24 @@
 # New in Voyager Access
 
+## Sunday October 18th 2026
+
+Version 0.3.47
+
+Sector 7 to the end, and a lot from firefly82's two-hour playtest. Thanks, firefly, and thanks to NightCraller302 for the event report.
+
+- New: map points and star systems say how far away they are, like "Debris Field, not scanned, 4 cycles away". It's the same number the game shows under a selected point, so you can tell three Class Y planets apart and save fuel. This is firefly's patch, word for word.
+- Fixed: in the German game, system numbers like "4.048.1" came out as "4 point oh 4 8, .1". They're said "4 oh 4 8 point 1" now. Also firefly's.
+- New: if Voyager arrives while another window is up, like a mission offer that came halfway through the trip, the game skips that point's event. The mod tells you now: the event didn't open, so set course to another point and back.
+- New: hero lists in battles and away missions say why a hero can't go, like "Chakotay, unavailable: severely injured, 20 cycles" or "Harry Kim, unavailable: away".
+- New: battle targets name their part of the ship, like "Engines, aft, 40 health". A Hirogen scout had three targets all called "Engines" before.
+- New: an empty building space on a deck whose life support is off says "no life support", and Enter tells you why nothing opens instead of doing nothing.
+- Changed: a tutorial is held until you press a key, however long your screen reader takes. Anything that comes in meanwhile waits behind it instead of cutting it off. Thanks, firefly.
+- Changed: the build ring reads each room right away. It used to wait half a second for a mouse hover that never helped.
+- Fixed: after a major decision, each Enter that moved the story on said "Holding" and pressed the old choice again. It just moves the story on now.
+- Fixed: each Overview tab is read once when you switch to it, not twice.
+- Fixed: one story choice said the game's own "Success Chance: 70%" where the others say "chance 70%". It says "Chance 70%" now.
+- Fixed: the energy loss report read "Warp. Core damaged" when the name was wrapped onto two lines. It's "Warp Core damaged" again.
+
 ## Saturday October 17th 2026
 
 Version 0.3.46

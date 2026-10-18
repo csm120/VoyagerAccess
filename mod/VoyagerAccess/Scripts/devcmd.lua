@@ -45,7 +45,10 @@ local function run()
         return
     end
     local idle = os.time() - require("keys").last_key_time
-    if idle < 10 then
+    -- A command starting "--any time" comes from a script driving the game
+    -- itself (a battle's hull refill between its own keys), not a probe
+    -- while Casey plays.
+    if idle < 10 and not code:match("^%-%-any time") then
         print("[VoyagerAccess] cmd refused: Casey pressed a key " .. idle .. " s ago\n")
         return
     end

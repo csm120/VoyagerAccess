@@ -158,6 +158,13 @@ function M.forget(needle)
         if p:find(needle, 1, true) then last_text[p] = "\0" end
     end
 end
+-- What the first window whose path contains needle last said, or nil.
+function M.remembered(needle)
+    for p, t in pairs(last_text) do
+        if p:find(needle, 1, true) then return t end
+    end
+    return nil
+end
 local function rereading(p)
     for needle, t in pairs(reread_until) do
         if os.time() <= t and p:find(needle, 1, true) then return true end
@@ -977,7 +984,14 @@ local function energy_loss(_, path)
     -- Control. Room" (full game, VM, 2026-10-14). The deactivated rooms
     -- ("Phaser Control Room -9, Sickbay -7") say what energy each used.
     local t = ordered_texts(w, function(name, s)
-        if name == "EnergyLossReason" then return (s:gsub("(%l) (%u)", "%1. %2")) end
+        -- Except inside a name: "Warp. Core damaged" (ion storm, VM,
+        -- 2026-10-18).
+        if name == "EnergyLossReason" then
+            return (s:gsub("(%l) (%u%l*)", function(a, word)
+                if require("text").name_tail(word) then return a .. " " .. word end
+                return a .. ". " .. word
+            end))
+        end
         -- The shared clean-up (text.lua) may already have named the icon:
         -- "9 energy energy" (VM, 2026-10-15).
         if name == "RoomsLost" then return (s:gsub(" %-%s*(%d+)", " %1 energy"):gsub("energy energy", "energy")) end
@@ -1081,6 +1095,7 @@ end
 -- (2026-10-14). The lists are BattleResultListViewItem widgets placed after
 -- their headings (injured_headline is Injuries, injured_headline_1 Damaged
 -- Rooms); Win_Text or Lose_Text is the outcome.
+local none_word = nil   -- the game's "None" in its language, once seen
 local function battle_result(_, path)
     local w = StaticFindObject(path)
     if not (w and w:IsValid()) then return "" end
@@ -1131,6 +1146,13 @@ local function battle_result(_, path)
         end
     end
     walk(w, 0)
+    -- The game's word for an empty list is translated: the German game said
+    -- "Injuries, 1: K/A" (firefly82, 2026-10-18). Both lists show it as
+    -- one plain list item (BattleResultListViewItem, like any name), so it is
+    -- learned when Injuries and Damaged rooms show the same single entry.
+    local inj, rooms = lists["Injuries"], lists["Damaged rooms"]
+    if inj and rooms and #inj == 1 and #rooms == 1 and inj[1] == rooms[1] then none_word = inj[1]:lower() end
+    local function is_none(t) t = t:lower() return t == "none" or t == none_word end
     local out = { "Combat result: " .. (outcome or "over") }
     if hull then out[#out + 1] = "Hull status " .. hull .. "%" end
     for _, s in ipairs(order) do
@@ -1138,7 +1160,7 @@ local function battle_result(_, path)
         -- (Q Trial defeat, VM, 2026-10-14). "None" stays as it is.
         local n = #lists[s]
         local counted = s == "Injuries" or s == "Damaged rooms"
-        if n == 1 and lists[s][1]:lower() == "none" then out[#out + 1] = s .. ": none"
+        if n == 1 and is_none(lists[s][1]) then out[#out + 1] = s .. ": none"
         elseif n > 0 and s == "Damaged rooms" then
             -- Two rooms of one type were said apart: "Life Support,
             -- Stellar Cartography, Life Support" (VM, 2026-10-17).
@@ -1756,7 +1778,10 @@ local function poll()
                     or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
                     -- Inside the combat widget it is named CombatResultView.
                     or p:find("WBP_BattleResultLCARS_C", 1, true) or p:find("CombatResultView", 1, true) or p:find("AutoResolveWidget", 1, true)
-                    or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true))
+                    or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true)
+                    -- Held by focus.lua until read, so its button is said here
+                    -- (sector 7 end, VM, 2026-10-18).
+                    or p:find("WBP_MissionInfoWidget_C", 1, true) or p:find("WBP_SideMissionFinished_C", 1, true))
                 -- An event's result replaces its options in the same window:
                 -- "CONTINUE" came before "Trading Station. We accepted their
                 -- trade offer" (VM, 2026-10-14).
@@ -1809,7 +1834,11 @@ local function poll()
                 else
                 M.result_pending_until = nil
                 -- Tutorials are not cut off by the next window (speech.lua).
-                if p:find("Tutorial", 1, true) then
+                -- The page is its own window (WBP_TUT_CenterView and the
+                -- like), and only the two-word title was protected, so the
+                -- next dialogue line cut the page off (firefly82, German
+                -- game, 2026-10-18).
+                if p:find("Tutorial", 1, true) or p:find("WBP_TUT_", 1, true) then
                     speech.say_protected(say)
                 else
                     speech.say_long(say, first_event and true or nil)

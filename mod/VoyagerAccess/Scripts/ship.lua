@@ -173,10 +173,24 @@ local function room_state(h, raw)
     return NO_POWER[raw] and "" or "on"
 end
 
+-- Whether a deck's life support is running. A building space on a deck
+-- without it is inaccessible (the game's own Life Support description), and
+-- Enter on one opened nothing and said nothing (deck 3, life support
+-- damaged, VM, 2026-10-18).
+local function deck_has_life(deck)
+    for _, r in ipairs(rooms()) do
+        if r.deck == deck and raw_name(r.hull:GetRoomType()) == "LifeSupport" then
+            return room_state(r.hull, "LifeSupport") == "on"
+        end
+    end
+    return true   -- a deck with no life support room of its own (not seen)
+end
+
 local function describe(r, with_deck)
     local t = r.hull:GetRoomType()
     local text = room_name(t)
     local state = room_state(r.hull, raw_name(t))
+    if raw_name(t) == "None" and state == "" and not deck_has_life(r.deck) then state = "no life support" end
     if state ~= "" then text = text .. ", " .. state end
     if with_deck then text = "Deck " .. r.deck .. ", " .. text end
     return text
@@ -409,6 +423,10 @@ function M.open()
         return
     end
     print("[VoyagerAccess] ship: open " .. describe(list[i], true) .. "\n")
+    if raw_name(list[i].hull:GetRoomType()) == "None" and not deck_has_life(list[i].deck) then
+        speech.say("Not possible: deck " .. list[i].deck .. " has no life support running, so its building space is closed. Repair or switch on its Life Support first.", true)
+        return
+    end
     -- ClickedRoom opens the HOVERED room, not this hull's: with the mouse
     -- resting over Life Support it opened Life Support (2026-10-11; also
     -- why the Aeroshuttle bay opened Stellar Cartography). Hover it first.

@@ -31,6 +31,13 @@ end
 
 local IMG = '<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'
 
+-- Second words of room and system names ("Warp Core", "Cargo Bay"): a line
+-- break before one is a wrapped name, not a new sentence.
+local NAME_TAILS = { Core = true, Bay = true, Support = true, Engineering = true, Laboratory = true,
+    Lab = true, Cartography = true, Hall = true, Quarters = true, Room = true, Office = true,
+    Deflector = true, Generator = true, Array = true, Compartment = true, Matrix = true, Facility = true }
+function M.name_tail(word) return NAME_TAILS[word] == true end
+
 function M.prep(s)
     if type(s) ~= "string" or s == "" then return s or "" end
     -- An icon right after its own name ("+80 <ColorDeuterium>Deuterium</>
@@ -47,6 +54,11 @@ function M.prep(s)
     end)
     s = s:gsub("(%a+)</>[ \t]*" .. IMG, function(word, id) if own(word, id) then return word .. "</>" end end)
     s = s:gsub("(%a+)[ \t]*" .. IMG, function(word, id) if own(word, id) then return word end end)
+    -- An empty colour tag before an icon is a name the game left out: "Each
+    -- <COLORBATTERY></> <IMG ID="BATTERY"/> -50 per CYCLE" was read "Each
+    -- -50 battery per CYCLE" (ion storm alert, VM, 2026-10-18). The icon
+    -- names it: "Each battery -50 per CYCLE".
+    s = s:gsub("<%w+>[ \t]*</>[ \t]*" .. IMG, function(id) return unit(id) end)
     -- Icon then number (a colour tag around the number is optional), on
     -- the same line only.
     s = s:gsub(IMG .. "[ \t]*<%w+>[ \t]*([%+%-]?[%d,%.]+)[ \t]*</>", function(id, n) return n .. " " .. unit(id) end)
@@ -75,7 +87,12 @@ function M.prep(s)
     -- A lowercase word, a line break, then a capital starts a new sentence:
     -- "storage capacity / Changes ENERGY consumption". Labels wrapped onto
     -- two lines are all capitals, so they stay joined.
-    s = s:gsub("(%l)[ \t]*\r?\n[\r\n%s]*(%u)", "%1. %2")
+    -- Not inside a name wrapped onto two lines: "Warp / Core damaged" was
+    -- read "Warp. Core damaged" (energy loss report, VM, 2026-10-18).
+    s = s:gsub("(%l)[ \t]*\r?\n[\r\n%s]*(%u%l*)", function(a, word)
+        if NAME_TAILS[word] then return a .. " " .. word end
+        return a .. ". " .. word
+    end)
     -- A heading in capitals, a line break, then a sentence: "ASTEROID FIELD /
     -- Entering an asteroid field" (Sensor Alert, VM, 2026-10-17). The next
     -- line must start like a sentence (capital, then lowercase), so a label

@@ -324,6 +324,35 @@ function M.hero_buttons()
     return out
 end
 
+-- Why a hero cannot go, from the hero manager's conditions
+-- (ESTVCrewMemberCondition; DoesHeroHaveCondition and
+-- GetHeroRemainingRecoveryCycles take the hero's id, the button's
+-- CurrentCharacter). Every hero in a battle's list was "unavailable" with no
+-- reason: Chakotay severely injured for 20 cycles, Harry Kim away (full
+-- game, sector 7, 2026-10-18). Recruited (7) and Quarterless (5) block
+-- nothing and are left out.
+local CONDITIONS = { { 8, "dead" }, { 9, "left behind" }, { 2, "gravely sick" }, { 1, "sick" },
+    { 4, "severely injured" }, { 3, "injured" }, { 11, "fatigued" }, { 10, "busy" }, { 6, "away" } }
+
+function M.hero_condition(id)
+    local m = FindFirstOf("STVHeroManager")
+    if not (m and m:IsValid() and id) then return nil end
+    local out = {}
+    for _, c in ipairs(CONDITIONS) do
+        local ok, has = pcall(function() return m:DoesHeroHaveCondition(id, c[1]) end)
+        if ok and has == true then
+            local okc, n = pcall(function() return m:GetHeroRemainingRecoveryCycles(id, c[1]) end)
+            -- "away" counts 1 whatever the mission's length, so no number there.
+            if okc and type(n) == "number" and n > 1 and c[1] ~= 6 then
+                out[#out + 1] = string.format("%s, %d cycles", c[2], n)
+            else
+                out[#out + 1] = c[2]
+            end
+        end
+    end
+    return #out > 0 and table.concat(out, ", ") or nil
+end
+
 function M.hero_label(path)
     local b = StaticFindObject(path)
     if not (b and b:IsValid()) then return nil end
@@ -370,8 +399,12 @@ function M.hero_label(path)
     -- opacity (Chakotay and B'Elanna in the sparring match against their own
     -- ship; Enter did nothing and nothing said why, VM, 2026-10-14).
     local oko, op = pcall(function() return b:GetRenderOpacity() end)
+    local okid, id = pcall(function() return b.CurrentCharacter end)
+    local cond = okid and type(id) == "userdata" and M.hero_condition(id) or nil
     if (oke and enabled == false) or (oko and type(op) == "number" and op < 0.75) then
-        text = text:gsub("^([^,%.]+)", "%1, unavailable", 1)
+        text = text:gsub("^([^,%.]+)", "%1, unavailable" .. (cond and (": " .. cond) or ""), 1)
+    elseif cond then
+        text = text:gsub("^([^,%.]+)", "%1, " .. cond, 1)
     end
     if index then text = text:gsub("%.$", "") .. string.format(", %d of %d.", index, #shown) end
     return text

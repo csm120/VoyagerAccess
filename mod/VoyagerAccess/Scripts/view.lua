@@ -310,7 +310,18 @@ function M.overview_tab(dir)
             b:HandleButtonClicked()
             -- After the new tab is in place: forgotten at once, the old tab
             -- was read again and the new one missed (VM, 2026-10-17).
-            ExecuteInGameThreadWithDelay(400, function() pcall(require("popups").forget, "WBP_OverviewInfoWidget_C") end)
+            -- Only when the new tab has not been read already: its text
+            -- changed, so the poll read it, and forgetting it then read
+            -- every tab twice (firefly82, German game, 2026-10-18).
+            local okb, before = pcall(require("popups").remembered, "WBP_OverviewInfoWidget_C")
+            ExecuteInGameThreadWithDelay(400, function()
+                pcall(function()
+                    local popups = require("popups")
+                    if not okb or popups.remembered("WBP_OverviewInfoWidget_C") == before then
+                        popups.forget("WBP_OverviewInfoWidget_C")
+                    end
+                end)
+            end)
             -- The game gets the same arrow: on the Q Trials tab it moved
             -- focus into the Q Modifier picker instead (VM, 2026-10-15). The
             -- tab is read as a whole, so the game's focus is parked.

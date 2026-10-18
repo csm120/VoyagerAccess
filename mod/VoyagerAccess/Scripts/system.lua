@@ -57,6 +57,17 @@ local function system_marks(actor)
         for _, w in ipairs(widgets) do
             if w:IsValid() and w.TargetActor:IsValid() and w.TargetActor:GetFullName() == apath then
                 local wp = path_of(w) .. "."
+                -- The countdown a point shows under its marker while a hero
+                -- is stationed there or it is locked down
+                -- (HarvestTimeRemaining_TXT; firefly82's parity check,
+                -- 2026-10-18). Said only while the screen shows it.
+                pcall(function()
+                    local t = w.HarvestTimeRemaining_TXT
+                    if t and t:IsValid() and require("screen").shown(t) then
+                        local n = tonumber((t:GetText():ToString():gsub("%D", "")))
+                        if n then marks[#marks + 1] = n .. (n == 1 and " cycle left" or " cycles left") end
+                    end
+                end)
                 for _, x in ipairs(FindAllOf("Image") or {}) do
                     local xp = x:IsValid() and path_of(x)
                     if xp and xp:sub(1, #wp) == wp and require("screen").shown(x) then
@@ -119,9 +130,16 @@ end
 -- 2026-10-14). A sector's systems can differ only after the point
 -- (3,520.0 to 3,520.3, State of Flux, 2026-10-15), so any other decimal is
 -- said: "3 5 2 oh point 1".
+-- The point after the number is the last separator before one final digit:
+-- German groups thousands with a point, "4.048.0", which was split at the
+-- first point and said "4 point oh 4 8, .0" (German game, 2026-10-18).
 function M.spoken_number(raw)
-    local num, dec, rest = raw:gsub(",", ""):match("^(%d+)%.?(%d*)%s*(.-)%s*$")
-    if not num then return raw end
+    local numtxt, rest = raw:match("^(%d[%d%.,]*)%s*(.-)%s*$")
+    if not numtxt then return raw end
+    local num, dec = numtxt:match("^(.-)[%.,](%d)$")
+    if not num then num, dec = numtxt, "" end
+    num = num:gsub("[%.,]", "")
+    if num == "" then return raw end
     local function digits(s) return (s:gsub("%d", "%0 "):gsub("0 ", "oh "):gsub(" $", "")) end
     local out = digits(num)
     if dec ~= "" and tonumber(dec) ~= 0 then out = out .. " point " .. digits(dec) end
@@ -185,7 +203,9 @@ local function resources(poi)
     pcall(function()
         poi.EventIds:ForEach(function(_, e)
             local id = e:get():ToString()
-            local res = id:match("^ResourceEvent_Generated_(%a+)_%d+$")
+            -- The number can be negative: "ResourceEvent_Generated_Duranium_-18"
+            -- was said as just "scanned" (German game, 2026-10-18).
+            local res = id:match("^ResourceEvent_Generated_(%a+)_%-?%d+$")
             if res and not seen[res] then
                 seen[res] = true
                 found[#found + 1] = (res:gsub("(%l)(%u)", "%1 %2"))
@@ -236,6 +256,25 @@ local function voyager()
         if v:IsValid() and path_of(v):find("PersistentLevel", 1, true) then return v end
     end
     return nil
+end
+
+-- The trip's length in cycles, as the game shows it under the selected
+-- point ("3 Zyklen entfernt", WBP_System_POI_Selection_Display.Action_Text,
+-- German game, 2026-10-18); GetTimeToTravel gave the same number, and the
+-- mod said nothing about it. nil where Voyager already is, and where the
+-- game would not fly: her own system on the Sector Map said "Voyager is
+-- here, 3 cycles away", the way to its centre (CanTravel false, 2026-10-18).
+local function travel_time(p)
+    local n = nil
+    pcall(function()
+        local j = FindFirstOf("STVJourneySubsystem")
+        local ship = voyager()
+        if not (j and j:IsValid() and ship) then return end
+        if j:CanTravel(ship, p.poi, {}) == false then return end
+        n = j:GetTimeToTravel(ship, p.actor, {}, {})
+    end)
+    if type(n) ~= "number" or n <= 0 then return nil end
+    return n .. (n == 1 and " cycle away" or " cycles away")
 end
 
 -- Points in the current system as { poi, actor, path, dist }, nearest first.
@@ -341,7 +380,8 @@ local function select(list, i, prefix)
         local marks = system_marks(p.actor)
         if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
     end
-    local text = string.format("%s, %s, %d of %d", name, status(p), i, #list)
+    local travel = travel_time(p)
+    local text = string.format("%s, %s, %s%d of %d", name, status(p), travel and (travel .. ", ") or "", i, #list)
     if prefix then text = prefix .. ": " .. text end
     print("[VoyagerAccess] system: " .. text .. "\n")
     speech.say(text, true)
@@ -528,6 +568,51 @@ local function watch_arrival(name, target, start_d)
             travel = nil
             print("[VoyagerAccess] course: arrived at " .. name .. (battle and " (in battle, not said)" or "") .. "\n")
             if not battle then speech.say("Arrived at " .. name, false) end
+            -- Arriving while another window is up (a mission offer that
+            -- came mid-trip) skips the point's own event: the Class Y
+            -- planet's opened only on a second visit (Q Trial, VM,
+            -- 2026-10-18; a forum player hit it after switching screens).
+            -- The point keeps a waiting event (Activatable) and nothing
+            -- opens. A sighted player sees no event either, so this only
+            -- says what happened and what the game wants.
+            if not battle then
+                -- Checked once the other windows are closed: the mission
+                -- offer was still open 5 s after arriving at the Trading
+                -- Station, and nothing was said (Q Trial, VM, 2026-10-18).
+                local tries = 0
+                local my_watch = watch_id
+                local function check()
+                    tries = tries + 1
+                    -- Not once a new course has been set.
+                    if watch_id ~= my_watch then return end
+                    pcall(function()
+                        local a = StaticFindObject(target)
+                        if not (a and a:IsValid()) then return end
+                        local busy = false
+                        for _, w in ipairs(require("popups").open_windows()) do
+                            if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then busy = true end
+                        end
+                        if busy or require("dialogue").active() then
+                            if tries < 60 then ExecuteInGameThreadWithDelay(2000, check) end
+                            return
+                        end
+                        local es = FindFirstOf("STVEventSubsystem")
+                        local waiting = false
+                        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
+                            local o = c:IsValid() and c:GetOwner()
+                            if o and o:IsValid() and o:GetFullName() == a:GetFullName() then
+                                c.EventIds:ForEach(function(_, e)
+                                    if es:GetEventStateById(e:get()) == 3 then waiting = true end
+                                end)
+                            end
+                        end
+                        if not waiting then return end
+                        print("[VoyagerAccess] course: event waiting at " .. name .. " did not open\n")
+                        speech.say(name .. "'s event did not open, because another window was up when Voyager arrived. Set course to another point and back to start it.", false)
+                    end)
+                end
+                ExecuteInGameThreadWithDelay(4000, check)
+            end
             return
         end
         -- No progress at all and the game not travelling: the trip ended at
@@ -951,7 +1036,8 @@ function M.where()
         local marks = system_marks(p.actor)
         if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
     end
-    local text = string.format("%s, %s, %d of %d", name, status(p), i, #list)
+    local travel = travel_time(p)
+    local text = string.format("%s, %s, %s%d of %d", name, status(p), travel and (travel .. ", ") or "", i, #list)
     if menu then text = text .. ". Action list open: " .. ACTIONS[menu] end
     return text
 end

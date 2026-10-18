@@ -99,6 +99,12 @@ function M.say(text, interrupt)
     -- first event option was read twice in a row (VM, 2026-10-15). A key
     -- press repeating a line interrupts, and is still said.
     if not interrupt and text == last_text and os.clock() - last_at < 2 then return end
+    -- And a toast that repeats the end of the line just said: "Kathryn
+    -- Janeway: Get started on that vaccine, Doctor. Anti-Radiation Vaccine
+    -- unlocked in the Crew TECH TREE", then the toast alone (sector 8,
+    -- 2026-10-18).
+    if not interrupt and last_text and #text >= 12 and #last_text > #text and os.clock() - last_at < 3
+        and last_text:sub(-#text) == text then return end
     last_text, last_at = text, os.clock()
     write("a", (interrupt and "I|" or "Q|") .. text .. "\n")
 end
@@ -122,12 +128,13 @@ function M.say_long(text, interrupt)
 end
 
 -- A tutorial: queued after what is speaking, and nothing interrupts it
--- until it has had time to be said or a key is pressed.
+-- until a key is pressed. A time estimate cannot know how fast a screen
+-- reader speaks, and tutorials close themselves (firefly82, 2026-10-18), so
+-- what comes after it queues behind it instead; ten minutes is only a cap.
 function M.say_protected(text)
     if type(text) ~= "string" or text == "" then return end
-    local _, words = text:gsub("%S+", "")
     M.say(text, false)
-    protect_until = math.max(protect_until, os.time() + math.min(60, math.ceil(words / 3) + 1))
+    protect_until = math.max(protect_until, os.time() + 600)
 end
 
 -- Any key Casey presses ends a hold: he has chosen to move on.

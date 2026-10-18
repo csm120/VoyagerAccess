@@ -335,23 +335,30 @@ local radial_said = {}   -- segment path -> what was said, for L and R
 -- details (no helper, or a centre without them), the command's name.
 function M.radial_focus(b, path)
     local menu = path:match("^(.-WBP_RadialMenu_C_%d+)%.")
-    pcall(function()
-        local pos = b.Slot:GetPosition()
-        local r = math.max(math.sqrt(pos.X * pos.X + pos.Y * pos.Y), 1)
-        speech.ring_mouse(pos.X / r, pos.Y / r)
-    end)
-    ExecuteInGameThreadWithDelay(450, function()
+    -- A room to build is read from the game's data at once: the hover and
+    -- its 450 ms wait matched the centre for none of 45 room segments in a
+    -- two-hour session, so every arrow key waited for nothing (firefly82,
+    -- German game, 2026-10-18). Other segments still hover for the centre.
+    local okr0, ring0 = pcall(require("construction").ring_text, b)
+    local direct = okr0 and ring0 ~= nil
+    if not direct then
+        pcall(function()
+            local pos = b.Slot:GetPosition()
+            local r = math.max(math.sqrt(pos.X * pos.X + pos.Y * pos.Y), 1)
+            speech.ring_mouse(pos.X / r, pos.Y / r)
+        end)
+    end
+    local function say_it()
         pcall(function()
             if current ~= path then return end
             local nb = resolve(path)
             if not nb then return end
-            local text = menu and radial_details(menu) or nil
-            -- A room to build: when the hover did not reach this room (no
-            -- mouse, or a game that ignores it), read it from the game's data.
+            local text = nil
             local okr, ring = pcall(require("construction").ring_text, nb)
-            if okr and ring and not (text and ring.check ~= "" and text:find(ring.check, 1, true)) then
-                print("[VoyagerAccess] radial: centre not for this room, read from data\n")
+            if okr and ring then
                 text = ring.text
+            elseif menu then
+                text = radial_details(menu)
             end
             if not text or text == "" then text = M.radial_label(nb) or "Button" end
             if text:find("^[^%.]+%. Missing resources%.") then
@@ -370,7 +377,8 @@ function M.radial_focus(b, path)
             print("[VoyagerAccess] radial: " .. text .. "\n")
             speech.say(text, true)
         end)
-    end)
+    end
+    if direct then say_it() else ExecuteInGameThreadWithDelay(450, say_it) end
 end
 
 function M.radial_said(path)
@@ -1058,7 +1066,10 @@ local function with_position(label, path)
     if os.clock() - (require("rooms").tab_switched_at or -100) < 0.6 then return label end
     local head, rest = label:match("^(.-)%.%s+(.+)$")
     -- Not after a short abbreviation such as "Lvl." (review, 2026-10-15).
-    if head and rest and not head:match("%f[%a]%u%l?%l?$") then
+    -- Nor in a label all in capitals: "AUTOM. SPEICHERSTAND LADEN" (German
+    -- "Load Autosave") was said "AUTOM, 2 of 4. SPEICHERSTAND LADEN"
+    -- (firefly82, 2026-10-18); such a label has no sentences.
+    if head and rest and not head:match("%f[%a]%u%l?%l?$") and label:find("%l") then
         return head .. ", " .. positions[path] .. ". " .. rest
     end
     return (label:gsub("[%.,]%s*$", "")) .. ", " .. positions[path]
@@ -1600,7 +1611,10 @@ local function poll()
     -- victory..." (Q Trials ambush, VM, 2026-10-15).
     for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C", "WBP_MultipleChoiceWidget_C",
                            "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C", "WBP_BattleResultLCARS_C",
-                           "WBP_SandboxSectorResult_C", "WBP_CombatAutoResolve_C" }) do
+                           "WBP_SandboxSectorResult_C", "WBP_CombatAutoResolve_C",
+                           -- "Stay Here, 1 of 2" before "Old Friends, New
+                           -- Enemies. Completed..." (sector 7, 2026-10-18).
+                           "WBP_MissionInfoWidget_C", "WBP_SideMissionFinished_C" }) do
         if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
             for _, w in ipairs(FindAllOf(cls) or {}) do
                 if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then
@@ -1707,6 +1721,8 @@ function click(b)
     b:HandleButtonClicked()
 end
 
+local picked_choice = nil   -- the dialogue choice Enter last picked
+
 local function activate()
     crumb.at("key: enter on " .. tostring(current))
     if require("popups").close_tutorial() then return end
@@ -1722,6 +1738,16 @@ local function activate()
     -- Only while the choice is on screen: after picking one, focus stayed
     -- on the hidden choice and Enter kept picking it (2026-10-11).
     local choice = dialogue.is_choice(current) and resolve(current)
+    -- A major decision's choices stay on screen after one is picked, so
+    -- every Enter that moved the next lines on said "Holding" and held the
+    -- picked choice again (Idrin's relay, sector 7, 2026-10-18). Once a
+    -- choice has been picked, Enter on that same choice continues.
+    local picked_path = current and (current:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)") or current:match("^(.-WBP_Dialogue_Choice_C_%d+)"))
+    if choice and picked_path and picked_path == picked_choice and dialogue.active() then
+        print("[VoyagerAccess] enter: choice already picked, continuing\n")
+        dialogue.continue()
+        return
+    end
     -- The Enter that moves the last line on can land just as the choices
     -- come up, and it picked "Choice 1" before it was heard (twice,
     -- 2026-10-14). Within a second of the choices appearing, Enter says
@@ -1744,6 +1770,7 @@ local function activate()
             -- (2026-10-14). Hold it as Wait One Cycle is held.
             local okh, hold = pcall(function() return target.bRequiresHold end)
             if okh and hold then
+                picked_choice = cpath
                 speech.say("Holding", true)
                 target:HandleButtonPressed()
                 local held = path_of(target)
@@ -2000,7 +2027,16 @@ local function activate()
             -- ..." (VM, 2026-10-17). Closing and opening the ring again
             -- clears that lock.
             if why and not (why:find("^Missing") or why:find("^No ") or why:find("^Not ")) then
-                why = "the ring may be out of date, Escape and open it again"
+                -- Every work team busy: "Clear debris" said the ring may be
+                -- out of date seven times, and reopening it did not help
+                -- (firefly82, German game, 2026-10-18). The hero manager
+                -- counts the free teams.
+                local okw, free = pcall(function() return FindFirstOf("STVHeroManager"):GetUnassignedWorkTeamsAmount() end)
+                if okw and type(free) == "number" and free <= 0 then
+                    why = "no free work team, all are busy"
+                else
+                    why = "the ring may be out of date, Escape and open it again"
+                end
             end
             speech.say("Not possible" .. (why and (": " .. why) or "") .. (name and (". " .. name) or ""), true)
             return

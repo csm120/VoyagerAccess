@@ -397,6 +397,10 @@ function M.choice_label(path)
         -- The second number is the hero's bonus, shown highlighted: "chance
         -- 40% + 45%" read as a sum to work out (Jetrel, 2026-10-15).
         req = (req:gsub("chance (%d+%%) %+ (%d+%%)", "chance %1, plus %2 bonus"))
+        -- A choice with no room or hero needed says only "Success Chance:
+        -- 70%", where the rest say "chance 70%" (black hole, sector 7,
+        -- 2026-10-18).
+        req = (req:gsub("^Success Chance:%s*(%d+%%)", "Chance %1"))
         parts[#parts + 1] = (unmet and "Needs " or "") .. req
     end
     local reward = ""

@@ -380,6 +380,13 @@ function M.button_label(b, path)
         end
     end
     local label = by.hoverText ~= "" and by.hoverText or "Subsystem"
+    -- Which part of the ship it sits in (ESTVSectionLocation): a Hirogen
+    -- Speed Scout had three targets all read "Engines, 14 health", and the
+    -- list said "3 of 8" for each of them (sector 7, 2026-10-18).
+    local okl, loc = pcall(function() return b["Section Location"] end)
+    -- The same words as the attack side ("Attack: starboard").
+    local SECTIONS = { [0] = "bow", [1] = "starboard", [2] = "aft", [3] = "port", [4] = "middle" }
+    if okl and SECTIONS[loc] and not label:find("^Repair ") then label = label .. ", " .. SECTIONS[loc] end
     if by.hp and by.hp ~= "" then label = label .. ", " .. by.hp .. " health" end
     if label:find("^Repair ") then label = label:gsub(", (%d+) health$", ", health %1") end
     local okr, full = pcall(M.repair_label, label)
