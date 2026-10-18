@@ -1139,6 +1139,16 @@ local function battle_result(_, path)
         local n = #lists[s]
         local counted = s == "Injuries" or s == "Damaged rooms"
         if n == 1 and lists[s][1]:lower() == "none" then out[#out + 1] = s .. ": none"
+        elseif n > 0 and s == "Damaged rooms" then
+            -- Two rooms of one type were said apart: "Life Support,
+            -- Stellar Cartography, Life Support" (VM, 2026-10-17).
+            local names, seen = {}, {}
+            for _, r in ipairs(lists[s]) do
+                if not seen[r] then seen[r] = 0; names[#names + 1] = r end
+                seen[r] = seen[r] + 1
+            end
+            for i, r in ipairs(names) do if seen[r] > 1 then names[i] = r .. " times " .. seen[r] end end
+            out[#out + 1] = s .. ", " .. n .. ": " .. table.concat(names, ", ")
         elseif n > 0 and counted then out[#out + 1] = s .. ", " .. n .. ": " .. table.concat(lists[s], ", ")
         elseif n > 0 then out[#out + 1] = s .. ": " .. table.concat(lists[s], ", ") end
     end
@@ -1494,7 +1504,8 @@ local LAYOUTS = { WBP_SandboxSectorResult_C = sandbox_result, WBP_LeaveSector_C 
                     local amount = txt(r.RewardAmount_Text):gsub("^%+", "")
                     local icon = icon_name(r.Reward_Image)
                     local res = (icon and require("text").icon_name(icon)) or "resources"
-                    if amount ~= "" then rewards[#rewards + 1] = amount .. " " .. res end
+                    -- Not the widget's design-time "#999" (events.lua).
+                    if amount:find("%d") and not amount:find("#", 1, true) then rewards[#rewards + 1] = amount .. " " .. res end
                 end
             end
         end

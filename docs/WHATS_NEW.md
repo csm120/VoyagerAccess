@@ -2,6 +2,15 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.45
+
+A quicker V, and a stray number. Thanks, TheRev, for the report about sluggish keys.
+
+- Changed: V says "Ship view" or "System map" the moment you press it. Before, it waited about a second and a half for the camera to finish moving. The room or point you're on follows once the view settles.
+- Fixed: some event options read a placeholder reward, like "Leave for now. Up to #999 deuterium" at the Hirogen relay stations. That's gone now.
+
+## Saturday October 17th 2026
+
 Version 0.3.44
 
 A good going-over of the Overview.

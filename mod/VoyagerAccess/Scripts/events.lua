@@ -322,7 +322,10 @@ local function rewards(b)
             -- "SciencePoints" read as one word; text.icon_name says "science
             -- points", "experience", "crew" (reward scan, 2026-10-16).
             local res = icon and require("text").icon_name(icon) or "resources"
-            if amount ~= "" then out[#out + 1] = "up to " .. amount .. " " .. res end
+            -- "#999" is the widget's design-time text, left on an option with
+            -- no reward: "Leave for now. Up to #999 deuterium" (Relay
+            -- Station, VM, 2026-10-17).
+            if amount:find("%d") and not amount:find("#", 1, true) then out[#out + 1] = "up to " .. amount .. " " .. res end
         end)
     end)
     return table.concat(out, ", ")

@@ -349,6 +349,8 @@ local function view_poll()
     else here = require("system").where() or "Nothing selected" end
     local map = require("system").sector() and "Sector map" or "System map"
     local text = (v == "ship" and "Ship view" or map) .. ". " .. here
+    -- V already said the view's name (view.toggle).
+    if os.clock() - (require("view").toggled_at or -100) < 4 and map ~= "Sector map" then text = here end
     print("[VoyagerAccess] view: " .. text .. "\n")
     speech.say(text, true)
     -- A room's state text changes a moment after its ring closes: "Deck 11,

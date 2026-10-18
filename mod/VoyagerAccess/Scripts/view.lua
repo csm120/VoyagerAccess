@@ -34,7 +34,12 @@ function M.toggle()
     b:HandleButtonPressed()
     b:HandleButtonReleased()
     b:HandleButtonClicked()
-    -- help.lua says the new view and what is selected once it is up.
+    -- Said at once: the full line waits for the view to settle, about 1.6 s
+    -- after the key (VM log, 2026-10-17), and a player found the keys
+    -- sluggish (forum, TheRev, 2026-10-17). help.lua then says only what is
+    -- selected.
+    M.toggled_at = os.clock()
+    speech.say(to_map and "System map" or "Ship view", true)
 end
 
 -- N: the navigation bar as a list (Casey, 2026-10-11: "how do I get to the
