@@ -702,10 +702,37 @@ local function poll()
     end
 end
 
+-- The setup's "You still have unassigned slots. Continue?"
+-- (HeroLoadout.FewerHeroesConfirmWidget, AcceptButton and CloseButton) was
+-- read, but focus stayed on Auto Resolve and Start Combat, so it could not
+-- be answered (no hero free for Idrin's battle, VM, 2026-10-17). While it is
+-- up, focus goes to its Continue once.
+local confirm_focused = nil
+local function fewer_heroes_focus()
+    local w = main()
+    if not w then confirm_focused = nil return end
+    local ok, c = pcall(function() return w.HeroLoadout.FewerHeroesConfirmWidget end)
+    if not (ok and c and c:IsValid() and screen.shown(c)) then confirm_focused = nil return end
+    local cp = c:GetFullName():match("^%S+%s+(.+)$")
+    local cur = require("focus").current_path() or ""
+    if cur:sub(1, #cp + 1) == cp .. "." then confirm_focused = cp return end
+    if confirm_focused == cp then return end
+    confirm_focused = cp
+    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+        local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
+        if p and p:sub(1, #cp + 1) == cp .. "." and p:find("%.AcceptButton$") and screen.shown(b) then
+            b:SetFocus()
+            print("[VoyagerAccess] combat: focus to the unassigned slots warning's Continue\n")
+            return
+        end
+    end
+end
+
 function M.install()
     LoopInGameThreadWithDelay(500, function()
         local ok, err = pcall(poll)
         if not ok then print("[VoyagerAccess] combat error: " .. tostring(err) .. "\n") end
+        pcall(fewer_heroes_focus)
     end)
 end
 

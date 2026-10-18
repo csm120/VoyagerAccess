@@ -2470,8 +2470,18 @@ local function edge(last)
     end)
     -- Counted again first: Confirm appears only after a reward is chosen,
     -- and the first End went to "3 of 4" from the old count (VM, 2026-10-17).
-    pcall(wire_rows, current)
+    -- Only when the new count still has the focused button: from an away
+    -- team hero picker it counted the team screen, and Home left the
+    -- picker for the slot (VM, 2026-10-17).
+    -- So only buttons this count already had are counted again.
+    local before = groups[current]
+    local function has(list)
+        for _, m in ipairs(list or {}) do if m == current then return true end end
+        return false
+    end
+    if has(before) then pcall(wire_rows, current) end
     local members = groups[current]
+    if not has(members) then members = before end
     -- Or a list counted wider than its panel: End on the Q Trials results
     -- stopped on the last reward, "3 of 4", short of Confirm (VM, 2026-10-17).
     if members and #members >= 2 and (siblings < 2 or #members > siblings) then

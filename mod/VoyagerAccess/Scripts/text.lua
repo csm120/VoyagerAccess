@@ -81,6 +81,9 @@ function M.prep(s)
     -- line must start like a sentence (capital, then lowercase), so a label
     -- wrapped in capitals still stays joined.
     s = s:gsub("(%u)[ \t]*\r?\n[\r\n%s]*(%u%l)", "%1. %2")
+    -- The heading is usually in a style tag: "<Headline>PLASMA STORM</>" then
+    -- the break (Sensor Alert, VM, 2026-10-17).
+    s = s:gsub("(%u)(</%w*>)[ \t]*\r?\n[\r\n%s]*(%u%l)", "%1.%2 %3")
     return s
 end
 

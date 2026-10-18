@@ -2,6 +2,17 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.46
+
+More from the Hirogen relay stations in sector 7, including two fixes that matter.
+
+- Fixed: when you start a battle or an away mission with empty hero slots, the game asks "You still have unassigned slots. Continue?" Its Return and Continue couldn't always be reached, so you were stuck on the setup. They take focus now.
+- Fixed: Home in an away team's hero list jumped out to the team slots instead of going to the first hero. That broke in 0.3.43 and works again.
+- Changed: a battle result names two damaged rooms of the same kind once with a count, like "Life Support times 2".
+- Fixed: the Workshop no longer says "No blueprints to craft" while it's busy crafting something.
+
+## Saturday October 17th 2026
+
 Version 0.3.45
 
 A quicker V, and a stray number. Thanks, TheRev, for the report about sluggish keys.

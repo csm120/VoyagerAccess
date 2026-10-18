@@ -85,6 +85,9 @@ function M.say(text, interrupt)
     -- Brackets round a name: "the [TECH TREE]" (room descriptions) and
     -- "[Sick bay] got damaged" (a sabotage toast), VM, 2026-10-16.
     -- Placeholders like "[{Shuttle}]" are left to their readers.
+    -- A bracket before a new sentence ends one: "[WARNING: You need 2 heroes
+    -- for this away mission] Send away team" ran together (VM, 2026-10-17).
+    text = text:gsub("%[([^%[%]{}]-[^%.!%?%[%]{}])%]%s+(%u)", "%1. %2")
     text = text:gsub("%[([^%[%]{}]+)%]", "%1")
     text = split_words(text)
     if text == "" then return end

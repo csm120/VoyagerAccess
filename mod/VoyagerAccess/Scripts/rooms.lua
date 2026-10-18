@@ -172,7 +172,8 @@ function M.research_label(path)
         local by = texts_under(path)
         local label = "Crafting: " .. (by.ResearchName or "")
         if paused_shown(path) then label = label .. ", paused" end
-        if by.CyclesText and by.CyclesText:match("[1-9]") then
+        local crafting = by.CyclesText and by.CyclesText:match("[1-9]") ~= nil
+        if crafting then
             local n = by.CyclesText:gsub("^#", ""):gsub("^0+(%d)", "%1")
             label = label .. ", " .. n .. (n == "1" and " cycle left" or " cycles left")
             if by.OnClickAction_TXT and by.OnClickAction_TXT ~= "" then
@@ -190,7 +191,10 @@ function M.research_label(path)
         for _, ib in ipairs(FindAllOf("WBP_ItemButton_C") or {}) do
             if ib:IsValid() and path_of(ib):find("^/Engine/Transient%.") and screen.shown(ib) then none = false end
         end
-        if none then label = label:gsub("%.$", "") .. ". No blueprints to craft" end
+        -- Not while crafting: the list is hidden then, and "Crafting:
+        -- Torpedo, 8 cycles left... No blueprints to craft" was read (VM,
+        -- 2026-10-17).
+        if none and not crafting then label = label:gsub("%.$", "") .. ". No blueprints to craft" end
         return label .. "."
     end
     local function workshop_open()
