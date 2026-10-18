@@ -2,6 +2,18 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.44
+
+A good going-over of the Overview.
+
+- New: the Overview's Q Trials tab reads its challenge levels as a list, like "Level 2, not active: Spatial phenomena spawn 50% more often. Crew treatment time increases by 60%." Before, the words came out jumbled with the count in the middle.
+- Fixed: going back to an Overview tab you'd already visited could say nothing, especially the Heroes tab. Every tab is read each time you switch to it now.
+- Fixed: on the Q Trials tab, Down went to CLOSE after switching tabs, and Right could wander into the Q Modifier picker. Down now starts on the active level, and Left and Right only switch tabs.
+- Changed: the Heroes tab says the name first, like "Neelix, rank 1" instead of "Rank 01, Neelix".
+- Fixed: the HUD's cycle counter said only a number when it got focus. It says "Cycle counter, 24" now.
+
+## Saturday October 17th 2026
+
 Version 0.3.43
 
 From a couple of Q Trials, with a Maquis raider along for the ride.

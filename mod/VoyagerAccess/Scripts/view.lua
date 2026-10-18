@@ -276,6 +276,11 @@ function M.hero_step(dir, edge)
     end
     local c = cards[hero_index]
     local name = card_text(c)
+    -- The name first: the card's texts came out "Not recruited, Tuvok"
+    -- (VM, 2026-10-17).
+    name = (name:gsub("^([^,]*[Rr]ecruited), (.+)$", "%2, %1"))
+    -- And "Rank 01, Neelix" (the same day).
+    name = (name:gsub("^[Rr]ank 0*(%d+), (.+)$", "%2, rank %1"))
     pcall(function() c.w["BndEvt__WBP_Hero_InfoCardButton_Button_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature"](c.w) end)
     speech.say(string.format("%s, %d of %d", name ~= "" and name or "Hero", hero_index, #cards), true)
     ExecuteInGameThreadWithDelay(250, function()
@@ -298,10 +303,30 @@ function M.overview_tab(dir)
             b:HandleButtonPressed()
             b:HandleButtonReleased()
             b:HandleButtonClicked()
+            -- After the new tab is in place: forgotten at once, the old tab
+            -- was read again and the new one missed (VM, 2026-10-17).
+            ExecuteInGameThreadWithDelay(400, function() pcall(require("popups").forget, "WBP_OverviewInfoWidget_C") end)
             -- The game gets the same arrow: on the Q Trials tab it moved
             -- focus into the Q Modifier picker instead (VM, 2026-10-15). The
             -- tab is read as a whole, so the game's focus is parked.
-            ExecuteInGameThreadWithDelay(150, function() pcall(require("focus").park_focus) end)
+            -- Except on the Q Trials tab, whose challenge levels are a list:
+            -- parked there, Down went to CLOSE (VM, 2026-10-17). Its active
+            -- level (the one not locked) takes focus.
+            ExecuteInGameThreadWithDelay(150, function()
+                local first, active = nil, nil
+                for _, x in ipairs(FindAllOf("WBP_Sandbox_Setup_QChallengesPlaque_Overview_C") or {}) do
+                    if x:IsValid() and x:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(x) then
+                        first = first or x
+                        if not x.IsLocked and not active then active = x end
+                    end
+                end
+                local target = active or first
+                if target then
+                    pcall(function() target:SetFocus() end)
+                else
+                    pcall(require("focus").park_focus)
+                end
+            end)
             return true
         end
     end

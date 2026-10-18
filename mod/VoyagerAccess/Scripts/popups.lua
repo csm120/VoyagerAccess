@@ -149,6 +149,15 @@ local reread_until = {}   -- needle -> os.time() until which it is re-read
 function M.reread_for(needle, seconds)
     reread_until[needle] = os.time() + (seconds or 4)
 end
+-- Forgets what the windows whose path contains needle last said, so the
+-- next poll reads them again: a tab switch back to the Overview's Heroes tab
+-- said nothing, its text being the same as before (VM, 2026-10-17).
+function M.forget(needle)
+    for p in pairs(last_text) do
+        -- Not nil: a re-read skips a window with nothing remembered.
+        if p:find(needle, 1, true) then last_text[p] = "\0" end
+    end
+end
 local function rereading(p)
     for needle, t in pairs(reread_until) do
         if os.time() <= t and p:find(needle, 1, true) then return true end

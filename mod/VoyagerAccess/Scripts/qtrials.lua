@@ -591,4 +591,22 @@ function M.edge(path, last)
     return true
 end
 
+-- The Overview's Q Trials tab lists the challenge levels
+-- (WBP_Sandbox_Setup_QChallengesPlaque_Overview: Level_TXT,
+-- ChallengeDescr_TXT, IsLocked). Read by the generic label it came out as
+-- "Spatial phenomena spawn 50% more often, 3 of 11. Crew treatment time
+-- increases by 60%., Level 02" (VM, 2026-10-17). Only the trial's own level
+-- is unlocked there, so locked is said as "not active".
+function M.overview_plaque_label(b)
+    local level = (text(b.Level_TXT):gsub("(%d+)", function(n) return tostring(tonumber(n)) end))
+    local descr = (text(b.ChallengeDescr_TXT):gsub("%.?%s*$", "."))
+    if level == "" and descr == "." then return nil end
+    -- Left and Right switch the Overview's tabs (view.lua); the game also
+    -- took Right from a row into the Q Modifier picker, and the tabs went
+    -- silent after it (VM, 2026-10-17). EUINavigation Left 0, Right 1; Stop 3.
+    pcall(function() b:SetNavigationRuleBase(0, 3); b:SetNavigationRuleBase(1, 3) end)
+    -- Level and state first: the count goes after the first sentence.
+    return string.format("%s, %s: %s", level ~= "" and level or "Level", b.IsLocked and "not active" or "active", descr)
+end
+
 return M

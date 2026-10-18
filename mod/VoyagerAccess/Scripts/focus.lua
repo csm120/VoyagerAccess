@@ -1254,6 +1254,13 @@ label_for = function(b, path)
     elseif b:GetClass():GetFName():ToString() == "WBP_CombatAllyButton_C"
         or b:GetClass():GetFName():ToString() == "WBP_CombatAllyRecruitedButton_C" then
         label = require("rooms").ally_label(b)
+    elseif b:GetClass():GetFName():ToString() == "WBP_HUD_CyclesDisplay_C" then
+        -- The HUD's cycle counter took the game's focus during an Overview
+        -- tab switch and was read as a bare "24" (VM, 2026-10-17).
+        local ok, n = pcall(function() return b.CyclesAmount:GetText():ToString() end)
+        label = "Cycle counter" .. ((ok and n and n ~= "") and (", " .. n) or "")
+    elseif b:GetClass():GetFName():ToString() == "WBP_Sandbox_Setup_QChallengesPlaque_Overview_C" then
+        label = require("qtrials").overview_plaque_label(b)
     elseif b:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C" then
         -- A side mission offer's options: the wording is rich text the
         -- plain label missed, so the options were silent (2026-10-14).
