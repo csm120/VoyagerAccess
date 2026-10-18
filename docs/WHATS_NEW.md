@@ -2,6 +2,14 @@
 
 ## Sunday October 18th 2026
 
+Version 0.3.51
+
+One fix for away missions that matters.
+
+- Fixed: when you pressed Enter on a hero you'd already picked for a challenge, the game took them off the team, but the mod still said "selected". So Confirm could send a different team than you thought, with a much lower chance. A hero is only "selected" now when the game really has them on the team, and the success chance you hear matches who's going.
+
+## Sunday October 18th 2026
+
 Version 0.3.50
 
 Two small ones from a new Q Trial.

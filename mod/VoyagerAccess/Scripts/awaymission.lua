@@ -610,14 +610,17 @@ end
 -- A hero in the choice's team. SelectedStateWidget marks only the hero
 -- clicked last; with two chosen, Kes and Tuvok went (Skill 35) while only
 -- Tuvok was marked and Confirm named only him. A hero already in the team
--- shows LockedWidget (VM, 2026-10-14), so either counts.
+-- shows LockedWidget (VM, 2026-10-14).
+-- LockedWidget alone is the team: SelectedStateWidget stays on the hero
+-- clicked last even when that click took the hero off again, and Joe Carey
+-- was read "selected" while only Chakotay was (marks read after pick and
+-- unpick: picked = Locked and Selected, unpicked = Selected only, the other
+-- picked hero = Locked only; Dauntless, VM, 2026-10-18).
 local function chosen(h)
     local yes = false
     pcall(function()
-        for _, k in ipairs({ "SelectedStateWidget", "LockedWidget" }) do
-            local w = h[k]
-            if w and w:IsValid() and screen.shown(w) then yes = true end
-        end
+        local w = h.LockedWidget
+        if w and w:IsValid() and screen.shown(w) then yes = true end
     end)
     return yes
 end
@@ -811,7 +814,7 @@ local function item_label(it)
                 text = text .. ", has the " .. want .. " trait"
             end
         end)
-        if is_active(c) and chosen(h) then
+        if is_active(c) and chosen(h, it.name) then
             text = text .. ", selected"
             local cw = chance_words()
             if cw then text = text .. ", " .. cw end
@@ -828,7 +831,7 @@ local function item_label(it)
         for _, o in ipairs(mission_items or {}) do
             if o.kind == "hero" and o.choice == it.choice then
                 local h = StaticFindObject(o.hero)
-                if h and h:IsValid() and chosen(h) then who[#who + 1] = o.name end
+                if h and h:IsValid() and chosen(h, o.name) then who[#who + 1] = o.name end
             end
         end
         if #who == 0 then return "Lock In: select a hero for this choice first." end
