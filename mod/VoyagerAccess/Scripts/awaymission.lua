@@ -622,6 +622,39 @@ local function chosen(h)
     return yes
 end
 
+-- The success chance the game works out when heroes are picked: the window's
+-- OnHeroesSelected(Chance, bCriticalSuccessCheck), a blueprint event
+-- (header dump made on the System Map, 2026-10-18; firefly82's lead). The
+-- game's tutorial says the chance is shown when the skill is below the
+-- requirement, so only a chance under certain is said.
+local last_chance = nil   -- { value = 0 to 100, at = os.clock() }
+local chance_hooked = false
+local CHANCE_HOOK = "/Game/STVoyager/Events/AwayMissions/UI/WBP_Dialogue_Window_AwayMission.WBP_Dialogue_Window_AwayMission_C:OnHeroesSelected"
+local function ensure_chance_hook()
+    if chance_hooked then return end
+    if not StaticFindObject(CHANCE_HOOK) then return end   -- loads with the first away mission
+    chance_hooked = pcall(RegisterHook, CHANCE_HOOK, function(_, chance, crit)
+        pcall(function()
+            local v = chance:get()
+            if type(v) ~= "number" then return end
+            if v <= 1 then v = v * 100 end
+            local c = false
+            pcall(function() c = crit:get() == true end)
+            last_chance = { value = math.floor(v + 0.5), at = os.clock(), crit = c }
+            print("[VoyagerAccess] away: success chance " .. last_chance.value .. (c and " (critical check)" or "") .. "\n")
+        end)
+    end)
+end
+M.ensure_chance_hook = ensure_chance_hook
+
+local function chance_words()
+    ensure_chance_hook()
+    if last_chance and last_chance.value < 100 and os.clock() - last_chance.at < 30 then
+        return "success chance " .. last_chance.value .. "%"
+    end
+    return nil
+end
+
 -- Ready to confirm: the game enables the button once a hero is on the
 -- choice. Matching its English word "Confirm" broke every away mission in
 -- another language: no hero was ever "selected" and Confirm said to pick a
@@ -724,6 +757,8 @@ local function choice_rewards(choice_path, cls)
 end
 
 local function item_label(it)
+    -- Hooked while the mission is up, before a hero is picked.
+    pcall(ensure_chance_hook)
     local c = StaticFindObject(it.choice)
     if not (c and c:IsValid()) then return nil end
     if it.kind == "choice" then
@@ -776,7 +811,11 @@ local function item_label(it)
                 text = text .. ", has the " .. want .. " trait"
             end
         end)
-        if is_active(c) and chosen(h) then text = text .. ", selected" end
+        if is_active(c) and chosen(h) then
+            text = text .. ", selected"
+            local cw = chance_words()
+            if cw then text = text .. ", " .. cw end
+        end
         return text .. "."
     else
         -- Casey pressed Enter on the inactive choice's Lock In and nothing
@@ -794,7 +833,8 @@ local function item_label(it)
         end
         if #who == 0 then return "Lock In: select a hero for this choice first." end
         local names = #who == 1 and who[1] or (table.concat(who, ", ", 1, #who - 1) .. " and " .. who[#who])
-        return "Confirm with " .. names .. "."
+        local cw = chance_words()
+        return "Confirm with " .. names .. (cw and (", " .. cw) or "") .. "."
     end
 end
 
@@ -888,7 +928,8 @@ function M.mission_enter()
             -- As the label says it: chosen() was true for a hero the game had
             -- refused (the choice is not active until a valid hero is on it).
             local was = false
-            pcall(function() was = (item_label(it) or ""):find(", selected%.$") ~= nil end)
+            -- "selected" can be followed by the success chance.
+            pcall(function() was = (item_label(it) or ""):find(", selected[%.,]") ~= nil end)
             press(h.Button)
             -- Picked, the hero is said with where to go next.
             ExecuteInGameThreadWithDelay(600, function()
@@ -896,7 +937,7 @@ function M.mission_enter()
                     local cur = mission_items[mission_index]
                     local label = cur and item_label(cur)
                     if not label then return end
-                    if label:find(", selected%.$") then
+                    if label:find(", selected[%.,]") then
                         label = label .. " Confirm is after the heroes."
                     elseif not was then
                         -- The game refused the hero without a sound: a choice

@@ -69,6 +69,14 @@ function M.say(text, interrupt)
     -- Species 8472 is said digit by digit, as the crew and the Borg say it,
     -- not "eight thousand four hundred..." (Casey, 2026-10-17).
     text = text:gsub("%f[%d]8472%f[%D]", "8 4 7 2")
+    -- Every designation, digit by digit (Casey, 2026-10-18): "Species 116"
+    -- is "Species 1 1 6", and registries such as "NX-01-A" or "NCC-74656"
+    -- are read the same way.
+    local function spaced(d) return (d:gsub("%d", "%0 "):gsub(" $", "")) end
+    text = text:gsub("([Ss]pecies%s+)(%d+)", function(w, d) return w .. spaced(d) end)
+    text = text:gsub("%f[%w](%u%u%u?)%-(%d+)%-?(%u?)%f[%W]", function(p, d, l)
+        return p .. " " .. spaced(d) .. (l ~= "" and (" " .. l) or "")
+    end)
     -- French and other languages group thousands with a narrow or plain
     -- no-break space ("-1 170", U+202F or U+00A0), which a reader may say
     -- as two numbers (VM, French, 2026-10-17). Joined between digits.

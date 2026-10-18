@@ -1280,7 +1280,18 @@ end
 -- Leave Sector: "Leave Sector: Vidiian Sector. Choose next sector. 70,000
 -- light years to home. Earth distance remaining 64,000 of 70,000 light
 -- years." The entries are the focusable list (M.leave_sector_entry).
-local function leave_sector(parts)
+local function leave_sector(parts, path)
+    -- Its Cancel is drawn as a button but not focusable, so the arrows never
+    -- reached it while the list counted it ("2 of 3", then nothing; Q
+    -- Trial, VM, 2026-10-18). A sighted player can click it.
+    pcall(function()
+        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+            local bp = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
+            if bp and bp:sub(1, #path + 1) == path .. "." and bp:find("%.CancelButton$") and not b:GetIsFocusable() then
+                b:SetIsFocusable(true)
+            end
+        end
+    end)
     local by = {}
     for _, p in ipairs(parts) do
         if not p.path:find("WBP_LeaveSectorEntry_C", 1, true) and not by[p.name] then by[p.name] = p.text end

@@ -1614,7 +1614,10 @@ local function poll()
                            "WBP_SandboxSectorResult_C", "WBP_CombatAutoResolve_C",
                            -- "Stay Here, 1 of 2" before "Old Friends, New
                            -- Enemies. Completed..." (sector 7, 2026-10-18).
-                           "WBP_MissionInfoWidget_C", "WBP_SideMissionFinished_C" }) do
+                           "WBP_MissionInfoWidget_C", "WBP_SideMissionFinished_C",
+                           -- "Sector 01: Trading Sector, 1 of 3" came before
+                           -- "Leave Sector: ..." (Q Trial, VM, 2026-10-18).
+                           "WBP_LeaveSector_C" }) do
         if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
             for _, w in ipairs(FindAllOf(cls) or {}) do
                 if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then

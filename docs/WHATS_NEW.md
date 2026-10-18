@@ -2,6 +2,16 @@
 
 ## Sunday October 18th 2026
 
+Version 0.3.48
+
+Away missions tell you your odds now, which firefly asked about.
+
+- New: when a hero's skill is below what a challenge needs, the game works out a success chance, and the mod says it. You hear it when you pick the hero and again on Confirm, like "Confirm with Joe Carey, success chance 45%". If the skill is high enough, there's no chance to say, just as on screen.
+- Fixed: in the Leave Sector window, Stay for now couldn't be reached with the arrows, although the list counted it. It can now, and the window's heading is read before the first sector instead of after it.
+- Fixed: when a side mission or a main mission ends, its window reads what happened before its button. The button used to come first.
+
+## Sunday October 18th 2026
+
 Version 0.3.47
 
 Sector 7 to the end, and a lot from firefly82's two-hour playtest. Thanks, firefly, and thanks to NightCraller302 for the event report.
