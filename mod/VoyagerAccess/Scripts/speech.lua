@@ -60,6 +60,9 @@ function M.say(text, interrupt)
     -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
     text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ","):gsub("%s+([;:!%?%)])", "%1")
     text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    -- And after a quote that already ended its sentence: "enhancements.".
+    -- (Combat Capabilities, Q Trial, VM, 2026-10-17).
+    text = text:gsub('([%.!%?]")%.', "%1"):gsub("([%.!%?]\226\128\157)%.", "%1")
     -- "Severely Injured & Sick" (Sickbay patients, VM, 2026-10-16): with
     -- punctuation off a screen reader may say nothing for the "&".
     text = text:gsub("%s+&%s+", " and ")
@@ -70,6 +73,15 @@ function M.say(text, interrupt)
     -- no-break space ("-1 170", U+202F or U+00A0), which a reader may say
     -- as two numbers (VM, French, 2026-10-17). Joined between digits.
     text = text:gsub("(%d)\226\128\175(%d)", "%1%2"):gsub("(%d)\194\160(%d)", "%1%2")
+    -- 19 tech descriptions start "[NOT WORKING YET]" (text scan, 2026-10-15),
+    -- which a synthesizer may spell out letter by letter.
+    text = text:gsub("%[NOT WORKING YET%]%s*", "Not working yet: ")
+    -- A placeholder the game left unfilled ("{AlliedShipÍnitialCost}", text
+    -- scan) is dropped, and logged so new ones show up.
+    text = text:gsub("{[^{}]+}", function(p)
+        print("[VoyagerAccess] placeholder: " .. p .. "\n")
+        return ""
+    end):gsub("%[%s*%]", ""):gsub("%(%s*%)", ""):gsub("  +", " ")
     -- Brackets round a name: "the [TECH TREE]" (room descriptions) and
     -- "[Sick bay] got damaged" (a sabotage toast), VM, 2026-10-16.
     -- Placeholders like "[{Shuttle}]" are left to their readers.

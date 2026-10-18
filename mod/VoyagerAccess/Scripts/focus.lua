@@ -1251,7 +1251,8 @@ label_for = function(b, path)
         label = require("events").option_label(b)
     elseif require("combat").handles(b, path) then
         label = require("combat").button_label(b, path)
-    elseif b:GetClass():GetFName():ToString() == "WBP_CombatAllyButton_C" then
+    elseif b:GetClass():GetFName():ToString() == "WBP_CombatAllyButton_C"
+        or b:GetClass():GetFName():ToString() == "WBP_CombatAllyRecruitedButton_C" then
         label = require("rooms").ally_label(b)
     elseif b:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C" then
         -- A side mission offer's options: the wording is rich text the
@@ -2460,8 +2461,13 @@ local function edge(last)
             if row and row:IsValid() and row:IsA(BUTTON) and require("screen").shown(row) then siblings = siblings + 1 end
         end
     end)
+    -- Counted again first: Confirm appears only after a reward is chosen,
+    -- and the first End went to "3 of 4" from the old count (VM, 2026-10-17).
+    pcall(wire_rows, current)
     local members = groups[current]
-    if siblings < 2 and members and #members >= 2 then
+    -- Or a list counted wider than its panel: End on the Q Trials results
+    -- stopped on the last reward, "3 of 4", short of Confirm (VM, 2026-10-17).
+    if members and #members >= 2 and (siblings < 2 or #members > siblings) then
         local from, to, step = 1, #members, 1
         if last then from, to, step = #members, 1, -1 end
         for i = from, to, step do

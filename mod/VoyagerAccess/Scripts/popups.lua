@@ -533,6 +533,12 @@ local function join_numbers(texts)
     -- A range's closing bracket is its own text and dropped, which left
     -- "Low Morale (0 - 800" (VM, 2026-10-15): "Low Morale 0 to 800".
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", ""):gsub("%(([%d,]+) %- ([%d,]+)%)?", "%1 to %2") end
+    -- A line break inside one text ends a heading: "ASTEROID FIELD" then
+    -- "Entering an asteroid field" ran together when said (Sensor Alert,
+    -- WBP_CommonInfoWidget, VM, 2026-10-17).
+    -- Only before a line that starts a sentence: capitals wrapped onto two
+    -- lines stay one label (text.lua).
+    for i, s in ipairs(out) do out[i] = (s:gsub("([^%.!%?:;,%s])[ \t]*\r?\n[\r\n%s]*(%u%l)", "%1. %2")) end
     return table.concat(out, ". ") .. "."
 end
 

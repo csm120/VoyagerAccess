@@ -2,6 +2,18 @@
 
 ## Saturday October 17th 2026
 
+Version 0.3.43
+
+From a couple of Q Trials, with a Maquis raider along for the ride.
+
+- New: the Bridge's Combat Allies tab reads an ally you've recruited, like "Recruited: Maquis Raider Ally, combat power 51. Upkeep: 30 deuterium per cycle. Enter: Dismiss Ally." The tab also says how many allies you have. Before, every empty slot said "Currently no combat allies recruited", even with one aboard.
+- Changed: battle abilities name the hero the way the game does, so you hear "Telek R'Mor" instead of a garbled id like "Telek RMor".
+- Changed: a technology the game marks "[NOT WORKING YET]" now says "Not working yet:", and a blank the game forgot to fill in is skipped instead of read out with its braces.
+- Fixed: on the Q Trials results, End went to the last reward instead of Confirm. It goes to Confirm now, even right after you pick a reward.
+- Fixed: the Combat Allies tab no longer reads a recruitable ally's button as a jumble of numbers, or the same line twice.
+
+## Saturday October 17th 2026
+
 Version 0.3.42
 
 Two good questions from the forum, and more work on playing in other languages. Thanks, SightlessPsycho!

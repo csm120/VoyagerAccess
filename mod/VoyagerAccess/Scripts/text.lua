@@ -76,6 +76,11 @@ function M.prep(s)
     -- "storage capacity / Changes ENERGY consumption". Labels wrapped onto
     -- two lines are all capitals, so they stay joined.
     s = s:gsub("(%l)[ \t]*\r?\n[\r\n%s]*(%u)", "%1. %2")
+    -- A heading in capitals, a line break, then a sentence: "ASTEROID FIELD /
+    -- Entering an asteroid field" (Sensor Alert, VM, 2026-10-17). The next
+    -- line must start like a sentence (capital, then lowercase), so a label
+    -- wrapped in capitals still stays joined.
+    s = s:gsub("(%u)[ \t]*\r?\n[\r\n%s]*(%u%l)", "%1. %2")
     return s
 end
 

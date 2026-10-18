@@ -567,8 +567,21 @@ function M.ally_label(b)
             end
         end
     end
+    -- A recruited ally (WBP_CombatAllyRecruitedButton) has only its upkeep,
+    -- and Enter on it dismisses it: read "/, 30, UNIT 02, Maquis Raider
+    -- Ally, combat power, Upkeep, 51, Dismiss Ally" (VM, 2026-10-17).
+    local recruited = b:GetClass():GetFName():ToString() == "WBP_CombatAllyRecruitedButton_C"
+    if recruited then
+        for _, c in ipairs(recruit) do upkeep[#upkeep + 1] = c end
+        recruit = {}
+        parts[1] = "Recruited: " .. parts[1]
+    end
     if #recruit > 0 then parts[#parts + 1] = "Recruitment: " .. table.concat(recruit, ", ") end
     if #upkeep > 0 then parts[#parts + 1] = "Upkeep: " .. table.concat(upkeep, ", ") .. " per cycle" end
+    if recruited then
+        local d = plain(text_of(b.DismissBtn_TXT))
+        parts[#parts + 1] = "Enter: " .. (d ~= "" and d or "Dismiss ally")
+    end
     local ok, en = pcall(function() return b:GetIsEnabled() end)
     if ok and en == false then parts[#parts + 1] = "unavailable" end
     return table.concat(parts, ". ") .. "."
@@ -726,10 +739,15 @@ end
 -- Texts in widget-tree order, which follows the layout (the shared reader
 -- gave both headings first, then both messages). "= COMBAT POWER" is an
 -- icon's legend and is left out.
-local function tree_texts(root)
+local function tree_texts(root, skip)
     local out = {}
     local function walk(w, depth)
         if depth > 30 or not (w and w:IsValid()) or not screen.shown(w) then return end
+        if skip and skip(w) then return end
+        -- An ally's own button is read by the window's button list; walked
+        -- here it came out as "51. Recruitment. 2. 30. /." (VM, 2026-10-17).
+        local okc, cls = pcall(function() return w:GetClass():GetFName():ToString() end)
+        if okc and (cls == "WBP_CombatAllyButton_C" or cls == "WBP_CombatAllyRecruitedButton_C") then return end
         local okt, s = pcall(function() return w:GetText():ToString() end)
         if okt and type(s) == "string" then
             s = plain(s)
@@ -754,9 +772,36 @@ end
 function M.allies_text()
     for _, w in ipairs(FindAllOf("WBP_Bridge_CombatAllyModule_C") or {}) do
         if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
-            local parts = tree_texts(w)
+            -- With no allies the tab read "Currently no combat allies
+            -- recruited" twice and the empty table's headings "Combat
+            -- power. Upkeep." (Q Trial, VM, 2026-10-17): repeats are dropped,
+            -- and the recruited table's headings when none are recruited.
+            -- Each empty recruit slot shows its own NoAllyRecruited_TXT, so
+            -- with one ally aboard the tab still said "Currently no combat
+            -- allies recruited" (VM, 2026-10-17): with any recruited, those
+            -- are left out and the count is said.
+            local recruited = 0
+            for _, b in ipairs(FindAllOf("WBP_CombatAllyRecruitedButton_C") or {}) do
+                if b:IsValid() and path_of(b):find("^/Engine/Transient%.") and screen.shown(b) then recruited = recruited + 1 end
+            end
+            local texts = tree_texts(w, function(x)
+                return recruited > 0 and x:GetFName():ToString():find("^NoAllyRecruited_TXT") ~= nil
+            end)
+            local any = recruited > 0
+            if recruited > 0 then
+                table.insert(texts, math.min(2, #texts + 1), recruited .. (recruited == 1 and " ally recruited" or " allies recruited"))
+            end
+            local HEADINGS = { ["combat power"] = true, upkeep = true }
+            local parts, seen = {}, {}
+            for _, s in ipairs(texts) do
+                s = (s:gsub("%.%s*$", ""):gsub("^%l", string.upper))
+                local key = s:lower()
+                if not seen[key] and (any or not HEADINGS[key]) then
+                    seen[key] = true
+                    parts[#parts + 1] = s
+                end
+            end
             if #parts > 0 then
-                for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", ""):gsub("^%l", string.upper) end
                 return table.concat(parts, ". ") .. "."
             end
         end
