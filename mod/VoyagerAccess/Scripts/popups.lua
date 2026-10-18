@@ -807,7 +807,7 @@ function M.meta_reward_label(b, path)
     elseif by.AmusementName then
         -- A Q Modifier card: its name and what it does ("Party Ship" was
         -- read only as "Q Modifier", VM, 2026-10-16).
-        out[#out + 1] = kind .. ": " .. by.AmusementName
+        out[#out + 1] = kind .. ": " .. by.AmusementName .. (by.NewText and ", new" or "")
         if by.AmusementDesc then out[#out + 1] = by.AmusementDesc end
     elseif #res > 0 then
         out[#out + 1] = kind .. ": " .. table.concat(res, ", ")
@@ -818,6 +818,23 @@ function M.meta_reward_label(b, path)
     -- count, so the mod remembers the card Enter was pressed on.
     if M.meta_chosen == path and M.meta_reward_count():match("^[1-9]") then out[1] = out[1] .. ", chosen" end
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
+    -- A second page of rewards ("Select a Q Modifier", after the first
+    -- pick) came with no word that the page had changed: the first card
+    -- was read alone (Q Trial, VM, 2026-10-18). Its heading is said once
+    -- each time it changes.
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_SandboxSectorResult_C") or {}) do
+            if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+                local head = text_of_widget(w.RewardHeadText)
+                -- A new results window reads its first heading itself.
+                if M.meta_window ~= path_of(w) then M.meta_window, M.meta_head_said = path_of(w), head end
+                if head ~= "" and head ~= M.meta_head_said then
+                    table.insert(out, 1, head .. ", " .. M.meta_reward_count())
+                    M.meta_head_said = head
+                end
+            end
+        end
+    end)
     return table.concat(out, ". ") .. "."
 end
 
@@ -1113,6 +1130,10 @@ local function battle_result(_, path)
             if t == "" or t == "+" then return end
             -- A reward's amount and its name are two texts: "50 Morale".
             -- Either can come first in the layout.
+            -- Experience too: "Experience, 127" was two list items (Q
+            -- Trial battle, VM, 2026-10-18).
+            if name == "Experience_Text" then name = "ResourceNameTextBlock" end
+            if name == "Experience_Amount" then name = "ResourceAmountTextBlock" end
             if name == "ResourceAmountTextBlock" then
                 if not pending_name then pending_amount = t return end
                 t = t .. " " .. pending_name

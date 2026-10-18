@@ -2,6 +2,16 @@
 
 ## Sunday October 18th 2026
 
+Version 0.3.49
+
+Found while flying a Q Trial through the Hazari and Nebula sectors.
+
+- Changed: inside a nebula the game hides what each point is, and its own label just says "Unknown". The mod says "Unknown" there too, on the System Map and the Sector Map, instead of naming the planet. You still hear whether it's scanned and how far away it is.
+- New: in a battle, I names a recruited ally and its hull, like "Ally: Maquis Raider, hull 100%". The screen shows the ally under the objective, and the mod left it out.
+- Fixed: a battle result read the experience you gained as two items, "Experience, 127". It's "127 Experience" now.
+
+## Sunday October 18th 2026
+
 Version 0.3.48
 
 Away missions tell you your odds now, which firefly asked about.

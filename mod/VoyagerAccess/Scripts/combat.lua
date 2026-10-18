@@ -289,6 +289,27 @@ function M.status()
     if theirs then parts[#parts + 1] = "Target: " .. theirs end
     local enemies = M.enemies()
     if enemies then parts[#parts + 1] = enemies end
+    -- A recruited ally fights too: the screen shows its name and a hull bar
+    -- under the objective (WBP_AllyHealth), and I left it out (Maquis
+    -- Raider, Q Trial, VM, 2026-10-18).
+    pcall(function()
+        for _, a in ipairs(FindAllOf("WBP_AllyHealth_C") or {}) do
+            if a:IsValid() and screen.shown(a) then
+                local name = ""
+                local ap = path_of(a) .. "."
+                for _, cls in ipairs({ "TextBlock", "CommonTextBlock" }) do
+                    for _, t in ipairs(FindAllOf(cls) or {}) do
+                        local tp = t:IsValid() and path_of(t)
+                        if tp and tp:sub(1, #ap) == ap and tp:find("%.ShipNameText$") then name = plain(text_of(t)) end
+                    end
+                end
+                local pct = a.IntegrityBarProgress
+                if name ~= "" then
+                    parts[#parts + 1] = "Ally: " .. name .. (type(pct) == "number" and (", hull " .. math.floor(pct * 100 + 0.5) .. "%") or "")
+                end
+            end
+        end
+    end)
     local order = plain(text_of(w.txt_selectedManeuver)):gsub("%s*/+%s*$", ""):gsub("%s*/+%s*", ", ")
     -- "ATTACK // Right": the side as bow, aft, port or starboard, as the
     -- shields are read (VM, 2026-10-14).

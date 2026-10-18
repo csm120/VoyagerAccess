@@ -147,10 +147,33 @@ function M.spoken_number(raw)
     return out
 end
 
+-- Inside a nebula the game names every point and star system "Unknown"
+-- (its selection label said "Unknown, 3 cycles Away" for a Class P planet
+-- and for a system the mod called by name; Nebula Sector, Q Trial, VM,
+-- 2026-10-18). Inside means within a nebula phenomenon's sphere.
+local function in_nebula(actor)
+    local ok, hidden = pcall(function()
+        local loc = actor:K2_GetActorLocation()
+        for _, n in ipairs(FindAllOf("STVPhenomenon") or {}) do
+            if n:IsValid() and n:GetClass():GetFName():ToString():find("Nebula", 1, true) then
+                local s = n.Sphere
+                local c = s:K2_GetComponentLocation()
+                local d = math.sqrt((loc.X - c.X) ^ 2 + (loc.Y - c.Y) ^ 2 + (loc.Z - c.Z) ^ 2)
+                if d < s:GetScaledSphereRadius() then return true end
+            end
+        end
+        return false
+    end)
+    return ok and hidden
+end
+
 local function name_of(actor)
     local cls = actor:GetClass():GetFName():ToString()
     if cls == "BP_STVSolarSystem_C" then
         local marks = system_marks(actor)
+        if in_nebula(actor) then
+            return "Unknown" .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
+        end
         -- Its hover label names it ("System 3,520.1"); four systems all
         -- read "Star system" (State of Flux, VM, 2026-10-15). A warning
         -- the game gives the system is said too.
@@ -168,6 +191,7 @@ local function name_of(actor)
         end)
         return name .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
     end
+    if in_nebula(actor) then return "Unknown" end
     -- The game's own name, as its hover label shows it: "Class L Planet
     -- with Potential Food Sources" was read from the class as "Planet story
     -- yellow greenish eco zone planet", and ships as "Ship" where the game
