@@ -154,7 +154,9 @@ local function room_state(h, raw)
         if cy:lower() == "ready" then
             -- A cleared ruin read "Empty building space, removing done".
             if raw == "None" and st:lower():find("^remov") then return "just cleared" end
-            return st:lower() .. " done"
+            -- Enter on the room finishes it (VM, 2026-10-19); the screen
+            -- shows "Ready", which says as much to a sighted player.
+            return st:lower() .. " done, Enter finishes it"
         end
         -- Paused work keeps its text ("removing, 3 cycles") but has no
         -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).
@@ -455,6 +457,19 @@ function M.open()
     -- why the Aeroshuttle bay opened Stellar Cartography). Hover it first.
     list[i].hull:OnHoveredRoom()
     list[i].hull:ClickedRoom()
+    -- Work finished while the Construction Report was left with Enter Ship
+    -- waits as "repairing done"; clicking the room finishes it, with nothing
+    -- opening (Workshop, Q Trial, VM, 2026-10-19). Say the new state.
+    if describe(list[i], false):find(" done", 1, true) then
+        local deck, y = list[i].deck, list[i].y
+        ExecuteInGameThreadWithDelay(800, function()
+            pcall(function()
+                for _, r in ipairs(rooms()) do
+                    if r.deck == deck and math.abs(r.y - y) < 1 then speech.say(describe(r, false), true) end
+                end
+            end)
+        end)
+    end
 end
 
 -- Development (tools\vm\vm-room.ps1): select the first room whose reading

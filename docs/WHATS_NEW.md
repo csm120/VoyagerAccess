@@ -2,6 +2,14 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.55
+
+One fix for repairs and building.
+
+- When a Construction Report comes up during a trip, it offers Enter Ship as well as Close. If you picked Enter Ship, the finished room stayed "repairing done" and there seemed to be no way to finish it. That room now says "Enter finishes it", and when you press Enter it tells you the room is on.
+
+## Monday October 19th 2026
+
 Version 0.3.54
 
 A small one, with a change you might notice right away.
