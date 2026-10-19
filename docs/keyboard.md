@@ -97,19 +97,28 @@ follows them.
    event by itself. When the chosen point is off screen (after story
    scenes, for example), Set course zooms the map out by itself first. In an event at a point of interest, Up and Down
    move through the options; where an option can take a hero (Q Trials),
-   Left and Right choose one ("No hero" first) and Enter carries the option
-   out with that hero.
+   Left and Right choose one ("No hero" first), each with the chances the
+   game's bar shows for that hero, and Enter carries the option out with
+   that hero.
 7. Main menu Credits: a list, one heading with its names per item; Escape
    closes it. In the main menu's save window, Enter on Restart Sector or
    Delete Profile opens its confirmation, which is read, with BACK and
    ACCEPT as a list.
 8. Tech tree (Science Laboratory, Research): a list of the five tiers, then
-   the current category's technologies in tier order, each with its state.
+   the current category's technologies in tier order, each with its state,
+   what it builds on (the lines between fields on screen), and whether the
+   game marks it important or as unlocking a feature.
    Each tier names the technologies it opens.
    Up, Down, Home, End move; Left and Right switch category; Enter opens the
    item's panel, which is read (costs, description, and whether Enter begins
    the research); Escape closes the panel, then the tree.
-9. Combat: the game's own keys work (Space pauses and resumes, 1 to 3 use
+9. Overview (N, Overview): Left and Right switch tabs, and each tab is read when it opens.
+   Up and Down go through the open tab line by line, one row per item (a
+   morale condition with its crew and max morale, a threshold with its
+   effects, a combat room with its count and power); Home and End go to the
+   ends, and Enter repeats the line. On the Heroes tab, Up and Down choose a
+   hero and read their details. Escape closes the Overview.
+10. Combat: the game's own keys work (Space pauses and resumes, 1 to 3 use
    the heroes' abilities, Tab changes target, Shift fires a torpedo, Left
    and Right pick a system and Up and Down move energy to it). Enter opens
    Orders; the order wheel is a list (Up, Down, Enter; Back is last). I
@@ -117,7 +126,7 @@ follows them.
    the goal; O reads the goal. Target changes, abilities turning active or
    ready, pauses and energy ("Engine 1 of 2, 2 spare") are spoken as they
    happen.
-10. Away team selection: once every slot is filled, the game starts the
+11. Away team selection: once every slot is filled, the game starts the
     mission on Enter wherever focus is, and filled slots say "Team complete:
     Enter starts the mission." Heroes in a mission choice say when they have
     the trait the choice asks for ("has the Pilot trait").

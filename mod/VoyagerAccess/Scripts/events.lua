@@ -244,10 +244,39 @@ end
 
 -- "Good: 70% chance of a good outcome, 30% chance of a bad
 -- outcome", or nil. b is the option's button, for the game's own weights.
-local function chances(o, b)
+-- With hero (skill and best, the option's highest usable skill), the bar
+-- the game shows while the mouse rests on that hero's portrait. The game
+-- works it out with GetHeroSkillAdjustedWeight, and its hover weights
+-- matched that for all seven portraits of a Q Trials option, No hero being
+-- skill 0 (Kazon Raider Hideout, VM, 2026-10-19). The bar for the option
+-- itself is the best hero's, so whatever it adds beyond that (rooms) is
+-- added to every hero's.
+local function hero_list(o, b, skill, best)
+    local got = captured[key_of(b)]
+    local from_game = {}
+    if got then for _, e in ipairs(got) do from_game[e.outcome] = e.weight end end
+    local list, total = {}, 0
+    for k, v in pairs(o:GetOptionResults()) do
+        local t, r = k:get(), v:get()
+        local w = r:GetHeroSkillAdjustedWeight(b, t, skill)
+        if got then w = w + (from_game[t] or 0) - r:GetHeroSkillAdjustedWeight(b, t, best) end
+        w = math.max(math.floor(w + 0.5), 0)
+        if w > 0 then
+            list[#list + 1] = { outcome = t, weight = w }
+            total = total + w
+        end
+    end
+    return list, total
+end
+
+local function chances(o, b, hero)
     local list, total = {}, 0
     local got = b and captured[key_of(b)]
     local ok = pcall(function()
+        if hero then
+            list, total = hero_list(o, b, hero.skill, hero.best)
+            return
+        end
         if got then
             for _, e in ipairs(got) do
                 if e.weight and e.weight > 0 then
@@ -386,7 +415,10 @@ local HERO_NAMES = { Char_Tom_Paris = "Tom Paris", Char_Neelix = "Neelix", Char_
     Char_Kim = "Harry Kim", Char_Harry_Kim = "Harry Kim", Char_Doctor = "The Doctor", Char_The_Doctor = "The Doctor",
     Char_Tuvok = "Tuvok", Char_Chakotay = "Chakotay", Char_Kes = "Kes" }
 local ATTR = nil
-local chosen = {}   -- option path -> index into its heroes (1 is no hero)
+-- key_of(option) -> index into its heroes (1 is no hero). Not the path
+-- alone: the next option of an event reuses the button, and kept the last
+-- one's choice (VM, 2026-10-19).
+local chosen = {}
 
 -- The game's own name for a hero id. HERO_NAMES has the campaign's starting
 -- crew only, and the game has dozens more (Seven, Kashyk, Ransom, Burke;
@@ -440,24 +472,52 @@ local function hero_text(h, skill)
     return s
 end
 
+-- For chances(): the skill of hero i on option b, and the best usable
+-- skill there (whose bar the option itself shows).
+local function hero_skills(list, i)
+    local best = 0
+    for _, h in ipairs(list) do
+        local v = tonumber(h.value)
+        if not h.none and h.usable and v and v > best then best = v end
+    end
+    return { skill = list[i].none and 0 or (tonumber(list[i].value) or 0), best = best }
+end
+
+-- The hero chosen with Left and Right on option b, for chances(), or nil.
+local function chosen_hero(b)
+    local i = chosen[key_of(b)]
+    if not (i and i > 1) then return nil end
+    local list = heroes_of(b)
+    if not list[i] then return nil end
+    return hero_skills(list, i)
+end
+
 -- Left and Right on an option with heroes. True when it handled the key.
+-- Each hero's chances are said with them, the bar a sighted player sees
+-- with the mouse on that portrait (it changed from 20% good with No hero
+-- to 30% with Chakotay; VM, 2026-10-19).
 function M.hero_step(path, dir)
     local b = path and StaticFindObject(path)
     if not (b and b:IsValid() and b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C") then return false end
     local list = heroes_of(b)
     if #list < 2 then return false end
-    local i = (chosen[path] or 1) + dir
+    local key = key_of(b)
+    local i = (chosen[key] or 1) + dir
     if i < 1 then i = 1 elseif i > #list then i = #list end
-    chosen[path] = i
+    chosen[key] = i
     local o = option_for(b, text_of(b.ChoiceButton_Text))
-    speech.say(hero_text(list[i], o and attribute_of(o)) .. ", " .. i .. " of " .. #list, true)
+    local text = hero_text(list[i], o and attribute_of(o))
+    local c = o and chances(o, b, hero_skills(list, i))
+    if c then text = text .. ". " .. c end
+    speech.say(text .. ". " .. i .. " of " .. #list, true)
     return true
 end
 
 -- Enter on an option with a hero chosen: click that hero, which carries
 -- the option out with them. True when it handled the key.
 function M.enter(b, path)
-    local i = chosen[path]
+    local key = key_of(b)
+    local i = chosen[key]
     if not (i and i > 1) then return false end
     local h = heroes_of(b)[i]
     if not (h and h.button:IsValid()) then return false end
@@ -465,7 +525,7 @@ function M.enter(b, path)
         speech.say(h.name .. " is not available for this", true)
         return true
     end
-    chosen[path] = nil
+    chosen[key] = nil
     print("[VoyagerAccess] events: sending " .. h.name .. "\n")
     h.button:HandleButtonPressed()
     h.button:HandleButtonReleased()
@@ -556,7 +616,7 @@ function M.option_label(b)
         if ok and RISKS[risk] and not (ok2 and leaving) then parts[#parts + 1] = RISKS[risk] end
     end
     crumb.at("events: chances")
-    local c = o and chances(o, b)
+    local c = o and chances(o, b, chosen_hero(b))
     if c then parts[#parts + 1] = c:sub(1, 1):upper() .. c:sub(2) end
     crumb.at("events: room_names")
     local better = o and room_names(o) or {}
@@ -570,7 +630,7 @@ function M.option_label(b)
     local heroes = is_locked(b) and {} or heroes_of(b)
     if #heroes > 1 then
         local skill = o and attribute_of(o)
-        local i = chosen[path_of(b)] or 1
+        local i = chosen[key_of(b)] or 1
         local h = (i > 1 and heroes[i]) and ("Hero: " .. heroes[i].name) or "Left and Right choose a hero"
         parts[#parts + 1] = (skill and (skill .. " task. ") or "") .. h
     end

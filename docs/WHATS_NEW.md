@@ -2,6 +2,16 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.58
+
+- New: at a point of interest where an option can take a hero, Left and Right now give each hero's chances, the same bar a sighted player sees with the mouse on that hero's portrait. For example, "No hero" might be 20% good and 75% bad, while Chakotay brings it to 35% good and 60% bad. Once you've picked a hero, the option reads that hero's chances too.
+- New: in the Overview, Up and Down go through the open tab line by line, so you don't have to hear the whole tab again to find one number. Each row is one item: a morale condition with its crew and max morale, a morale level with its effects, a combat room with how many you've built and their combat power. Home and End go to the ends, and Enter repeats the line. Thanks to firefly82 for the idea.
+- New: in the tech tree, each technology says what it builds on, like "Cargo Bay Level 2, builds on Cargo Bay", the way the lines between the fields show it on screen. It also says when the game marks one as important or as unlocking a feature. Thanks to firefly82 for working this out.
+- Fixed: in an event with two hero options, the second option could start with the hero you'd chosen on the first one.
+- Fixed: technology names that wrap onto two lines in the game are read as one word again.
+
+## Monday October 19th 2026
+
 Version 0.3.57
 
 The game's hover tooltips are now yours too, as lists you can take your time with.

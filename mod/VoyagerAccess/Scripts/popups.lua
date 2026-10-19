@@ -534,7 +534,7 @@ end
 
 -- Joins texts into sentences, putting numbers with the label before them:
 -- "Available Energy", "78", "120" -> "Available Energy 78 of 120".
-local function join_numbers(texts)
+local function number_lines(texts)
     local out, run = {}, 0
     for _, t in ipairs(texts) do
         local number = t:match("^[%+%-]?[%d,%.]+%%?$") or t:match("^%(?[%d,]+ %- [%d,]+%)?$")
@@ -555,7 +555,11 @@ local function join_numbers(texts)
     -- Only before a line that starts a sentence: capitals wrapped onto two
     -- lines stay one label (text.lua).
     for i, s in ipairs(out) do out[i] = (s:gsub("([^%.!%?:;,%s])[ \t]*\r?\n[\r\n%s]*(%u%l)", "%1. %2")) end
-    return table.concat(out, ". ") .. "."
+    return out
+end
+
+local function join_numbers(texts)
+    return table.concat(number_lines(texts), ". ") .. "."
 end
 
 -- The Overview (WBP_OverviewInfoWidget, read 2026-10-11): its tab bar,
@@ -580,9 +584,11 @@ local OVERVIEW_LABELS = {
 -- Said by name only, no number: "Max Morale" after every row.
 local OVERVIEW_DROP = { Morale = true, Morale1 = true }
 
-local function overview(_, path)
+-- The tab as lines (the Up and Down list), or nil and the reading for the
+-- Heroes tab, which has its own list of heroes.
+local function overview_lines(path)
     local w = StaticFindObject(path)
-    if not (w and w:IsValid()) then return "" end
+    if not (w and w:IsValid()) then return {} end
     local tab, tab_id = nil, ""
     for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
         local p = b:IsValid() and path_of(b)
@@ -604,7 +610,7 @@ local function overview(_, path)
     if tab and tab_id == "Hero" then
         local n = 0
         pcall(function() n = require("view").hero_count() end)
-        return "Overview, " .. tab .. " tab. " .. n .. " heroes. Up and Down choose one and read its details."
+        return nil, "Overview, " .. tab .. " tab. " .. n .. " heroes. Up and Down choose one and read its details."
     end
     -- The Combat tab is two tables (rooms, how many, their combat power)
     -- and a sum; read as a flat list it came out "combat power 0 of 12 ...
@@ -640,12 +646,18 @@ local function overview(_, path)
                 for r, l in ipairs(labels) do
                     rows[#rows + 1] = l .. ", " .. counts[r] .. " built" .. (powers[r] and (", combat power " .. powers[r]) or "")
                 end
-                return table.concat(rows, "; ")
+                return rows
             end
             local def, off = table_at("col_defense"), table_at("col_Offense")
             out[#out + 1] = "Overview, " .. tab .. " tab"
-            if def then out[#out + 1] = "Defense: " .. def end
-            if off then out[#out + 1] = "Offense: " .. off end
+            -- Each room row its own item in the list (VM, 2026-10-19).
+            local function add_table(head, rows)
+                if not rows then return end
+                out[#out + 1] = head
+                for _, r in ipairs(rows) do out[#out + 1] = r end
+            end
+            add_table("Defense", def)
+            add_table("Offense", off)
             if by.TECH_PWR then out[#out + 1] = "Tech combat power " .. by.TECH_PWR end
             if by.HULL_PWR then out[#out + 1] = "Defensive combat power " .. (by.Def_PWR or by.HULL_PWR) .. ", from hull " .. by.HULL_PWR end
             if by.OFF_PWR then out[#out + 1] = "Offensive combat power " .. by.OFF_PWR .. (by.BATT_PWR and (", base attack power " .. by.BATT_PWR) or "") end
@@ -654,7 +666,7 @@ local function overview(_, path)
             if by.reduction then out[#out + 1] = "Combat power lost to missing energy " .. by.reduction end
             if by.ACP then out[#out + 1] = "Combat ally " .. by.ACP end
             if by.TCP then out[#out + 1] = "Voyager combat power " .. by.TCP .. (by.avgNmyPwr and (", against average enemy power " .. by.avgNmyPwr) or "") end
-            return table.concat(out, ". ") .. "."
+            return out
         end
     end
     local level = nil   -- Heroes tab: "Lv. 1" comes before the name it belongs to
@@ -697,7 +709,47 @@ local function overview(_, path)
         t = t:gsub("^%((Active) (%d+)/(%d+)%)$", "%1 %2 of %3")
         if t ~= kept[#kept] then kept[#kept + 1] = t end
     end
-    return join_numbers(kept)
+    -- One item per row as the screen sets it out (Morale tab, VM,
+    -- 2026-10-19): a condition's crew, name and max morale ("79 crew,
+    -- Without Quarters, max morale -1,200") were three items, and each
+    -- threshold's effects ("-10% on all hero attributes") stood apart from it.
+    local lines, out = number_lines(kept), {}
+    local i = 1
+    while i <= #lines do
+        local l = lines[i]
+        if l:match("^[%d,]+ crew$") and lines[i + 2] and lines[i + 2]:match("^max morale ") then
+            out[#out + 1] = l .. ", " .. lines[i + 1] .. ", " .. lines[i + 2]
+            i = i + 3
+        elseif l:match("^[%+%-]%d+%%") and #out > 1 then
+            out[#out] = out[#out] .. (out[#out]:match("%d$") and ": " or ", ") .. l
+            i = i + 1
+        else
+            out[#out + 1] = l
+            i = i + 1
+        end
+    end
+    return out
+end
+
+local function overview(_, path)
+    local lines, said = overview_lines(path)
+    if said then return said end
+    if #lines == 0 then return "" end
+    return table.concat(lines, ". ") .. "."
+end
+
+-- The shown Overview's tab as lines for view.lua's list (firefly82's review,
+-- 2026-10-19: each tab was one long reading, and finding one number meant
+-- hearing it all again), or nil when no Overview is shown or the tab has a
+-- list of its own (Heroes).
+function M.overview_lines()
+    for _, x in ipairs(FindAllOf("WBP_OverviewInfoWidget_C") or {}) do
+        if x:IsValid() and x:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(x) then
+            local lines = overview_lines(path_of(x))
+            return lines
+        end
+    end
+    return nil
 end
 
 M.ordered_texts = ordered_texts

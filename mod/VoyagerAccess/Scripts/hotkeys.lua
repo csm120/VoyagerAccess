@@ -55,8 +55,13 @@ local GROUPS = {
     } },
     { "Events at a point of interest", {
         "Up and Down: the options. R reads the locked ones",
-        "Left and Right: choose a hero, where the option can take one",
+        "Left and Right: choose a hero, where the option can take one, with the chances the game shows for that hero",
         "Enter: pick the option, with the hero you chose",
+    } },
+    { "Overview", {
+        "Left and Right: switch tabs",
+        "Up and Down: the open tab line by line, one row each. Home and End: first and last. Enter repeats the line",
+        "Heroes tab: Up and Down choose a hero and read their details. Escape closes the Overview",
     } },
     { "Tech tree", {
         "Up and Down: tiers, then technologies. Left and Right: switch category",

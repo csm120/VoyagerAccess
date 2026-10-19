@@ -2656,6 +2656,7 @@ function M.install()
         if require("resources").list_open() then return require("resources").enter() end
         if require("view").nav_open() then return require("view").nav_enter() end
         if away.keys_active() then return away.mission_enter() end
+        if require("view").overview_list_repeat() then return end
         if M.virtual_active() then return M.virtual_enter() end
         -- In battle with no wheel open, Enter opens Orders (combat.lua).
         -- Not while focus is in the battle setup (HeroLoadout): Enter on Auto
@@ -2779,6 +2780,7 @@ function M.install()
         elseif require("view").nav_open() then require("view").nav_step(-1)
         elseif away.keys_active() then away.mission_step(-1)
         elseif require("view").heroes_open() then require("view").hero_step(-1)
+        elseif require("view").overview_list_step(-1) then return
         elseif M.virtual_active() then M.virtual_step(-1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
         elseif require("dialogue").choice_step(current, -1) then last_dir = -1 arrow_tick = ticks
@@ -2799,6 +2801,7 @@ function M.install()
         elseif require("view").nav_open() then require("view").nav_step(1)
         elseif away.keys_active() then away.mission_step(1)
         elseif require("view").heroes_open() then require("view").hero_step(1)
+        elseif require("view").overview_list_step(1) then return
         elseif M.virtual_active() then M.virtual_step(1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
         elseif require("dialogue").choice_step(current, 1) then last_dir = 1 arrow_tick = ticks
@@ -2845,6 +2848,7 @@ function M.install()
         if require("view").nav_open() then return require("view").nav_edge(last) end
         if away.keys_active() then return away.mission_edge(last) end
         if require("view").heroes_open() then return require("view").hero_step(last and 1 or -1, true) end
+        if require("view").overview_list_step(last and 1 or -1, true) then return end
         if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
         if require("difficulty").edge(current, last) then return end

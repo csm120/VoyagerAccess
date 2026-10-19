@@ -294,6 +294,35 @@ function M.hero_step(dir, edge)
     return true
 end
 
+-- Up and Down go line by line through the Overview's open tab, Home and
+-- End to the ends, as in the C list (firefly82's review, 2026-10-19). The
+-- lines are read again from the tab at each key, so a tab switch or a new
+-- value is never a stale copy; the place starts over when the tab changes.
+local ov = nil   -- { head = first line, index = n }
+
+function M.overview_list_step(dir, edge)
+    local ok, lines = pcall(function() return require("popups").overview_lines() end)
+    if not (ok and lines and #lines > 1) then
+        ov = nil
+        return false
+    end
+    if not ov or ov.head ~= lines[1] then ov = { head = lines[1], index = 0 } end
+    if edge then
+        ov.index = dir < 0 and 1 or #lines
+    else
+        ov.index = math.max(1, math.min(#lines, ov.index + dir))
+    end
+    speech.say(string.format("%s, %d of %d", lines[ov.index], ov.index, #lines), true)
+    return true
+end
+
+-- Enter on a line says it again: a line does nothing, and Enter must not
+-- reach the game's Close button behind it.
+function M.overview_list_repeat()
+    if not ov then return false end
+    return M.overview_list_step(0)
+end
+
 function M.overview_tab(dir)
     local w = nil
     for _, x in ipairs(FindAllOf("WBP_OverviewInfoWidget_C") or {}) do

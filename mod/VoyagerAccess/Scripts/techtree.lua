@@ -55,6 +55,55 @@ local function tab_name()
     return "Tech tree"
 end
 
+-- The game's names wrap inside the field: a line break after a hyphen joins
+-- the word, any other is a space, and a zero-width space goes (firefly82's
+-- review, 2026-10-19: "Deuterium-Abfall- reduzierung").
+local function clean_name(s)
+    return (s:gsub("%-[ \t]*\r?\n%s*", "-"):gsub("%s*\r?\n%s*", " "):gsub("\226\128\139", ""))
+end
+
+-- The lines on screen between technologies are the data's PrecursorTechs
+-- (firefly82, tested on the Crew tab, 2026-10-19). The shown category is
+-- the STVTechTree whose techs sit at the shown widgets' places (Tier is the
+-- grid row, TierSlot the column; VM, 2026-10-19). For each place, the
+-- places of the techs it builds on.
+local function precursors_by_place(shown)
+    local best, best_n = nil, 0
+    for _, t in ipairs(FindAllOf("STVTechTree") or {}) do
+        if t:IsValid() and not t:GetFullName():find("Default__", 1, true) then
+            local n = 0
+            pcall(function()
+                for i = 1, #t.Techs do
+                    local e = t.Techs[i]
+                    local w = shown[e.Tier .. ":" .. e.TierSlot]
+                    if w and not w.obf and w.name == clean_name(e.Name:ToString()) then n = n + 1 end
+                end
+            end)
+            if n > best_n then best, best_n = t, n end
+        end
+    end
+    local out = {}
+    if not best then return out end
+    pcall(function()
+        local place = {}
+        for i = 1, #best.Techs do
+            local e = best.Techs[i]
+            place[e.NameTag.TagName:ToString()] = e.Tier .. ":" .. e.TierSlot
+        end
+        for i = 1, #best.Techs do
+            local e = best.Techs[i]
+            local list = {}
+            local tags = e.PrecursorTechs.GameplayTags
+            for j = 1, #tags do
+                local p = place[tags[j].TagName:ToString()]
+                if p then list[#list + 1] = p end
+            end
+            out[e.Tier .. ":" .. e.TierSlot] = list
+        end
+    end)
+    return out
+end
+
 local function build()
     local items = {}
     local tiers = {}
@@ -91,8 +140,9 @@ local function build()
             local row, col = 0, 0
             pcall(function() row, col = w.Slot.Row, w.Slot.Column end)
             local name = ""
-            pcall(function() name = w.TechName:ToString() end)
-            if w.bObfuscate or name == "" then name = "Unknown technology" end
+            pcall(function() name = clean_name(w.TechName:ToString()) end)
+            local obf = w.bObfuscate == true or name == ""
+            if obf then name = "Unknown technology" end
             -- Row 0 is the starting technologies, above the Tier 1 band;
             -- row N is tier N. "row + 1" called Hyperspanner tier 3 while it
             -- sits in the Tier 2 band (VM screenshot, 2026-10-15).
@@ -101,11 +151,30 @@ local function build()
             -- A tech in a tier not yet researched is locked by that tier.
             if st == "locked" and row > 0 and tier_done[row] == false then st = "locked until its tier is researched" end
             techs[#techs + 1] = {
-                row = row, col = col,
+                row = row, col = col, name = name, obf = obf,
                 text = string.format("%s, %s, %s", name, where, st),
                 button = path_of(w.RegularTechButton),
+                -- Shown as a style and an icon on the field (firefly82).
+                important = not obf and w.bImportant == true,
+                feature = not obf and w.bUnlocksFeature == true,
             }
         end
+    end
+    -- What each one builds on, as the lines show it: only technologies the
+    -- screen shows, an obfuscated one as "an unknown technology".
+    local shown = {}
+    for _, t in ipairs(techs) do shown[t.row .. ":" .. t.col] = t end
+    local okp, pre = pcall(precursors_by_place, shown)
+    for _, t in ipairs(techs) do
+        local names, unknown = {}, 0
+        for _, p in ipairs((okp and pre[t.row .. ":" .. t.col]) or {}) do
+            local s = shown[p]
+            if s and s.obf then unknown = unknown + 1 elseif s then names[#names + 1] = s.name end
+        end
+        if unknown > 0 then names[#names + 1] = unknown == 1 and "an unknown technology" or (unknown .. " unknown technologies") end
+        if #names > 0 then t.text = t.text .. ", builds on " .. table.concat(names, " and ") end
+        if t.important then t.text = t.text .. ", important" end
+        if t.feature then t.text = t.text .. ", unlocks a feature" end
     end
     table.sort(techs, function(a, b)
         if a.row ~= b.row then return a.row < b.row end
