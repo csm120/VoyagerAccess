@@ -2,6 +2,15 @@
 
 ## Sunday October 18th 2026
 
+Version 0.3.52
+
+A fix for the end of the first mission, plus one for away missions.
+
+- Fixed: after you chose to destroy the Caretaker's Array, Enter on "Fire" did nothing, so the story couldn't go on. The game puts "Fire" on the same button as the choice before it, and the mod took it for the choice you'd already made. Thanks to stickbear for the report.
+- Fixed: the end of an away mission could give a hero someone else's rank, and sometimes a rank partway through counting up. Each hero now gets their own final rank and experience, in the team's order.
+
+## Sunday October 18th 2026
+
 Version 0.3.51
 
 One fix for away missions that matters.

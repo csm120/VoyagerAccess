@@ -1142,14 +1142,34 @@ function M.outcome_text(path)
     local okr, reward = pcall(choice_rewards, path:match("^(.*)%.[^%.]+$") or path, "WBP_AwayMission_Consequences_ResourceReward_C")
     if okr and reward ~= "" then parts[#parts + 1] = "Rewards: " .. reward end
     if #exp > 0 then parts[#parts + 1] = "Experience: " .. table.concat(exp, ", ") end
+    -- Each row's own ExperienceCache names its hero and final level. The
+    -- rows used to be sorted by object name, which is the reverse of the
+    -- screen, and paired with a name list in yet another order, and their
+    -- texts were read while the level-up animation was still counting
+    -- ("Seven of Nine: rank 5" for Joe Carey's rank, PC, 2026-10-18).
+    -- TargetExperience is the levels gained plus the fraction of the next
+    -- rank (Seven 1 to 3 with 25 of 700: 2.0357), so the final "of" comes
+    -- from it, not from the counting text.
     local heroes = under("WBP_AwayMissionHeroOutcome_C")
-    table.sort(heroes, function(a, b) return path_of(a) < path_of(b) end)
+    table.sort(heroes, function(a, b) return order(a) < order(b) end)
     local names = hero_names()
     for i, h in ipairs(heroes) do
-        local rank, xp = plain(text_of(h.NewLevelText)), plain(text_of(h.levelDisplay))
-        local line = (names[i] or ("Hero " .. i)) .. ": rank " .. rank
-        local have, need = xp:match("^(%d+)/(%d+)$")
-        if have then line = line .. ", " .. have .. " of " .. need .. " experience to the next rank" end
+        local name, rank, have, need = nil, nil, nil, nil
+        pcall(function()
+            local c = h.ExperienceCache
+            name = require("events").hero_name(c.HeroName:ToString())
+            rank = tostring(c.NewLevel)
+            have = c.NewExperience
+            local frac = h.TargetExperience - math.floor(h.TargetExperience)
+            if have and have > 0 and frac > 0.0001 then need = math.floor(have / frac + 0.5) end
+        end)
+        if not rank then
+            rank = plain(text_of(h.NewLevelText))
+            local xp = plain(text_of(h.levelDisplay))
+            have, need = xp:match("^(%d+)/(%d+)$")
+        end
+        local line = (name or names[i] or ("Hero " .. i)) .. ": rank " .. rank
+        if have and need then line = line .. ", " .. have .. " of " .. need .. " experience to the next rank" end
         parts[#parts + 1] = line
     end
     return sentences(parts)

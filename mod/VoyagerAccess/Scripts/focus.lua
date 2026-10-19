@@ -72,6 +72,12 @@ local function live(obj)
 end
 M.live = live
 
+-- The dialogue choice Enter last picked (a hold choice), and its label then.
+-- The game reuses a choice widget for the next choice, so a match on the
+-- widget alone held "Fire" for "already picked" and Enter never fired the
+-- tricobalt devices (forum report, 0.3.50, 2026-10-18).
+local picked_choice, picked_label = nil, nil
+
 local function focused_button()
     local buttons = FindAllOf("CommonButtonBase")
     if not buttons then return nil end
@@ -1193,6 +1199,22 @@ label_for = function(b, path)
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
         label = "Incoming call: " .. ((ok and s ~= "") and s or "unnamed")
+        -- Up and Down stay in the call list, as on the room ring: the
+        -- game's own Down left it for a hidden room's Repair button
+        -- ("Menu. Repair, 26 of 26"), and N was refused after (PC,
+        -- 2026-10-18).
+        pcall(function()
+            local list = {}
+            for _, c in ipairs(FindAllOf("WBP_IncomingCall_List_Button_C") or {}) do
+                if c:IsValid() and live(c) and require("screen").shown(c) then list[#list + 1] = c end
+            end
+            table.sort(list, function(x, y) return x:GetParent():GetChildIndex(x) < y:GetParent():GetChildIndex(y) end)
+            for i = 1, #list do
+                if list[i - 1] then list[i]:SetNavigationRuleExplicit(2, list[i - 1]) else list[i]:SetNavigationRuleBase(2, 3) end
+                if list[i + 1] then list[i]:SetNavigationRuleExplicit(3, list[i + 1]) else list[i]:SetNavigationRuleBase(3, 3) end
+                if path_of(list[i]) == path then label = label .. ", " .. i .. " of " .. #list end
+            end
+        end)
     elseif cls == "WBP_BioLab_Production_ItemDisplay_C" then
         label = require("rooms").biolab_item_label(b)
     elseif cls == "WBP_LeaveSectorEntry_C" then
@@ -1485,6 +1507,7 @@ local function poll()
         if shown_now and os.clock() - choice_seen_at > 0.6 then
             focus_tick = ticks
             local label = label_for(b, path)
+            picked_choice, picked_label = nil, nil
             print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
             if label then speech.say(label, true) end
         end
@@ -1724,8 +1747,6 @@ function click(b)
     b:HandleButtonClicked()
 end
 
-local picked_choice = nil   -- the dialogue choice Enter last picked
-
 local function activate()
     crumb.at("key: enter on " .. tostring(current))
     if require("popups").close_tutorial() then return end
@@ -1746,6 +1767,9 @@ local function activate()
     -- picked choice again (Idrin's relay, sector 7, 2026-10-18). Once a
     -- choice has been picked, Enter on that same choice continues.
     local picked_path = current and (current:match("^(.-WBP_Dialogue_Choice_Sector_C_%d+)") or current:match("^(.-WBP_Dialogue_Choice_C_%d+)"))
+    if choice and picked_path and picked_path == picked_choice and picked_label ~= label_for(choice, current) then
+        picked_choice, picked_label = nil, nil
+    end
     if choice and picked_path and picked_path == picked_choice and dialogue.active() then
         print("[VoyagerAccess] enter: choice already picked, continuing\n")
         dialogue.continue()
@@ -1773,7 +1797,7 @@ local function activate()
             -- (2026-10-14). Hold it as Wait One Cycle is held.
             local okh, hold = pcall(function() return target.bRequiresHold end)
             if okh and hold then
-                picked_choice = cpath
+                picked_choice, picked_label = cpath, label_for(resolve(current), current)
                 speech.say("Holding", true)
                 target:HandleButtonPressed()
                 local held = path_of(target)
