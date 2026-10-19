@@ -1,5 +1,19 @@
 # New in Voyager Access
 
+## Monday October 19th 2026
+
+Version 0.3.53
+
+Fixes found while playing sectors 8 through 11 of the campaign.
+
+- Fixed: the "You still have unassigned slots. Continue?" warning, in the away team setup and before a battle, could lose the arrow keys to the screen behind it, and then nothing worked. Up and Down now stay on Return and Continue until you answer.
+- Fixed: Up and Down in a story choice list could jump past a choice that wasn't available. Every choice is reached now, in order.
+- Away missions: a hero who can't take a choice now says so and why, like "cannot take this choice, needs the Saboteur trait". Before, you only found out when Enter was refused.
+- Rooms that are more than one deck tall name their decks ("Decks 4 to 6, Holo deck"), and when one of those decks has no life support, the room says which one.
+- Incoming calls: Up and Down stay on the calls instead of wandering off to a room's buttons.
+- An injured or sick hero's condition is said once in the hero list, not twice.
+- When a point's event doesn't open because another window was up as you arrived, that message is no longer cut off by the map announcement.
+
 ## Sunday October 18th 2026
 
 Version 0.3.52

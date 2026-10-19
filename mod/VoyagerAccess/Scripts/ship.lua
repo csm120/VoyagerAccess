@@ -186,13 +186,36 @@ local function deck_has_life(deck)
     return true   -- a deck with no life support room of its own (not seen)
 end
 
+-- How many decks a room spans (its hull's GridSize.Z: Holodeck 3, Main
+-- Engineering 2). r.deck is its lowest deck. The Holodeck on decks 4 to 6
+-- read "Deck 6, Holodeck, Damaged, no life support" while decks 5 and 6
+-- had life support; deck 4's was damaged, and a sighted player sees the
+-- tall room and the dark deck (VM, 2026-10-18).
+local function decks_tall(r)
+    local z = 1
+    pcall(function() z = math.floor(r.hull.GridSize.Z + 0.5) end)
+    return math.max(z, 1)
+end
+
 local function describe(r, with_deck)
     local t = r.hull:GetRoomType()
     local text = room_name(t)
     local state = room_state(r.hull, raw_name(t))
     if raw_name(t) == "None" and state == "" and not deck_has_life(r.deck) then state = "no life support" end
+    local tall = decks_tall(r)
+    if tall > 1 and state:find("no life support", 1, true) then
+        local dark = {}
+        for d = r.deck - tall + 1, r.deck do
+            if not deck_has_life(d) then dark[#dark + 1] = tostring(d) end
+        end
+        if #dark > 0 then
+            state = state:gsub("no life support", "no life support on deck " .. table.concat(dark, " and "), 1)
+        end
+    end
     if state ~= "" then text = text .. ", " .. state end
-    if with_deck then text = "Deck " .. r.deck .. ", " .. text end
+    if with_deck then
+        text = (tall > 1 and ("Decks " .. (r.deck - tall + 1) .. " to " .. r.deck) or ("Deck " .. r.deck)) .. ", " .. text
+    end
     return text
 end
 

@@ -546,6 +546,11 @@ end
 
 restore_focus = function()
     if not last_real or mod_list_open() then return false end
+    -- The unassigned slots warning is answered from the window list; putting
+    -- focus back on "start mission" behind it took the arrows away (VM,
+    -- 2026-10-18).
+    local okw, warn = pcall(function() return require("combat").fewer_heroes_open() end)
+    if okw and warn then return false end
     restore_wait = restore_wait - 1
     if restore_wait > 0 then return false end
     restore_wait = 10

@@ -265,7 +265,11 @@ function M.choice_step(path, dir)
             -- keyboard focus at all, and a keyboard focus test moved one
             -- choice too many when the game had moved too. If the mod still
             -- has the same choice, nothing moved.
-            if fc and fc:IsValid() and tc and tc:IsValid() and require("focus").current_path() == path then
+            -- Also when the game moved somewhere else: from an unavailable
+            -- choice its own navigation skipped the next unavailable one
+            -- (Down 5 to 7 and Up 6 to 4 of 7, Equinox, VM, 2026-10-18).
+            local cur = require("focus").current_path() or ""
+            if fc and fc:IsValid() and tc and tc:IsValid() and (cur == path or cur:sub(1, #to + 1) ~= to .. ".") then
                 print("[VoyagerAccess] dialogue: moving to the next choice myself\n")
                 tc[side]:SetFocus()
             end
@@ -567,6 +571,12 @@ end
 -- needed two Enters per line (log, 2026-10-10). The mod speaks the whole line
 -- at once, so finish the typing first and continue on the next poll.
 
+-- Some lines do not take the continue action at all: Zilis's "Whoops...
+-- HULL -3" in the Equinox chase took fourteen Enters and only Shift+Enter
+-- (the hold to skip) moved it on (VM, 2026-10-18). After two Enters on the
+-- same finished line, say so instead of staying silent.
+local stuck = { line = nil, count = 0 }
+
 function M.continue()
     local w = M.active()
     local text = w and w.DialogueText
@@ -574,6 +584,13 @@ function M.continue()
         text:SkipToLineEnd(false)
         continue_pending = true
         return
+    end
+    local line = nil
+    pcall(function() line = (w.DialogueSpeakerText:GetText():ToString()) .. "|" .. text:GetText():ToString() end)
+    if line and line == stuck.line then stuck.count = stuck.count + 1 else stuck.line, stuck.count = line, 1 end
+    if stuck.count >= 3 then
+        stuck.count = 0
+        speech.say("This line does not move on with Enter. Shift+Enter skips to the next choice.", true)
     end
     inject_continue()
 end

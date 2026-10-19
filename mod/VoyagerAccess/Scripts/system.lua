@@ -632,7 +632,14 @@ local function watch_arrival(name, target, start_d)
                         end
                         if not waiting then return end
                         print("[VoyagerAccess] course: event waiting at " .. name .. " did not open\n")
-                        speech.say(name .. "'s event did not open, because another window was up when Voyager arrived. Set course to another point and back to start it.", false)
+                        -- After the view's own announcement: the window that
+                        -- had just closed brought "System map. Graviton
+                        -- Ellipse..." 0.8 s later, which cut the hint off
+                        -- (VM, 2026-10-18).
+                        ExecuteInGameThreadWithDelay(2000, function()
+                            if watch_id ~= my_watch then return end
+                            speech.say(name .. "'s event did not open, because another window was up when Voyager arrived. Set course to another point and back to start it.", false)
+                        end)
                     end)
                 end
                 ExecuteInGameThreadWithDelay(4000, check)

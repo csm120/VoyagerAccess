@@ -401,6 +401,13 @@ function M.hero_label(path)
     local oko, op = pcall(function() return b:GetRenderOpacity() end)
     local okid, id = pcall(function() return b.CurrentCharacter end)
     local cond = okid and type(id) == "userdata" and M.hero_condition(id) or nil
+    -- The plaque can show the condition itself: "Joe Carey, injured, 10
+    -- cycles, injured, level 10" (VM, 2026-10-18). Keep only the mod's,
+    -- which has the cycles.
+    if cond then
+        local word = cond:match("^([%a ]+)")
+        if word then text = (text:gsub(", " .. word .. "([,%.])", "%1", 1)) end
+    end
     if (oke and enabled == false) or (oko and type(op) == "number" and op < 0.75) then
         text = text:gsub("^([^,%.]+)", "%1, unavailable" .. (cond and (": " .. cond) or ""), 1)
     elseif cond then
@@ -812,6 +819,17 @@ local function item_label(it)
             local has = trait_of(it.name)
             if want and has ~= "" and has:lower():find(want:lower(), 1, true) then
                 text = text .. ", has the " .. want .. " trait"
+            end
+        end)
+        -- The game marks a hero who cannot take this choice (a trait the
+        -- choice requires: "Use Saboteur expertise" with no Saboteur on the
+        -- team) with NotSelectableWidget; the line read like any other until
+        -- Enter was refused (Operation Fort Knox, VM, 2026-10-18).
+        pcall(function()
+            local w = h.NotSelectableWidget
+            if w and w:IsValid() and screen.shown(w) then
+                local want = (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
+                text = text .. ", cannot take this choice" .. (want and (", needs the " .. want .. " trait") or "")
             end
         end)
         if is_active(c) and chosen(h, it.name) then

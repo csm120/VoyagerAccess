@@ -735,24 +735,37 @@ end
 -- read, but focus stayed on Auto Resolve and Start Combat, so it could not
 -- be answered (no hero free for Idrin's battle, VM, 2026-10-17). While it is
 -- up, focus goes to its Continue once.
-local confirm_focused = nil
+-- The same warning in the away team setup (WBP_AwayMissionLoadout): Down
+-- from Return left it for "start mission" behind it, which then did
+-- nothing, and the arrows never reached the warning again (Save Seven of
+-- Nine, VM, 2026-10-18). So for any shown warning, whenever focus is
+-- outside it, focus is parked: its buttons never take real focus, so the
+-- mod reads them as a list, and that list starts only while no other
+-- button has focus. focus.lua's restore_focus also leaves it alone then.
+local warning_open = false
+function M.fewer_heroes_open() return warning_open end
 local function fewer_heroes_focus()
-    local w = main()
-    if not w then confirm_focused = nil return end
-    local ok, c = pcall(function() return w.HeroLoadout.FewerHeroesConfirmWidget end)
-    if not (ok and c and c:IsValid() and screen.shown(c)) then confirm_focused = nil return end
-    local cp = c:GetFullName():match("^%S+%s+(.+)$")
-    local cur = require("focus").current_path() or ""
-    if cur:sub(1, #cp + 1) == cp .. "." then confirm_focused = cp return end
-    if confirm_focused == cp then return end
-    confirm_focused = cp
+    warning_open = false
+    -- Not the warning a slot's Enter raised, which focus.lua is closing.
+    if os.clock() < (require("focus").quiet_start_warning_until or 0) then return end
+    local scr = require("screen")
+    local back, accept, cp = nil, nil, nil
     for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
         local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
-        if p and p:sub(1, #cp + 1) == cp .. "." and p:find("%.AcceptButton$") and screen.shown(b) then
-            b:SetFocus()
-            print("[VoyagerAccess] combat: focus to the unassigned slots warning's Continue\n")
-            return
+        if p and p:find("^/Engine/Transient%.") and p:find("%.FewerHeroesConfirmWidget%.") and scr.shown(b) then
+            local wp = p:match("^(.-%.FewerHeroesConfirmWidget)%.")
+            if not cp or wp == cp then
+                cp = wp
+                if p:find("%.CloseButton$") then back = b elseif p:find("%.AcceptButton$") then accept = b end
+            end
         end
+    end
+    if not (back and accept) then return end
+    warning_open = true
+    local cur = require("focus").current_path()
+    if cur and cur:sub(1, #cp + 1) ~= cp .. "." then
+        require("focus").park_focus()
+        print("[VoyagerAccess] focus parked for the unassigned slots warning\n")
     end
 end
 
