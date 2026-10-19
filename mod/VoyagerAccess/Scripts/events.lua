@@ -211,6 +211,38 @@ function M.sweep(done)
     if not pcall(step) then finish() end
 end
 
+-- Weights as whole percents in fives that add up to 100 (largest
+-- remainder); a weight above 0 never comes out as 0.
+function M.round_fives(weights)
+    local total = 0
+    for _, w in ipairs(weights) do total = total + w end
+    local pct, used = {}, 0
+    for i, w in ipairs(weights) do
+        local exact = w * 20 / total
+        pct[i] = { n = math.max(math.floor(exact), 1), rest = exact - math.floor(exact) }
+        used = used + pct[i].n
+    end
+    local order = {}
+    for i = 1, #pct do order[i] = pct[i] end
+    table.sort(order, function(a, b) return a.rest > b.rest end)
+    local k = 1
+    while used < 20 and #order > 0 do
+        order[k].n = order[k].n + 1
+        used = used + 1
+        k = k % #order + 1
+    end
+    while used > 20 do
+        local big = nil
+        for _, p in ipairs(pct) do if p.n > 1 and (not big or p.n > big.n) then big = p end end
+        if not big then break end
+        big.n = big.n - 1
+        used = used - 1
+    end
+    local out = {}
+    for i, p in ipairs(pct) do out[i] = p.n * 5 end
+    return out
+end
+
 -- "Good: 70% chance of a good outcome, 30% chance of a bad
 -- outcome", or nil. b is the option's button, for the game's own weights.
 local function chances(o, b)
@@ -259,11 +291,17 @@ local function chances(o, b)
     -- One word; the percentages after it give the detail ("likely" was
     -- redundant with them, Casey 2026-10-11).
     local verdict = score >= 65 and "Good" or score > 35 and "Mixed" or "Bad"
-    for _, e in ipairs(list) do
+    -- Rounded to fives, as the coloured bar gives them at a glance; exact
+    -- figures like "26%" and "74%" read as more precise than anything a
+    -- sighted player sees (Casey, 2026-10-19). The parts still add up to 100
+    -- (largest remainder) and an outcome that can happen never reads 0%.
+    local weights = {}
+    for i, e in ipairs(list) do weights[i] = e.weight end
+    local pct = M.round_fives(weights)
+    for i, e in ipairs(list) do
         local word = OUTCOMES[e.outcome] or "another"
         local article = word == "another" and "" or (word:match("^[aeiou]") and "an " or "a ")
-        out[#out + 1] = string.format("%d%% chance of %s%s outcome",
-            math.floor(e.weight * 100 / total + 0.5), article, word)
+        out[#out + 1] = string.format("%d%% chance of %s%s outcome", pct[i], article, word)
     end
     return verdict .. ": " .. table.concat(out, ", ")
 end

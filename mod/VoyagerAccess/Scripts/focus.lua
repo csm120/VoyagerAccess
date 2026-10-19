@@ -568,7 +568,11 @@ restore_focus = function()
             if not prefix or not prefix:find("WidgetTree_", 1, true) then break end
             for _, o in ipairs(FindAllOf("CommonButtonBase") or {}) do
                 local op = o:IsValid() and live(o) and path_of(o)
-                if op and op:sub(1, #prefix + 1) == prefix .. "." and require("screen").shown(o) then near = o break end
+                -- Never the HUD's invisible back button: with focus there, the
+                -- game's own Enter closed No Way Back as a NO before the
+                -- mod's click on YES (2 of 6 tries, VM, 2026-10-18).
+                if op and op:sub(1, #prefix + 1) == prefix .. "." and require("screen").shown(o)
+                    and not op:find("InvisBackButton", 1, true) then near = o break end
             end
             if near then break end
         end
@@ -1485,6 +1489,8 @@ local function poll()
         if okw and wins and #wins > 0 then
             b = nil
             current = nil
+            -- And off it: the game still answers Enter there.
+            M.park_focus()
         end
     end
     if not b then b = focus_first_run_screen() end

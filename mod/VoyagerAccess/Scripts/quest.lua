@@ -125,6 +125,13 @@ end
 -- (Tribble Trouble, VM, 2026-10-17). It is said as changed instead.
 local function shape(s) return (bare(s):gsub("[%+%-]?%d[%d,%.]*", "#")) end
 
+-- Goals said as "Done" lately (bare text to os.clock()). When one of them
+-- comes back, the goal that went away with it was not done: switching the
+-- Holodeck off brought back "You need an active HOLO DECK" and dropped
+-- "Wait until the crew completes their simulation training", which was said
+-- as "Done: Wait until..." (Dark Frontier, VM, 2026-10-18).
+local recent_done = {}
+
 function M.changes(old, new)
     local function index(list)
         local missions, goals, shapes = {}, {}, {}
@@ -152,7 +159,27 @@ function M.changes(old, new)
             end
         end
     end
-    if #done > 0 then parts[#parts + 1] = "Done: " .. table.concat(done, ". ") end
+    local back = false
+    local now = os.clock()
+    for _, m in ipairs(new) do
+        local key = bare(m.name)
+        for _, g in ipairs(m.goals) do
+            local t = recent_done[bare(g)]
+            -- Within seconds only: "Accept COMMS request" comes back as the
+            -- next step after real progress all the time, and the research
+            -- that finished just before it was said as "On hold" (Endgame,
+            -- VM, 2026-10-19). The Holodeck flip-flop is a power toggle away.
+            if not old_g[key .. "\0" .. bare(g)] and t and now - t < 20 then back = true end
+        end
+    end
+    if #done > 0 then
+        if back then
+            parts[#parts + 1] = "On hold: " .. table.concat(done, ". ")
+        else
+            parts[#parts + 1] = "Done: " .. table.concat(done, ". ")
+            for _, g in ipairs(done) do recent_done[bare(g)] = now end
+        end
+    end
     if #ended > 0 then parts[#parts + 1] = (#ended == 1 and "Mission ended: " or "Missions ended: ") .. table.concat(ended, ", ") end
     for _, m in ipairs(new) do
         local key = bare(m.name)

@@ -2,6 +2,14 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.54
+
+A small one, with a change you might notice right away.
+
+- Event chances are now rounded to the nearest 5 percent, like "55% chance of an excellent outcome, 45% chance of a bad outcome". The exact numbers sounded more precise than anything the coloured bar shows a sighted player, and they still add up to 100.
+
+## Monday October 19th 2026
+
 Version 0.3.53
 
 Fixes found while playing sectors 8 through 11 of the campaign.
