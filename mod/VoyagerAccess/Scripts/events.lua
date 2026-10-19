@@ -9,9 +9,8 @@
 --   * each option is an STVPOIEventOption whose GetOptionResults maps an
 --     outcome (ESTVResultType: 0 Excellent, 1 Good, 2 Average, 3 Bad,
 --     4 Terrible) to a result with a Weight; "Destroy the vessel" had Good
---     70 and Bad 30. Chances are the weights over their total. Each result
---     also has BonusWeight entries, not yet read, so the bar the game draws
---     may differ when bonuses apply.
+--     70 and Bad 30. Chances are the weights over their total. Room bonuses
+--     change them; the adjusted weights come from the hover sweep below.
 --   * a requirement the ship does not meet is marked <ColorNegative> in the
 --     wording ("[Torpedo Launch Bay <ColorNegative>Lvl 1</>]").
 

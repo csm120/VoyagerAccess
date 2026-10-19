@@ -43,7 +43,8 @@ local GROUPS = {
         "J: list of the ship's rooms with deck and state. Enter selects one, J or Backspace closes it",
         "In a room window: Up and Down move between buttons, Left and Right switch tabs, Escape closes it",
         "In a ring of actions: Up and Down move, Enter picks, Escape closes it",
-        "E, the game's key: pause or resume work on the selected room",
+        "E, the game's key: the room's quick action, such as power on or off, repair, clear debris, or pause work. It acts on the room you last moved to",
+        "F, the game's key: upgrade that room. T, the game's key: demolish that room",
     } },
     { "System Map and Sector Map", {
         "Up and Down: points of interest, or star systems on the Sector Map",

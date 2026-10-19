@@ -2,6 +2,20 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.56
+
+Most of these come from firefly82's second review, so a big thank you to firefly82.
+
+- Fixed: the game's E, F and T keys act on whatever room is under the mouse pointer, not the room you just heard, so E could switch off a different room and T could demolish one. Now the mouse pointer moves onto each room as you arrow to it, and the camera goes there first when the room is off screen. E, F and T act on the room you heard.
+- After E, the room window or a finished job, the room now says its new state, like "Science Laboratory, off". Before, a wrong E went by in silence.
+- Fixed: in the tech tree, Enter could start the research whose details were still open instead of the one you'd moved to. Enter on another technology now opens its own details first.
+- You can now abort a research: its details say "Enter aborts the research".
+- The room power button and finished work ("done, Enter finishes it") now work in every language the game has, not just English, and the research time left says "cycles" in every language too.
+- The Overview's Warp Core tab says "plus 12 energy bonus" instead of a bare 12.
+- The key list (Ctrl+F1) now says what E does in the ship view (the room's quick action), and adds F (upgrade) and T (demolish).
+
+## Monday October 19th 2026
+
 Version 0.3.55
 
 One fix for repairs and building.

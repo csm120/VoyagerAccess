@@ -658,7 +658,18 @@ local function overview(_, path)
         end
     end
     local level = nil   -- Heroes tab: "Lv. 1" comes before the name it belongs to
+    -- Warp Core tab: "+" (BonusSign) and "12" (EnergyBonusPerCycleText_1)
+    -- with an energy icon beside the output, read as a bare "It produces
+    -- 120 energy 12" (VM, 2026-10-19).
+    local bonus_sign = "+"
     local texts = ordered_texts(w, function(name, t)
+        if name == "BonusSign" then
+            bonus_sign = t
+            return true
+        end
+        if name == "EnergyBonusPerCycleText_1" then
+            return (bonus_sign == "-" and "minus " or "plus ") .. t:gsub("^[%+%-]", "") .. " energy bonus"
+        end
         if OVERVIEW_LABELS[name] then
             -- "uses -24 deuterium": the sign is in "uses" already.
             local v = t:gsub("^%+", ""):gsub("/$", "")

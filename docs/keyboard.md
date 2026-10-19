@@ -76,6 +76,10 @@ follows them.
    the focused one, Escape closes it. Empty building space opens the
    construction ring; a room in it says how many spaces wide it is and
    whether it fits here, and Enter builds it at the selected space.
+   The game's own room keys act on the room you last moved to: E is the
+   room's quick action (power on or off, repair, clear debris, or pause
+   work), F upgrades it and T demolishes it. Moving to a room puts the
+   mouse pointer on it, and the camera goes to it when it is off screen.
 6. System map: Up and Down through the points of interest, Home and End,
    Enter opens the action list (Scan, Set course). The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds

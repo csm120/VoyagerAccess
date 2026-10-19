@@ -181,17 +181,21 @@ end
 -- A researched or locked technology opens the same widget with a
 -- description and no StartResearchButton ("Warp Drive. Superluminal travel
 -- into the final frontier. Already researched").
+-- A research in progress shows AbortResearchButton in the same widget; it
+-- was neither read nor reachable, so a research could not be changed
+-- (firefly82's review, 2026-10-19; the button found in the VM).
 local function selected_view()
     for _, v in ipairs(FindAllOf("WBP_TechTree_SelectedTechWidget_C") or {}) do
         if live(v) and screen.shown(v) then
-            local start, prefix = nil, path_of(v) .. "."
+            local start, abort, prefix = nil, nil, path_of(v) .. "."
             for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-                if live(b) and b:GetFName():ToString() == "StartResearchButton" and screen.shown(b)
-                    and path_of(b):sub(1, #prefix) == prefix then
-                    start = b
+                if live(b) and screen.shown(b) and path_of(b):sub(1, #prefix) == prefix then
+                    local n = b:GetFName():ToString()
+                    if n == "StartResearchButton" then start = b
+                    elseif n == "AbortResearchButton" then abort = b end
                 end
             end
-            return v, start
+            return v, start, abort
         end
     end
     return nil
@@ -230,7 +234,15 @@ local function view_texts(view)
         if ok and type(txt) == "string" then
             local t = require("text").prep(txt):gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
             if t ~= "" then
-                if t:match("^%d+$") and icon then t = t .. " " .. icon end
+                if t:match("^%d+$") and icon then t = t .. " " .. icon
+                -- The game's own "14 remaining" in any language: a number
+                -- and one word ("14 verbleibend" had no unit, firefly82's
+                -- review, 2026-10-19). Icon numbers come bare, above.
+                -- The game writes it "14 remaining ..." (read in the VM).
+                elseif (t:gsub("%s*%.%.%.$", "")):match("^%d+ %S+$") then
+                    local n, word = (t:gsub("%s*%.%.%.$", "")):match("^(%d+) (%S+)$")
+                    t = n .. (n == "1" and " cycle " or " cycles ") .. word
+                end
                 out[#out + 1] = t
                 icon = nil
             end
@@ -247,13 +259,11 @@ local function view_texts(view)
     return out
 end
 
-local function view_text(view, start)
+local function view_text(view, start, abort)
     local name, costs, rest = nil, {}, {}
     for _, s in ipairs(view_texts(view)) do
         -- While researching: "16 remaining ...", "Researching ..."
-        s = s:gsub("%s*%.%.%.$", ""):gsub("^(%d+) remaining$", function(n)
-            return n .. (n == "1" and " cycle" or " cycles") .. " remaining"
-        end)
+        s = s:gsub("%s*%.%.%.$", "")
         if s:lower() == "research" then
         elseif not name then name = s
         elseif s:match("^%d+") then costs[#costs + 1] = s
@@ -262,24 +272,37 @@ local function view_text(view, start)
     local parts = { name or "Technology" }
     if #costs > 0 then parts[#parts + 1] = table.concat(costs, ", ") end
     for _, s in ipairs(rest) do parts[#parts + 1] = s end
-    parts[#parts + 1] = start and "Enter begins the research, Escape closes" or "Escape closes"
+    parts[#parts + 1] = start and "Enter begins the research, Escape closes"
+        or abort and "Enter aborts the research, Escape closes" or "Escape closes"
     for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
     return table.concat(parts, ". ") .. "."
 end
 
 local view_said = nil
 
+-- The list item whose Enter opened the details view. The view stays open
+-- while Up and Down move on, and Enter then pressed the open view's Start:
+-- Bussard Collectors was announced and Plasma Torch began (firefly82's
+-- review, reproduced in the VM, 2026-10-19). Enter on another item opens
+-- that item's view instead.
+local view_for = nil
+
+local function press(b)
+    b:HandleButtonPressed()
+    b:HandleButtonReleased()
+    b:HandleButtonClicked()
+end
+
 function M.enter()
-    local view, start = selected_view()
-    if view and not start then
-        speech.say(view_text(view, nil), true)
-        return
-    end
-    if view then
-        print("[VoyagerAccess] techtree: begin research\n")
-        start:HandleButtonPressed()
-        start:HandleButtonReleased()
-        start:HandleButtonClicked()
+    local view, start, abort = selected_view()
+    local it = list.items[list.index]
+    if view and it and it.button == view_for then
+        if not (start or abort) then
+            speech.say(view_text(view, nil), true)
+            return
+        end
+        print("[VoyagerAccess] techtree: " .. (start and "begin" or "abort") .. " research\n")
+        press(start or abort)
         ExecuteInGameThreadWithDelay(600, function()
             pcall(function()
                 if list and refresh(true) then say(false) end
@@ -287,13 +310,12 @@ function M.enter()
         end)
         return
     end
-    local it = list.items[list.index]
     local b = it and StaticFindObject(it.button)
     if not (b and b:IsValid()) then return end
     print("[VoyagerAccess] techtree: clicking " .. it.text .. "\n")
-    b:HandleButtonPressed()
-    b:HandleButtonReleased()
-    b:HandleButtonClicked()
+    view_for = it.button
+    view_said = nil
+    press(b)
     -- Its state can change (research started): read it again shortly,
     -- unless the details view opened (poll reads that).
     ExecuteInGameThreadWithDelay(600, function()
@@ -339,9 +361,9 @@ local function poll()
         list = nil
     end
     if list then
-        local view, start = selected_view()
+        local view, start, abort = selected_view()
         if view then
-            local text = view_text(view, start)
+            local text = view_text(view, start, abort)
             if text ~= view_said then
                 view_said = text
                 print("[VoyagerAccess] techtree: " .. text .. "\n")

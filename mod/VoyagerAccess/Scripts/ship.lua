@@ -151,9 +151,18 @@ local function room_state(h, raw)
         -- Finished work waits for the Construction Report's Close: the cycle
         -- text says "Ready", read "Cargo bay, building, ready" (VM,
         -- 2026-10-16).
-        if cy:lower() == "ready" then
+        -- Decided from the room button's own State (ESTVRoomState: 1
+        -- Building, 2 Upgrading, 3 Repairing, 5 Removing) and its
+        -- RemainingCycles, read in the VM: the English "ready" missed it in
+        -- every other language, and the work-team rule below then added a
+        -- wrong "paused" (firefly82's review, 2026-10-19). The word stays as
+        -- a fallback.
+        local kind, left = nil, nil
+        pcall(function() kind, left = w.State.State, w.State.RemainingCycles end)
+        local working = kind == 1 or kind == 2 or kind == 3 or kind == 5
+        if (working and left == 0) or cy:lower() == "ready" then
             -- A cleared ruin read "Empty building space, removing done".
-            if raw == "None" and st:lower():find("^remov") then return "just cleared" end
+            if raw == "None" and (kind == 5 or st:lower():find("^remov")) then return "just cleared" end
             -- Enter on the room finishes it (VM, 2026-10-19); the screen
             -- shows "Ready", which says as much to a sighted player.
             return st:lower() .. " done, Enter finishes it"
@@ -268,9 +277,50 @@ local function index_of_selected(list)
     return best
 end
 
+-- The game's own room keys (E power or repair, F upgrade, T demolish) act
+-- on the room under the mouse pointer, picked again on every key press:
+-- with the Science Laboratory announced, E switched off the Mess Hall under
+-- the resting pointer (firefly82's review, 2026-10-19; reproduced in the VM
+-- the same day, E left the announced lab on). So the pointer goes onto the
+-- room the arrows reach, the way a sighted player points at it. Pointing
+-- only: nothing is clicked.
+-- A room off screen cannot be pointed at (the Workshop on deck 11 with the
+-- camera on deck 5: E then switched off the lab under the old pointer,
+-- VM, 2026-10-19), so the camera goes to it first with the game's own
+-- ForceCameraOnRoom(slot), which centred the room and stayed in the ship
+-- view, and the pointer follows once the camera is there.
+local function point_at(hull, tries)
+    tries = tries or 0
+    pcall(function()
+        local pc = FindFirstOf("PlayerController")
+        local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
+        local w, h = size.X, size.Y
+        local st = {}
+        pc:ProjectWorldLocationToScreen(hull:K2_GetActorLocation(), st, false)
+        if not (w and h and h > 0 and st.X and st.Y) then return end
+        if st.X < 0 or st.Y < 0 or st.X > w or st.Y > h then
+            print(string.format("[VoyagerAccess] ship: room off screen at %.0f,%.0f\n", st.X, st.Y))
+            if tries > 0 then return end
+            local slot = hull:BP_GetSlotIndex()
+            FindFirstOf("STVConstructionPawn"):ForceCameraOnRoom(slot)
+            ExecuteInGameThreadWithDelay(600, function()
+                pcall(function()
+                    for _, r in ipairs(rooms()) do
+                        if r.hull:BP_GetSlotIndex() == slot then point_at(r.hull, 1) end
+                    end
+                end)
+            end)
+            return
+        end
+        local r = 350 / 1080 * h   -- the helper's ring radius
+        speech.ring_mouse((st.X - w / 2) / r, (st.Y - h / 2) / r)
+    end)
+end
+
 -- At either end of a deck Left and Right repeat the room, with no extra
 -- words (Casey, 2026-10-10). prefix is optional text said first.
 local function select(r, with_deck, prefix)
+    point_at(r.hull)
     selected = { deck = r.deck, y = r.y }
     save_selected()
     local text = describe(r, with_deck)
@@ -438,6 +488,16 @@ function M.state_of(raw)
     return nil
 end
 
+-- The selected room's own state word ("on", "off", "Damaged"), for its
+-- power button: deciding from the button's English label ("Switch Off")
+-- failed in every other language (firefly82's review, 2026-10-19).
+function M.selected_state()
+    local list = rooms()
+    local i = index_of_selected(list)
+    if not i then return nil end
+    return room_state(list[i].hull, raw_name(list[i].hull:GetRoomType()))
+end
+
 -- Enter: what a mouse click on the room does.
 function M.open()
     crumb.at("ship: open")
@@ -493,6 +553,43 @@ function M.preview()
     local out = {}
     for _, r in ipairs(rooms()) do out[#out + 1] = describe(r, true) end
     return table.concat(out, " | ")
+end
+
+-- A room's new state, whatever changed it (the game's E key, the room
+-- window, damage, a finished job): a sighted player sees "Offline" appear
+-- on the room, and after E the mod said nothing, so a wrong E went
+-- unnoticed (firefly82's review, 2026-10-19; E on the lab was silent in the
+-- VM the same day). The game's own event, hooked on its condition listener
+-- (firefly82 found it); there are several listeners, so one change arrives
+-- several times and only the first per room and state is said. Said only
+-- in the ship view, after the game has applied the change.
+local HOOK = "/Script/STVoyager.STVConditionListener:OnBuildingChangedState"
+local last_change = {}   -- slot -> { state, at }
+
+function M.install()
+    local ok = pcall(RegisterHook, HOOK, function(_, payload)
+        pcall(function()
+            local p = payload:get()
+            local slot, state = p:GetSlotID(), p:GetCurrentRoomState()
+            local seen = last_change[slot]
+            if seen and seen.state == state and os.clock() - seen.at < 2 then return end
+            last_change[slot] = { state = state, at = os.clock() }
+            ExecuteInGameThreadWithDelay(300, function()
+                pcall(function()
+                    if not M.active() then return end
+                    for _, r in ipairs(rooms()) do
+                        if r.hull:BP_GetSlotIndex() == slot then
+                            local text = describe(r, false)
+                            print("[VoyagerAccess] ship: changed: " .. text .. "\n")
+                            speech.say(text, false)
+                            return
+                        end
+                    end
+                end)
+            end)
+        end)
+    end)
+    print("[VoyagerAccess] ship: state hook " .. (ok and "installed" or "not installed") .. "\n")
 end
 
 return M

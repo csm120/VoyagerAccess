@@ -347,8 +347,12 @@ function M.button_label(path, label)
         local room = w and texts_under(path_of(w)).RoomNameText or "This room"
         local action = label:gsub("%.$", "")
         local lower = action:lower()
-        -- Just the state (Casey, 2026-10-11): "Life Support on".
-        if lower == "switch off" then label = room .. " on"
+        -- Just the state (Casey, 2026-10-11): "Life Support on". From the
+        -- room's own state, not the English label (firefly82's review,
+        -- 2026-10-19); the label is the fallback.
+        local ok, state = pcall(function() return require("ship").selected_state() end)
+        if ok and (state == "on" or state == "off") then label = room .. " " .. state
+        elseif lower == "switch off" then label = room .. " on"
         elseif lower == "switch on" then label = room .. " off" end
     end
     local parts = { label }
