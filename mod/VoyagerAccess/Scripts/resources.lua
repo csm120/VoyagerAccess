@@ -34,8 +34,12 @@ local function shown_widgets(cls)
     return out
 end
 
+-- Each line's resource id, for its tooltip (Enter in the list).
+local ids = {}
+
 -- The status lines, each one item (resources, crew, fuel, energy, morale).
 local function lines()
+    ids = {}
     local by = {}
     for _, w in ipairs(shown_widgets("STVSingleResourceWidget")) do
         by[w:GetFName():ToString()] = w
@@ -86,7 +90,7 @@ local function lines()
             end)
             return t
         end)
-        if ok and text ~= "Hull " then parts[#parts + 1] = text end
+        if ok and text ~= "Hull " then parts[#parts + 1] = text; ids[#parts] = "Hull" end
     end
     -- Sector Threat, a bar in the header beside the hull (WBP_ThreatLevel:
     -- Current and max, both 0 in the first sector; found from the game's
@@ -95,7 +99,7 @@ local function lines()
     if threat then
         local ok, cur, max = pcall(function() return threat.Current, threat.max end)
         if ok and type(max) == "number" and max > 0 then
-            parts[#parts + 1] = "Sector threat " .. cur .. " of " .. max
+            parts[#parts + 1] = "Sector threat " .. cur .. " of " .. max; ids[#parts] = "ThreatLevel"
         end
     end
     -- Storage limits: events said "storage full" and C never said how much
@@ -112,22 +116,23 @@ local function lines()
             if change:match("^[%+%-]%d") then
                 text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
             end
-            parts[#parts + 1] = text
+            parts[#parts + 1] = text; ids[#parts] = key
         end
     end
-    local function team(name, label)
+    local function team(name, label, id)
         for _, w in ipairs(shown_widgets(name)) do
             parts[#parts + 1] = label .. " " .. text_of(w.AvailableAmount) .. " of " .. text_of(w.TotalAmount) .. " available"
+            ids[#parts] = id
         end
     end
-    team("WBP_Crew_Resource_C", "Crew")
+    team("WBP_Crew_Resource_C", "Crew", "Crew")
     team("WBP_WorkTeams_Resource_C", "Work teams")
     local cycles = by.Cycles
     -- Not cycles passed: it went 16, then 14 as Deuterium went 396, then 348
     -- at 24 a cycle, so it is how many cycles the fuel lasts.
     if cycles then
         local n = text_of(cycles.CyclesAmount)
-        parts[#parts + 1] = "Fuel lasts " .. n .. (n == "1" and " cycle" or " cycles")
+        parts[#parts + 1] = "Fuel lasts " .. n .. (n == "1" and " cycle" or " cycles"); ids[#parts] = "Cycles"
     end
     -- The rest of the strip (2026-10-11): energy (WBP_AggregateEnergy_Energy:
     -- CurrentResourceAmountText the output, UpkeepAmountText what rooms
@@ -140,7 +145,7 @@ local function lines()
     if energy then
         local use = text_of(energy.UpkeepAmountText):gsub("^%-", "")
         parts[#parts + 1] = "Energy " .. text_of(energy.CurrentResourceAmountText)
-            .. (use ~= "" and (", rooms use " .. use) or "")
+            .. (use ~= "" and (", rooms use " .. use) or ""); ids[#parts] = "Energy"
     end
     local battery = first("WBP_AggregateEnergy_Battery_C")
     if battery then
@@ -161,7 +166,7 @@ local function lines()
         if change:match("^[%+%-]%d") then
             text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
         end
-        parts[#parts + 1] = text
+        parts[#parts + 1] = text; ids[#parts] = "Morale"
     end
     return parts
 end
@@ -170,6 +175,13 @@ end
 -- "each item on its own line"): Up and Down move, Home and End go to the
 -- ends, Backspace or C again closes it.
 local items, index = nil, nil
+-- A details list (what the game's tooltip shows for one thing) uses the same
+-- keys; back is the list it was opened from, which Backspace or Escape
+-- returns to (Casey, 2026-10-19: "all the info in a list they can take
+-- their time with", closed like the other lists).
+local back = nil
+local item_ids = nil
+local in_details = false
 
 local function say_item()
     speech.say(string.format("%s, %d of %d", items[index], index, #items), true)
@@ -179,9 +191,23 @@ function M.list_open()
     return items ~= nil
 end
 
+-- Opens lines as a list; title is said first.
+function M.show_details(title, list)
+    if #list == 0 then
+        speech.say("No details here", true)
+        return
+    end
+    back = items and { items = items, index = index } or nil
+    in_details = true
+    items, index = list, 1
+    require("focus").park_focus()
+    speech.say(title .. ".", true)
+    speech.say(string.format("%s, %d of %d", items[index], index, #items), false)
+end
+
 function M.say()
     if items then
-        items = nil
+        items, back, in_details = nil, nil, false
         speech.say("Closed", true)
         return
     end
@@ -191,8 +217,24 @@ function M.say()
         return
     end
     items, index = parts, 1
+    item_ids = ids
     require("focus").park_focus()
     say_item()
+end
+
+-- Enter on a line of C: the game's tooltip for it as a details list
+-- (Casey, 2026-10-19), what a sighted player reads hovering the bar.
+-- In a details list Enter says the item again.
+function M.enter()
+    if in_details then return say_item() end
+    local id = item_ids and item_ids[index]
+    if not id then
+        speech.say("No details for this line", true)
+        return
+    end
+    local ok, list = pcall(function() return require("tooltip").resource_lines(id) end)
+    if not ok then print("[VoyagerAccess] details error: " .. tostring(list) .. "\n") list = {} end
+    M.show_details(items[index], list)
 end
 
 function M.step(dir)
@@ -207,6 +249,12 @@ end
 
 function M.close()
     if not items then return false end
+    in_details = false
+    if back then
+        items, index, back = back.items, back.index, nil
+        say_item()
+        return true
+    end
     items = nil
     speech.say("Closed", true)
     return true

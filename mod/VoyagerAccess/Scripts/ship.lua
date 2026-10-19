@@ -108,7 +108,17 @@ local function rooms()
         if h:IsValid() and path_of(h):find("PersistentLevel", 1, true) then
             local loc = h:K2_GetActorLocation()
             local deck = math.floor((TOP_DECK_Z - loc.Z) / DECK_HEIGHT + 0.5) + 1
-            list[#list + 1] = { hull = h, deck = deck, y = loc.Y }
+            list[#list + 1] = { hull = h, deck = deck, low = deck, y = loc.Y }
+            -- A room more than one deck tall is on each deck it covers
+            -- (deck is its lowest): the Holodeck on decks 4 to 6 was only
+            -- reached on deck 6, though a sighted player sees it on all
+            -- three (firefly82's review, 2026-10-19). The upper decks get
+            -- the same room again, marked so the J list shows it once.
+            local tall = 1
+            pcall(function() tall = math.max(math.floor(h.GridSize.Z + 0.5), 1) end)
+            for k = 1, tall - 1 do
+                list[#list + 1] = { hull = h, deck = deck - k, low = deck, y = loc.Y, upper = true }
+            end
         end
     end
     -- Top deck first; on a deck, screen left (high Y) first.
@@ -116,6 +126,14 @@ local function rooms()
         if a.deck ~= b.deck then return a.deck < b.deck end
         return a.y > b.y
     end)
+    -- Decks are counted from the ship's own top deck. TOP_DECK_Z is
+    -- Voyager's, so the Equinox (8 decks, Q Trials) read Decks 5 to 12,
+    -- with its Bridge on "Deck 5" (Equinox DLC, VM, 2026-10-19). Voyager's
+    -- top deck is already 1, so nothing changes there.
+    local top = list[1] and list[1].deck or 1
+    if top > 1 then
+        for _, r in ipairs(list) do r.deck = r.deck - top + 1; r.low = r.low - top + 1 end
+    end
     return list
 end
 
@@ -212,11 +230,12 @@ local function describe(r, with_deck)
     local t = r.hull:GetRoomType()
     local text = room_name(t)
     local state = room_state(r.hull, raw_name(t))
-    if raw_name(t) == "None" and state == "" and not deck_has_life(r.deck) then state = "no life support" end
+    local low = r.low or r.deck
+    if raw_name(t) == "None" and state == "" and not deck_has_life(low) then state = "no life support" end
     local tall = decks_tall(r)
     if tall > 1 and state:find("no life support", 1, true) then
         local dark = {}
-        for d = r.deck - tall + 1, r.deck do
+        for d = low - tall + 1, low do
             if not deck_has_life(d) then dark[#dark + 1] = tostring(d) end
         end
         if #dark > 0 then
@@ -225,7 +244,7 @@ local function describe(r, with_deck)
     end
     if state ~= "" then text = text .. ", " .. state end
     if with_deck then
-        text = (tall > 1 and ("Decks " .. (r.deck - tall + 1) .. " to " .. r.deck) or ("Deck " .. r.deck)) .. ", " .. text
+        text = (tall > 1 and ("Decks " .. (low - tall + 1) .. " to " .. low) or ("Deck " .. low)) .. ", " .. text
     end
     return text
 end
@@ -419,7 +438,7 @@ function M.list_toggle()
     for _, r in ipairs(rooms()) do
         local raw = raw_name(r.hull:GetRoomType())
         -- Empty building space is listed: it is where rooms are built.
-        if raw ~= "RuinedRoom" and raw ~= "TurboShaft" then
+        if raw ~= "RuinedRoom" and raw ~= "TurboShaft" and not r.upper then
             items[#items + 1] = { deck = r.deck, y = r.y, text = describe(r, true) }
         end
     end
@@ -486,6 +505,38 @@ function M.state_of(raw)
         if raw_name(t) == raw then return room_state(r.hull, raw) end
     end
     return nil
+end
+
+-- I pressed twice: the selected room's details, as the game's info panel
+-- shows them when the pointer rests on the room (level, energy, crew, what
+-- E does there and what it costs), opened as a list (Casey, 2026-10-19).
+-- The pointer is put on the room first, so the panel is this room's.
+function M.details()
+    local list = rooms()
+    local i = index_of_selected(list)
+    if not i then
+        speech.say("No room selected. Use the arrow keys to choose one.", true)
+        return
+    end
+    local slot, title = list[i].hull:BP_GetSlotIndex(), describe(list[i], true)
+    point_at(list[i].hull)
+    -- A room off screen waits for the camera first (point_at moves the
+    -- pointer 600 ms later): the Shuttle bay gave "No details" at 400 ms.
+    local function try(n)
+        ExecuteInGameThreadWithDelay(400, function()
+            pcall(function()
+                local tip = require("tooltip")
+                local panel = tip.room_panel()
+                if not panel then
+                    if n < 5 then return try(n + 1) end
+                    speech.say("No details shown for this room", true)
+                    return
+                end
+                require("resources").show_details(title, tip.lines(panel))
+            end)
+        end)
+    end
+    try(1)
 end
 
 -- The selected room's own state word ("on", "off", "Damaged"), for its
@@ -566,6 +617,8 @@ end
 local HOOK = "/Script/STVoyager.STVConditionListener:OnBuildingChangedState"
 local last_change = {}   -- slot -> { state, at }
 
+-- UE4SS unregisters a mod's hooks itself when the mod is reloaded
+-- ("Unregistering hook by id ... for mod VoyagerAccess" in UE4SS.log).
 function M.install()
     local ok = pcall(RegisterHook, HOOK, function(_, payload)
         pcall(function()

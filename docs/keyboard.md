@@ -24,7 +24,10 @@ follows them.
    receives every key).
 6. F1 says the keys for the current screen. No "Press F1 for help" hint is
    spoken on screens (Casey, 2026-10-11: it repeated on every screen).
-7. O reads the current objective; C reads the resources (cargo); R repeats the
+7. O reads the current objective; C reads the resources (cargo) as a list,
+   and Enter on a line lists its details as the game's tooltip shows them
+   (description, capacity, production, morale's causes and reachable
+   maximum, threat against your strength; Backspace goes back); R repeats the
    last line, tutorial or card; R again within 5 seconds goes back one message
    further each time ("Earlier: ..."). After the first reading, objectives announce
    only what changes ("Done: ...", "Mission ended: ...", "New mission: ...");
@@ -80,6 +83,10 @@ follows them.
    room's quick action (power on or off, repair, clear debris, or pause
    work), F upgrades it and T demolishes it. Moving to a room puts the
    mouse pointer on it, and the camera goes to it when it is off screen.
+   Press I twice for the room's details as a list: what the game's info
+   panel shows when you point at the room (level, energy, crew, and what E
+   does there and costs). Up, Down, Home and End move; Backspace or Escape
+   closes it.
 6. System map: Up and Down through the points of interest, Home and End,
    Enter opens the action list (Scan, Set course). The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds

@@ -640,6 +640,12 @@ end
 local last_chance = nil   -- { value = 0 to 100, at = os.clock() }
 local chance_hooked = false
 local CHANCE_HOOK = "/Game/STVoyager/Events/AwayMissions/UI/WBP_Dialogue_Window_AwayMission.WBP_Dialogue_Window_AwayMission_C:OnHeroesSelected"
+-- The window's OnNoHeroesSelected says the chance is gone (the last hero
+-- taken off a choice); it replaced a 30-second expiry that dropped the
+-- chance while a hero still stood on the choice (firefly82's review,
+-- 2026-10-19, tested by them in a German away mission).
+local NO_HEROES_HOOK = "/Game/STVoyager/Events/AwayMissions/UI/WBP_Dialogue_Window_AwayMission.WBP_Dialogue_Window_AwayMission_C:OnNoHeroesSelected"
+local cleared_by_game = false
 local function ensure_chance_hook()
     if chance_hooked then return end
     if not StaticFindObject(CHANCE_HOOK) then return end   -- loads with the first away mission
@@ -647,19 +653,37 @@ local function ensure_chance_hook()
         pcall(function()
             local v = chance:get()
             if type(v) ~= "number" then return end
-            if v <= 1 then v = v * 100 end
+            -- Always a fraction (0.925 for 92.5%; firefly82, 2026-10-19).
+            v = v * 100
             local c = false
             pcall(function() c = crit:get() == true end)
             last_chance = { value = math.floor(v + 0.5), at = os.clock(), crit = c }
             print("[VoyagerAccess] away: success chance " .. last_chance.value .. (c and " (critical check)" or "") .. "\n")
         end)
     end)
+    if StaticFindObject(NO_HEROES_HOOK) then
+        cleared_by_game = pcall(RegisterHook, NO_HEROES_HOOK, function()
+            last_chance = nil
+            print("[VoyagerAccess] away: no heroes selected, chance cleared\n")
+        end)
+    end
 end
 M.ensure_chance_hook = ensure_chance_hook
 
+-- With bCriticalSuccessCheck the team meets the requirement: success is
+-- certain and the number is the chance of an outstanding (critical)
+-- success. "success chance 5%" was said for a choice that could not fail,
+-- and the result was a success (firefly82's review, 2026-10-19). The
+-- skill and the requirement are said with the hero, as the screen shows
+-- them next to the bar.
 local function chance_words()
     ensure_chance_hook()
-    if last_chance and last_chance.value < 100 and os.clock() - last_chance.at < 30 then
+    if not last_chance then return nil end
+    if not cleared_by_game and os.clock() - last_chance.at >= 30 then return nil end
+    if last_chance.crit then
+        return "requirement met, outstanding success chance " .. last_chance.value .. "%"
+    end
+    if last_chance.value < 100 then
         return "success chance " .. last_chance.value .. "%"
     end
     return nil

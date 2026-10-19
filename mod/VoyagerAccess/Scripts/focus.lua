@@ -2653,7 +2653,7 @@ function M.install()
         if require("credits").open() then return require("credits").repeat_item() end
         if require("techtree").open() then return require("techtree").enter() end
         if ship.list_open() then return ship.list_enter() end
-        if require("resources").list_open() then return require("resources").close() end
+        if require("resources").list_open() then return require("resources").enter() end
         if require("view").nav_open() then return require("view").nav_enter() end
         if away.keys_active() then return away.mission_enter() end
         if M.virtual_active() then return M.virtual_enter() end

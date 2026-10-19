@@ -275,9 +275,18 @@ local function status(p)
     return res ~= "" and res or "scanned"
 end
 
+-- The player's ship on the maps: Voyager in the campaign, her Q Trials
+-- class, and the Equinox (Equinox DLC, Q Trials). Only the campaign class
+-- was looked for, so travel times were missing on the Equinox (VM,
+-- 2026-10-19), and likely in every Q Trial.
+local PLAYER_SHIPS = { "BP_SectorVoyager_C", "BP_SectorVoyager_Sandbox_C", "BP_SectorEquinox_C" }
+M.PLAYER_SHIPS = PLAYER_SHIPS
+
 local function voyager()
-    for _, v in ipairs(FindAllOf("BP_SectorVoyager_C") or {}) do
-        if v:IsValid() and path_of(v):find("PersistentLevel", 1, true) then return v end
+    for _, cls in ipairs(PLAYER_SHIPS) do
+        for _, v in ipairs(FindAllOf(cls) or {}) do
+            if v:IsValid() and path_of(v):find("PersistentLevel", 1, true) then return v end
+        end
     end
     return nil
 end
@@ -319,7 +328,7 @@ local function points()
                 -- Voyager herself; in Q Trials her class is
                 -- BP_SectorVoyager_Sandbox_C, listed as "SectorVoyager
                 -- Sandbox, scanned" (VM, 2026-10-14).
-                if not cls:find("^BP_SectorVoyager") and want then
+                if not cls:find("^BP_SectorVoyager") and cls ~= "BP_SectorEquinox_C" and want then
                     local loc = a:K2_GetActorLocation()
                     local d = from and math.sqrt((loc.X - from.X) ^ 2 + (loc.Y - from.Y) ^ 2) or 0
                     list[#list + 1] = { poi = c, actor = a, path = path_of(a), dist = d }
@@ -940,7 +949,7 @@ local function aim_at(actor, click)
         local pc = FindFirstOf("PlayerController")
         local lib = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
         local voy = nil
-        for _, cls in ipairs({ "BP_SectorVoyager_C", "BP_SectorVoyager_Sandbox_C" }) do
+        for _, cls in ipairs(PLAYER_SHIPS) do
             for _, x in ipairs(FindAllOf(cls) or {}) do
                 if x:IsValid() and x:GetFullName():find("PersistentLevel", 1, true) then voy = x end
             end

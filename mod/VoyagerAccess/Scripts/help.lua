@@ -15,7 +15,8 @@ local HELP = {
     dialogue = "Enter continues. Shift+Enter skips to the choices. R repeats the last line. "
         .. "On choices, Up and Down move and Enter picks one.",
     ship = "Up and Down change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
-        .. "Enter opens the room. V switches to the System Map. I says where you are.",
+        .. "Enter opens the room. V switches to the System Map. I says where you are; I twice lists the room's details. "
+        .. "E is the room's quick action, F upgrades it, T demolishes it.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
         .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship.",
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room.",
@@ -133,7 +134,20 @@ local PLACES = { cutscene = "Cutscene", story = "Story", dialogue = "Dialogue", 
     difficulty = "Difficulty", qtrials = "Q Trials setup",
     combat = "Combat" }
 
+-- I pressed again within a second and a half: the details of what you are
+-- on, as a list (Casey, 2026-10-19). For now the ship view's room.
+-- Wall-clock seconds: os.clock() is the game's processor time, which ran
+-- far faster than real time and never saw two presses as close (VM).
+local last_i = -100
 function M.say_where()
+    -- Whole seconds only, so "within 2" is one to three seconds.
+    local again = os.time() - last_i <= 2
+    last_i = os.time()
+    if again and M.context() == "ship" and not require("resources").list_open()
+        and not require("ship").list_open() then
+        last_i = -100
+        return require("ship").details()
+    end
     local away = require("awaymission")
     local parts = {}
     local tree = require("techtree").where() or require("view").nav_where()

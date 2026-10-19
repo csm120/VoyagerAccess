@@ -2,6 +2,19 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.57
+
+The game's hover tooltips are now yours too, as lists you can take your time with.
+
+- New: in the C list, press Enter on a line to hear its details as the game's tooltip shows them. Morale gives the most you can reach right now and what's pulling it down, like crew without quarters or emergency rations. Hull gives its damage and repair rate, threat gives your strength against the average enemy's, and every resource has its description, capacity and production. Backspace or Escape takes you back to the C list.
+- New: in the ship view, press I twice for the room's details: its level, energy, crew, and what E does there and what it costs, like "E: Repair, 8 duranium, 4 tritanium".
+- A room more than one deck tall can now be reached on every deck it covers, not just its lowest. Thanks to firefly82 for this one.
+- Equinox DLC: the Equinox's decks are now numbered 1 to 8, and the System Map gives travel times in Q Trials again, so you hear "1 cycle away" and Set course works on the Equinox.
+- Away missions: when your team meets the requirement, you now hear "requirement met, outstanding success chance 5%" instead of a low "success chance" for a choice that can't fail. Thanks to firefly82 for working this out.
+- Species numbers like "Species 1 1 6" are read digit by digit in German, French and Polish too.
+
+## Monday October 19th 2026
+
 Version 0.3.56
 
 Most of these come from firefly82's second review, so a big thank you to firefly82.

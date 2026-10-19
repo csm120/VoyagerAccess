@@ -73,7 +73,12 @@ function M.say(text, interrupt)
     -- is "Species 1 1 6", and registries such as "NX-01-A" or "NCC-74656"
     -- are read the same way.
     local function spaced(d) return (d:gsub("%d", "%0 "):gsub(" $", "")) end
-    text = text:gsub("([Ss]pecies%s+)(%d+)", function(w, d) return w .. spaced(d) end)
+    -- The word in the game's other languages too ("Spezies 116" was read
+    -- as a number in German, firefly82's review, 2026-10-19): German
+    -- Spezies, French espèce, Polish gatunek.
+    for _, word in ipairs({ "[Ss]pecies", "[Ss]pezies", "[Ee]sp\195\168ce", "[Gg]atunek" }) do
+        text = text:gsub("(" .. word .. "%s+)(%d+)", function(w, d) return w .. spaced(d) end)
+    end
     text = text:gsub("%f[%w](%u%u%u?)%-(%d+)%-?(%u?)%f[%W]", function(p, d, l)
         return p .. " " .. spaced(d) .. (l ~= "" and (" " .. l) or "")
     end)

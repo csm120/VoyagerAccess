@@ -15,7 +15,7 @@ BUILTINS = set("""assert error ipairs pairs next pcall xpcall print require sele
 getmetatable tonumber tostring type rawget rawset rawequal rawlen load loadfile dofile
 collectgarbage unpack""".split())
 UE4SS = set("""FindAllOf FindFirstOf StaticFindObject LoopAsync LoopInGameThreadWithDelay
-ExecuteInGameThread ExecuteInGameThreadWithDelay ExecuteWithDelay RegisterKeyBind RegisterHook
+ExecuteInGameThread ExecuteInGameThreadWithDelay ExecuteWithDelay RegisterKeyBind RegisterHook UnregisterHook
 NotifyOnNewObject RestartCurrentMod StaticConstructObject FName FText ForEachUObject
 CreateInvalidObject RegisterCustomEvent IterateGameDirectories""".split())
 KEYWORDS = set("""and or not if then elseif else end for while do repeat until function local
