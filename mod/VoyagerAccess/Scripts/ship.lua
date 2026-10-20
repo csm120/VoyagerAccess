@@ -187,11 +187,18 @@ local function room_state(h, raw)
         end
         -- Paused work keeps its text ("removing, 3 cycles") but has no
         -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).
-        local paused = false
-        pcall(function()
-            local d = FindFirstOf("STVConstructionManager"):BP_GetRoomDataBySlot(h:BP_GetSlotIndex())
-            paused = #d.AssignedWorkTeams == 0
-        end)
+        -- The room button's own IsPaused flag, which the game sets with
+        -- OnSetState (firefly82's review, 2026-10-20: the mod's work-team
+        -- count rebuilt the game's rule); the count is the fallback.
+        local paused = nil
+        pcall(function() if type(w.IsPaused) == "boolean" then paused = w.IsPaused end end)
+        if paused == nil then
+            paused = false
+            pcall(function()
+                local d = FindFirstOf("STVConstructionManager"):BP_GetRoomDataBySlot(h:BP_GetSlotIndex())
+                paused = #d.AssignedWorkTeams == 0
+            end)
+        end
         return st:lower() .. (paused and ", paused" or "") .. (cy ~= "" and (", " .. cy:lower()) or "")
     end)
     if ok and busy then return busy end
@@ -206,7 +213,19 @@ end
 -- without it is inaccessible (the game's own Life Support description), and
 -- Enter on one opened nothing and said nothing (deck 3, life support
 -- damaged, VM, 2026-10-18).
+-- Asked of the game for a slot on that deck (IsLifeSupportActiveForSlot,
+-- which construction.lua uses too) rather than rebuilt from the Life
+-- Support room's state (firefly82's review, 2026-10-20); the room's state
+-- is the fallback.
 local function deck_has_life(deck)
+    local ok, ans = pcall(function()
+        local cm = FindFirstOf("STVConstructionManager")
+        for _, r in ipairs(rooms()) do
+            if r.deck == deck and not r.upper then return cm:IsLifeSupportActiveForSlot(r.hull:BP_GetSlotIndex()) end
+        end
+        return nil
+    end)
+    if ok and type(ans) == "boolean" then return ans end
     for _, r in ipairs(rooms()) do
         if r.deck == deck and raw_name(r.hull:GetRoomType()) == "LifeSupport" then
             return room_state(r.hull, "LifeSupport") == "on"
@@ -318,31 +337,90 @@ end
 -- VM, 2026-10-19), so the camera goes to it first with the game's own
 -- ForceCameraOnRoom(slot), which centred the room and stayed in the ship
 -- view, and the pointer follows once the camera is there.
-local function point_at(hull, tries)
-    tries = tries or 0
-    pcall(function()
+-- A fixed 600 ms wait for the camera put the pointer on other rooms while
+-- the camera still moved (slot 411 hovered 404, then 408: firefly82's
+-- review, 2026-10-20). So the pointer follows the room until the game
+-- itself says it rests there: the ship view's info panel is filled by
+-- SetHoverInfo(HoverSlot, ...) for the hovered room and emptied by
+-- RemoveInfo (hooked below).
+local hover_slot = nil     -- the slot the game's info panel shows, or nil
+local hover_waiters = {}   -- slot -> functions to run once it is hovered
+local hover_hooked = false
+local chase_id = 0
+
+-- Moves the pointer onto the hull: "on", or "off" when it is off screen.
+local function aim(hull)
+    local ok, where = pcall(function()
         local pc = FindFirstOf("PlayerController")
         local size = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary"):GetViewportSize(pc)
         local w, h = size.X, size.Y
         local st = {}
         pc:ProjectWorldLocationToScreen(hull:K2_GetActorLocation(), st, false)
-        if not (w and h and h > 0 and st.X and st.Y) then return end
-        if st.X < 0 or st.Y < 0 or st.X > w or st.Y > h then
-            print(string.format("[VoyagerAccess] ship: room off screen at %.0f,%.0f\n", st.X, st.Y))
-            if tries > 0 then return end
-            local slot = hull:BP_GetSlotIndex()
+        if not (w and h and h > 0 and st.X and st.Y) then return nil end
+        if st.X < 0 or st.Y < 0 or st.X > w or st.Y > h then return "off" end
+        local r = 350 / 1080 * h   -- the helper's ring radius
+        speech.ring_mouse((st.X - w / 2) / r, (st.Y - h / 2) / r)
+        return "on"
+    end)
+    return ok and where or nil
+end
+
+local function hull_at(slot)
+    for _, r in ipairs(rooms()) do
+        if r.hull:BP_GetSlotIndex() == slot then return r.hull end
+    end
+    return nil
+end
+
+local function point_at(hull)
+    pcall(function()
+        local slot = hull:BP_GetSlotIndex()
+        chase_id = chase_id + 1
+        local id = chase_id
+        if aim(hull) == "off" then
+            print("[VoyagerAccess] ship: room off screen, camera to slot " .. slot .. "\n")
             FindFirstOf("STVConstructionPawn"):ForceCameraOnRoom(slot)
+        end
+        -- Without the hook, the old fixed wait.
+        if not hover_hooked then
             ExecuteInGameThreadWithDelay(600, function()
-                pcall(function()
-                    for _, r in ipairs(rooms()) do
-                        if r.hull:BP_GetSlotIndex() == slot then point_at(r.hull, 1) end
-                    end
-                end)
+                pcall(function() local h = hull_at(slot); if h then aim(h) end end)
             end)
             return
         end
-        local r = 350 / 1080 * h   -- the helper's ring radius
-        speech.ring_mouse((st.X - w / 2) / r, (st.Y - h / 2) / r)
+        local n = 0
+        local function follow()
+            ExecuteInGameThreadWithDelay(100, function()
+                if id ~= chase_id then return end
+                if hover_slot == slot then
+                    print("[VoyagerAccess] ship: pointer on slot " .. slot .. " after " .. n .. " steps\n")
+                    return
+                end
+                n = n + 1
+                if n > 30 then
+                    print("[VoyagerAccess] ship: pointer never confirmed on slot " .. slot .. "\n")
+                    return
+                end
+                pcall(function() local h = hull_at(slot); if h then aim(h) end end)
+                follow()
+            end)
+        end
+        follow()
+    end)
+end
+
+-- Runs fn once the game's info panel shows slot, or timeout_fn after 3 s.
+local function when_hovered(slot, fn, timeout_fn)
+    if hover_hooked and hover_slot == slot then return fn() end
+    if not hover_hooked then
+        return ExecuteInGameThreadWithDelay(1000, function() pcall(fn) end)
+    end
+    local done = false
+    local list = hover_waiters[slot] or {}
+    hover_waiters[slot] = list
+    list[#list + 1] = function() if not done then done = true; fn() end end
+    ExecuteInGameThreadWithDelay(3000, function()
+        if not done then done = true; pcall(timeout_fn) end
     end)
 end
 
@@ -530,23 +608,20 @@ function M.details()
     end
     local slot, title = list[i].hull:BP_GetSlotIndex(), describe(list[i], true)
     point_at(list[i].hull)
-    -- A room off screen waits for the camera first (point_at moves the
-    -- pointer 600 ms later): the Shuttle bay gave "No details" at 400 ms.
-    local function try(n)
-        ExecuteInGameThreadWithDelay(400, function()
-            pcall(function()
-                local tip = require("tooltip")
-                local panel = tip.room_panel()
-                if not panel then
-                    if n < 5 then return try(n + 1) end
-                    speech.say("No details shown for this room", true)
-                    return
-                end
-                require("resources").show_details(title, tip.lines(panel))
-            end)
+    -- Read once the game shows this room in its info panel (a room off
+    -- screen waits for the camera: the Shuttle bay gave "No details" at
+    -- 400 ms with a fixed wait).
+    when_hovered(slot, function()
+        pcall(function()
+            local tip = require("tooltip")
+            local panel = tip.room_panel()
+            if not panel then
+                speech.say("No details shown for this room", true)
+                return
+            end
+            require("resources").show_details(title, tip.lines(panel))
         end)
-    end
-    try(1)
+    end, function() speech.say("No details shown for this room", true) end)
 end
 
 -- The selected room's own state word ("on", "off", "Damaged"), for its
@@ -645,8 +720,34 @@ end
 -- The class loads with the ship view, after the mod starts: try every 3 s
 -- until the hook takes. UE4SS unregisters a mod's hooks itself when the mod
 -- is reloaded.
+-- The info panel's own calls: pre callbacks, so the panel is filled on the
+-- next tick, where the slot is recorded and its waiters run.
+local INFO = "/Game/STVoyager/ConstructionSideview/UI/Widgets/InfoPanel/WBP_Sideview_InfoPanel.WBP_Sideview_InfoPanel_C:"
+
+local function install_hover()
+    if hover_hooked or not StaticFindObject(INFO .. "SetHoverInfo") then return end
+    local ok = pcall(RegisterHook, INFO .. "SetHoverInfo", function(_, slot)
+        local oks, s = pcall(function() return slot:get() end)
+        if not oks then return end
+        ExecuteInGameThread(function()
+            hover_slot = s
+            local list = hover_waiters[s]
+            hover_waiters[s] = nil
+            for _, fn in ipairs(list or {}) do pcall(fn) end
+        end)
+    end)
+    if ok then
+        pcall(RegisterHook, INFO .. "RemoveInfo", function()
+            ExecuteInGameThread(function() hover_slot = nil end)
+        end)
+    end
+    hover_hooked = ok
+    print("[VoyagerAccess] ship: hover hook " .. (ok and "installed" or "not installed") .. "\n")
+end
+
 function M.install()
     LoopInGameThreadWithDelay(3000, function()
+        install_hover()
         if hooked then return end
         if not StaticFindObject(HOOK) then return end
         -- UE4SS calls only the first (pre) callback for this Blueprint

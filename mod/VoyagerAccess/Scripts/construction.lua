@@ -247,7 +247,7 @@ function M.ring_text(b)
     build[#build + 1] = cy .. (cy == 1 and " cycle" or " cycles")
     parts[#parts + 1] = "Construction: " .. table.concat(build, ", ")
     for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
-    return { text = table.concat(parts, ". "), check = desc:sub(1, 30) }
+    return { text = table.concat(parts, ". "), check = desc:sub(1, 30), why = why and why:gsub("%.%s*$", "") }
 end
 
 -- Enter on a room choice. True when the mod handled it (built, or said why

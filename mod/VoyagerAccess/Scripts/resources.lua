@@ -153,6 +153,8 @@ local function lines()
         local excess = text_of(battery.ExcessEnergyText):gsub("^%+", "")
         parts[#parts + 1] = "Battery " .. text_of(battery.BatteryAmount)
             .. (excess:match("^%d") and (", charging " .. excess) or "")
+        -- The bar's own id for it (its ResourceString, VM, 2026-10-20).
+        ids[#parts] = "Batteries"
     end
     local morale = first("WBP_Morale_03_C")
     if morale then

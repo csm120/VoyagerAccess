@@ -30,6 +30,21 @@ function M.game_resource_name(id)
     return name
 end
 
+-- A hero attribute's name as the game shows it (STVHeroManager's
+-- GetHeroAttributeName), outside English; nil in English, where the
+-- enum's own name is kept. "Aufgabe Medicine" was said in German (VM,
+-- 2026-10-20).
+function M.hero_attribute_name(value)
+    local okl, english = pcall(function() return require("language").english() end)
+    if not okl or english then return nil end
+    local name = nil
+    pcall(function()
+        local s = FindFirstOf("STVHeroManager"):GetHeroAttributeName(value):ToString()
+        if s ~= "" then name = s end
+    end)
+    return name
+end
+
 local function unit(id)
     id = id:gsub("_.*$", "")
     local game = M.game_resource_name(id == "Crews" and "Crew" or id)

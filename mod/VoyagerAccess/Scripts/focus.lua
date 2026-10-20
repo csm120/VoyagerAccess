@@ -293,6 +293,41 @@ end
 -- appears on mouse hover (2026-10-14), so the mod hovers the focused one.
 local last_center_error = nil   -- set by radial_details
 
+-- The text widgets inside the ring's centre, in tree order. The centre is
+-- the ring's own CenterWidget (hovered segment) or UnselectedCenterWidget:
+-- a search over every text filtered by "WBP_RadialMenuCenter_" in the path
+-- missed the ruin's WBP_UnselectedCenter_Ruin (firefly82's review,
+-- 2026-10-20). nil when the ring has no centre reference.
+local function center_texts(menu_path)
+    local menu = resolve(menu_path)
+    if not menu then return nil end
+    local c = nil
+    pcall(function()
+        local w = menu.CenterWidget
+        if w and w:IsValid() and require("screen").shown(w) then c = w; return end
+        w = menu.UnselectedCenterWidget
+        if w and w:IsValid() and require("screen").shown(w) then c = w end
+    end)
+    if not c then return nil end
+    local W = StaticFindObject("/Script/UMG.UserWidget")
+    local P = StaticFindObject("/Script/UMG.PanelWidget")
+    local out, count = {}, 0
+    local function walk(w, depth)
+        if depth > 30 or count > 400 or not (w and w:IsValid()) then return end
+        count = count + 1
+        local okt = pcall(function() return w:GetText() end)
+        if okt and not w:IsA(W) then out[#out + 1] = w; return end
+        if w:IsA(W) then
+            local tree = w.WidgetTree
+            if tree and tree:IsValid() and tree.RootWidget then walk(tree.RootWidget, depth + 1) end
+        elseif w:IsA(P) then
+            for i = 0, w:GetChildrenCount() - 1 do walk(w:GetChildAt(i), depth + 1) end
+        end
+    end
+    walk(c, 0)
+    return out, path_of(c)
+end
+
 local function radial_details(menu)
     local by, order = {}, {}
     local center = nil
@@ -300,11 +335,22 @@ local function radial_details(menu)
     -- (WBP_RadialMenuCenter_ClearDebris, VM, 2026-10-15); every display's
     -- number is named AmountText, so the resource is the display's name.
     local gives, gave = {}, {}
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
-        for _, t in ipairs(FindAllOf(cls) or {}) do
+    local texts, cpath = center_texts(menu)
+    local lists = {}
+    if texts then
+        center = cpath
+        lists[1] = texts
+    else
+        print("[VoyagerAccess] radial: no centre reference, searching\n")
+        for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
+            lists[#lists + 1] = FindAllOf(cls) or {}
+        end
+    end
+    for _, list in ipairs(lists) do
+        for _, t in ipairs(list) do
             local tp = t:IsValid() and path_of(t)
             -- The centre is not inside the ring's path; any shown one counts.
-            if tp and tp:find("^/Engine/Transient%.") and tp:find("WBP_RadialMenuCenter_", 1, true)
+            if tp and (texts or (tp:find("^/Engine/Transient%.") and tp:find("WBP_RadialMenuCenter_", 1, true)))
                 and require("screen").shown(t) then
                 local name = tp:match("([^%.]+)$")
                 center = center or tp:match("^(.-WBP_RadialMenuCenter_[%w_]-_C_%d+)%.")
@@ -319,7 +365,10 @@ local function radial_details(menu)
                 if res then
                     if s:match("%d") and not s:find("#", 1, true) and not gave[res] then
                         gave[res] = true
-                        gives[#gives + 1] = (s:gsub("^%+", "")) .. " " .. (res:gsub("(%l)(%u)", "%1 %2")):lower()
+                        -- The game's own name in other languages (English
+                        -- keeps the widget's name, as before).
+                        local word = require("text").game_resource_name(res) or (res:gsub("(%l)(%u)", "%1 %2")):lower()
+                        gives[#gives + 1] = (s:gsub("^%+", "")) .. " " .. word
                     end
                 elseif s ~= "" and not by[name] then by[name] = s; order[#order + 1] = name end
             end
@@ -351,6 +400,8 @@ local function radial_details(menu)
 end
 
 local radial_said = {}   -- segment path -> what was said, for L and R
+local ring_pending = nil  -- { path, fn }: the segment waiting for its hover
+local ring_hooked = false
 -- segment path -> the ring centre's own error text (the game's words, in its
 -- language), the reason a locked segment gives on Enter.
 local radial_error = {}
@@ -366,7 +417,10 @@ function M.radial_focus(b, path)
     -- German game, 2026-10-18). Other segments still hover for the centre.
     local okr0, ring0 = pcall(require("construction").ring_text, b)
     local direct = okr0 and ring0 ~= nil
-    if not direct then
+    -- With the hover hook a room segment is pointed at too, so its lock
+    -- reason is the centre's own (the game's words, in its language) and
+    -- not one the mod works out (firefly82's review, 2026-10-20).
+    if not direct or ring_hooked then
         pcall(function()
             local pos = b.Slot:GetPosition()
             local r = math.max(math.sqrt(pos.X * pos.X + pos.Y * pos.Y), 1)
@@ -405,6 +459,22 @@ function M.radial_focus(b, path)
             local okr, ring = pcall(require("construction").ring_text, nb)
             if okr and ring then
                 text = ring.text
+                -- The centre's reason when it shows one. "Missing resources"
+                -- keeps the mod's, which names the short ones (a sighted
+                -- player sees those costs in red).
+                if menu and ring_hooked and not (ring.why and ring.why:find("^Missing resources")) then
+                    last_center_error = nil
+                    pcall(radial_details, menu)
+                    local ge = last_center_error and last_center_error:gsub("%.%s*$", "")
+                    if ge and ge ~= "" then
+                        radial_error[path] = ge
+                        if ring.why then
+                            text = text:gsub(ring.why:gsub("%p", "%%%0"), (ge:gsub("%%", "%%%%")), 1)
+                        else
+                            text = text:gsub("^([^%.]+)%.", "%1. " .. ge:gsub("%%", "%%%%") .. ".", 1)
+                        end
+                    end
+                end
             elseif menu then
                 last_center_error = nil
                 text = radial_details(menu)
@@ -428,7 +498,38 @@ function M.radial_focus(b, path)
             speech.say(text, true)
         end)
     end
-    if direct then say_it() else ExecuteInGameThreadWithDelay(450, say_it) end
+    if direct and not ring_hooked then return say_it() end
+    -- Read when the game says the segment is hovered (its BP_OnHovered,
+    -- hooked in M.install), not after a fixed 450 ms (firefly82's review,
+    -- 2026-10-20). With no hover in time, the pointer missed: read what
+    -- there is.
+    local p = { path = path, fn = say_it }
+    ring_pending = p
+    ExecuteInGameThreadWithDelay(ring_hooked and 1000 or 450, function()
+        if p.fn then
+            if ring_hooked then print("[VoyagerAccess] radial: no hover in time\n") end
+            local fn = p.fn; p.fn = nil; fn()
+        end
+    end)
+end
+
+-- The segment's own hover event: a pre callback, so the centre is read on
+-- the next tick, after the game has filled it.
+local RING_HOVER = "/Game/STVoyager/GXUI/WBP_RadialButton.WBP_RadialButton_C:BP_OnHovered"
+local function install_ring_hover()
+    if ring_hooked or not StaticFindObject(RING_HOVER) then return end
+    ring_hooked = pcall(RegisterHook, RING_HOVER, function(ctx)
+        local okp, bp = pcall(function() return path_of(ctx:get()) end)
+        if not okp then return end
+        ExecuteInGameThread(function()
+            local p = ring_pending
+            if p and p.fn and p.path == bp then
+                print("[VoyagerAccess] radial: hovered\n")
+                local fn = p.fn; p.fn = nil; fn()
+            end
+        end)
+    end)
+    print("[VoyagerAccess] radial: hover hook " .. (ring_hooked and "installed" or "not installed") .. "\n")
 end
 
 function M.radial_said(path)
@@ -2927,6 +3028,8 @@ function M.install()
     keys.on("end", function() home_end(true) end)
     -- On the game thread directly; LoopAsync plus ExecuteInGameThread is a
     -- suspect in an idle crash inside UE4SS (2026-10-10 20:28, not proven).
+    -- The ring button's class loads with the first ring: try every 3 s.
+    LoopInGameThreadWithDelay(3000, function() pcall(install_ring_hover) end)
     LoopInGameThreadWithDelay(INTERVAL_MS, function()
         local ok, err = pcall(poll)
         if not ok then print("[VoyagerAccess] focus error: " .. tostring(err) .. "\n") end

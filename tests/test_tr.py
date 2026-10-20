@@ -32,6 +32,8 @@ package.preload["tr_de"] = function() return {
     ["up to {n} {s}"] = "bis zu {n} {s}",
     ["to {n} done"] = "{n} fertig",
     ["{s}: none"] = "{s}: keine",
+    ["Offensive combat power {n}"] = "Offensive Kampfkraft {n}",
+    [", base attack power {n}"] = ", Grundangriffskraft {n}",
 } end
 package.preload["tr_fr"] = function() return {
     ["on"] = "allumé",
@@ -135,6 +137,15 @@ end
         self.assertEqual(tr.fill("{s} tab", "Crew"), "Crew tab")
         tr = self.load("de")
         self.assertEqual(tr.fill("{s} room", "Crew"), "Crew room")
+
+    def test_number_at_template_end_leaves_the_comma(self):
+        # "26," was taken as the number, so ", base attack power 26" lost
+        # its comma and stayed English (German Combat tab, VM, 2026-10-20).
+        tr = self.load("de")
+        self.assertEqual(tr.apply("Offensive combat power 26, base attack power 26"),
+                         "Offensive Kampfkraft 26, Grundangriffskraft 26")
+        # A thousands separator inside the number stays part of it.
+        self.assertEqual(tr.apply("Offensive combat power 1,200."), "Offensive Kampfkraft 1,200.")
 
     def test_missing_table_is_english(self):
         tr = self.load("ja")

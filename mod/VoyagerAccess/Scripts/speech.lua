@@ -76,9 +76,18 @@ function M.say(text, interrupt)
     -- The word in the game's other languages too ("Spezies 116" was read
     -- as a number in German, firefly82's review, 2026-10-19): German
     -- Spezies, French espèce, Polish gatunek.
-    for _, word in ipairs({ "[Ss]pecies", "[Ss]pezies", "[Ee]sp\195\168ce", "[Gg]atunek" }) do
-        text = text:gsub("(" .. word .. "%s+)(%d+)", function(w, d) return w .. spaced(d) end)
+    -- Every form the game's own texts put before a species number, taken
+    -- from its language files (2026-10-20): Spanish Especie, Polish
+    -- Gatunek/Gatunku/Gatunkowi/Gatunkiem, Russian вид/вида/виду/виде/видом
+    -- (sometimes with a no-break space), Japanese 生命体 with no space.
+    -- Chinese puts no word right before the number.
+    local SPECIES = { "[Ss]pecies", "[Ss]pezies", "[Ee]sp\195\168ce", "[Ee]specie", "[Gg]atun%l*",
+        "\208[\146\178]\208\184\208\180", "\208[\146\178]\208\184\208\180\208\176", "\208[\146\178]\208\184\208\180\209\131",
+        "\208[\146\178]\208\184\208\180\208\181", "\208[\146\178]\208\184\208\180\208\190\208\188" }
+    for _, word in ipairs(SPECIES) do
+        text = text:gsub("(" .. word .. "[%s\194\160]+)(%d+)", function(w, d) return w .. spaced(d) end)
     end
+    text = text:gsub("(\231\148\159\229\145\189\228\189\147)(%d+)", function(w, d) return w .. spaced(d) end)
     text = text:gsub("%f[%w](%u%u%u?)%-(%d+)%-?(%u?)%f[%W]", function(p, d, l)
         return p .. " " .. spaced(d) .. (l ~= "" and (" " .. l) or "")
     end)

@@ -2,6 +2,20 @@
 
 ## Tuesday October 20th 2026
 
+Version 0.3.67
+
+- Fixed: after you jump to a room far away, with the room list or the arrows, the game's own keys like E now act on the room you just heard. The mouse pointer used to land while the camera was still moving, so a quick E could switch off the room next to it. Pressing I twice now waits for that room too, so you get its details.
+- Fixed: when a room can't be built, the build ring now gives the game's own reason in your language, like "Missing technology". The ring also reads each segment as soon as the game shows it, instead of after a fixed pause.
+- Fixed: the tech tree reads a new category as soon as the game has shown it.
+- Fixed: Enter on the Battery line in the C list now shows its details, like the other lines.
+- Fixed: in other languages, each row of the Morale tab is one item again ("76 Crew, Ohne Quartiere, max. Moral -1.200"), hero skills in events and away missions use the game's own words ("Aufgabe Medizin"), and the resources Clear Debris gives back use the game's names. A phrase that comes right after a number, like the base attack power on the Combat tab, is now translated too.
+- Fixed: species numbers like Species 116 are read digit by digit in Spanish, Polish, Russian and Japanese as well.
+- Fixed: Left or Right on an event option where the game has no hero selected now says "No hero" instead of nothing.
+
+Thanks to firefly82, whose review showed where the mod was guessing instead of listening to the game.
+
+## Tuesday October 20th 2026
+
 Version 0.3.66
 
 - New: the mod's own words now come out in your game's language. If you play in German, Spanish, French, Japanese, Polish, Russian or Simplified Chinese, the words the mod adds to the game's text are spoken in that language too: deck and tier names, room states like on and off, where you are in a list ("5 von 10"), the chances in an event, key hints, and the F1 and Ctrl+F1 lists. Switch the game's language in Settings and the mod follows it.

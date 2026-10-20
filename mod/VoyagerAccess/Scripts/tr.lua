@@ -68,7 +68,12 @@ local function compile(key, value)
     -- long but says almost nothing, and taking a line first it kept
     -- ", opens {n}: {s}" from ever matching (German table, 2026-10-20).
     local fixed = key:gsub("{[ns]}", ""):gsub("[^%a]", "")
-    return { pat = pat, rep = rep, len = #fixed, slots = n, kinds = kinds }
+    -- A number ending the template takes a comma or full stop after it
+    -- ("26,"), and the next phrase lost its comma: ", base attack power 26"
+    -- stayed English (German Combat tab, VM, 2026-10-20). pass() gives the
+    -- separator back.
+    local n_last = kinds[n] == "n" and key:sub(-3) == "{n}"
+    return { pat = pat, rep = rep, len = #fixed, slots = n, kinds = kinds, n_last = n_last }
 end
 
 -- Safe for the line-wide pass: two or more words, a word beside {n}, or
@@ -149,6 +154,11 @@ local function pass(text, d, store, depth)
     for _, c in ipairs(d.compiled) do
         local ok, out = pcall(string.gsub, text, c.pat, function(...)
             local caps = { ... }
+            local back = ""
+            if c.n_last and type(caps[c.slots]) == "string" then
+                local num, sep = caps[c.slots]:match("^(.-)([,%.]+)$")
+                if num then caps[c.slots], back = num, sep end
+            end
             if depth < 3 then
                 for i, kind in ipairs(c.kinds) do
                     if kind == "s" and type(caps[i]) == "string" and caps[i]:find("%a") then
@@ -157,7 +167,7 @@ local function pass(text, d, store, depth)
                 end
             end
             store[#store + 1] = expand(c.rep, caps)
-            return "\1" .. ("\2"):rep(#store) .. "\1"
+            return "\1" .. ("\2"):rep(#store) .. "\1" .. back
         end)
         if ok then text = out end
     end

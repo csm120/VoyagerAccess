@@ -438,7 +438,7 @@ function M.window_text()
     pcall(function()
         L.MissionInfo.RecommendedAttributes:ForEach(function(_, e)
             local n = enum:GetNameByValue(e:get()):ToString():gsub("^ESTVHeroAttribute::", "")
-            rec[#rec + 1] = n
+            rec[#rec + 1] = require("text").hero_attribute_name(e:get()) or n
         end)
     end)
     if #rec > 0 then parts[#parts + 1] = "Recommended skills: " .. table.concat(rec, ", ") end

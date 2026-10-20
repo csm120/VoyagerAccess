@@ -209,19 +209,20 @@ local function bar_widgets()
     return out
 end
 
+-- Only this resource's own tooltip: borrowing another bar widget's and
+-- calling SetResource_BP on it changed a game widget (firefly82's review,
+-- 2026-10-20).
 local function tooltip_for(id)
-    local any = nil
     for _, w in ipairs(bar_widgets()) do
         if w:IsValid() and w:GetFullName():find("WBP_HUD", 1, true) then
             local ok, t = pcall(function() return w.HoverTooltip end)
             if ok and t and t:IsValid() then
-                any = any or t
                 local okr, rs = pcall(function() return w.ResourceString:ToString() end)
                 if okr and rs == id then return t end
             end
         end
     end
-    return any
+    return nil
 end
 
 function M.resource_lines(id)
@@ -254,7 +255,16 @@ function M.resource_lines(id)
 end
 
 -- The ship view's info panel shown now, or nil.
+-- The HUD's own reference first (firefly82's review, 2026-10-20).
 function M.room_panel()
+    local okh, p0 = pcall(function()
+        for _, hud in ipairs(FindAllOf("WBP_HUD_C") or {}) do
+            local p = hud:IsValid() and hud.WBP_Sideview_InfoPanel
+            if p and p:IsValid() and screen.shown(p) then return p end
+        end
+        return nil
+    end)
+    if okh and p0 then return p0 end
     for _, p in ipairs(FindAllOf("WBP_Sideview_InfoPanel_C") or {}) do
         if p:IsValid() and screen.shown(p) then return p end
     end

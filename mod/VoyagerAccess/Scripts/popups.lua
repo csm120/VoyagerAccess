@@ -688,7 +688,13 @@ local function overview_lines(path)
             -- "uses -24 deuterium": the sign is in "uses" already.
             local v = t:gsub("^%+", ""):gsub("/$", "")
             if name == "ConsumedDeuteriumText" then v = v:gsub("^%-", "") end
-            if OVERVIEW_LABELS[name] == "%s crew" then return require("tr").fill("{s} crew", v) end
+            -- A Morale row's crew and max morale are marked by their widget
+            -- (\1, \2) for the grouping below: matching the words "crew"
+            -- and "max morale" failed once "crew" was said in the game's
+            -- language (firefly82's review, 2026-10-20: rows by widget, not
+            -- by text).
+            if OVERVIEW_LABELS[name] == "%s crew" then return "\1" .. require("tr").fill("{s} crew", v) end
+            if OVERVIEW_LABELS[name] == "max morale %s" then return "\2" .. string.format(OVERVIEW_LABELS[name], v) end
             return string.format(OVERVIEW_LABELS[name], v)
         end
         if name == "LevelText" then
@@ -720,14 +726,14 @@ local function overview_lines(path)
     local i = 1
     while i <= #lines do
         local l = lines[i]
-        if l:match("^[%d,]+ crew$") and lines[i + 2] and lines[i + 2]:match("^max morale ") then
-            out[#out + 1] = l .. ", " .. lines[i + 1] .. ", " .. lines[i + 2]
+        if l:sub(1, 1) == "\1" and lines[i + 2] and lines[i + 2]:sub(1, 1) == "\2" then
+            out[#out + 1] = l:sub(2) .. ", " .. lines[i + 1] .. ", " .. lines[i + 2]:sub(2)
             i = i + 3
         elseif l:match("^[%+%-]%d+%%") and #out > 1 then
             out[#out] = out[#out] .. (out[#out]:match("%d$") and ": " or ", ") .. l
             i = i + 1
         else
-            out[#out + 1] = l
+            out[#out + 1] = (l:gsub("^[\1\2]", ""))
             i = i + 1
         end
     end

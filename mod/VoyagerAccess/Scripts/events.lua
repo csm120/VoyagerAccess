@@ -121,6 +121,31 @@ local function ensure_hook()
     hooked = ok
 end
 
+-- The game's own move of an option's hero selection (native
+-- NavigateHeroes, which sets CurrentSelectedHero): the hero is read when it
+-- has happened, not after a fixed 150 ms (firefly82's review, 2026-10-20).
+local NAV_HOOK = "/Script/STVoyager.STVPOIEventSelectableOptionButton:NavigateHeroes"
+local nav_hooked = false
+local nav_pending = nil   -- { path, fn }
+-- The game can act on the key before the mod reads it from keys.txt, so
+-- the last call is kept too: { path, at }.
+local nav_last = nil
+local function ensure_nav_hook()
+    if nav_hooked or not StaticFindObject(NAV_HOOK) then return end
+    nav_hooked = pcall(RegisterHook, NAV_HOOK, function(ctx)
+        local okp, p = pcall(function() return path_of(ctx:get()) end)
+        if not okp then return end
+        ExecuteInGameThread(function()
+            nav_last = { path = p, at = os.clock() }
+            local np = nav_pending
+            if np and np.fn and np.path == p then
+                local fn = np.fn; np.fn = nil; pcall(fn)
+            end
+        end)
+    end)
+    print("[VoyagerAccess] events: hero hook " .. (nav_hooked and "installed" or "not installed") .. "\n")
+end
+
 -- Options shown and not locked that have no captured weights yet.
 local function uncaptured()
     local n = 0
@@ -143,6 +168,7 @@ function M.sweep(done)
     -- Fresh for each reading: a station met again after a room was built
     -- would keep the old odds under the same button and wording.
     if not sweeping then captured = {} end
+    pcall(ensure_nav_hook)
     local ok = pcall(ensure_hook)
     if not (ok and hooked) or uncaptured() == 0 or sweeping then
         if done then done() end
@@ -443,7 +469,8 @@ local function attribute_of(o)
     ATTR = ATTR or StaticFindObject("/Script/STVoyager.ESTVHeroAttribute")
     local name = nil
     pcall(function() name = ATTR:GetNameByValue(o.AssociatedAttribute):ToString():gsub("^ESTVHeroAttribute::", "") end)
-    return name
+    local okg, game = pcall(function() return require("text").hero_attribute_name(o.AssociatedAttribute) end)
+    return (okg and game) or name
 end
 
 local function heroes_of(b)
@@ -519,18 +546,37 @@ function M.hero_step(path, dir)
     local list = heroes_of(b)
     if #list < 2 then return false end
     chosen[key_of(b)] = true
-    ExecuteInGameThreadWithDelay(150, function()
+    pcall(ensure_nav_hook)
+    local function say_hero()
         pcall(function()
-            if not b:IsValid() then return end
+            b = StaticFindObject(path)
+            if not (b and b:IsValid()) then return end
             local now = heroes_of(b)
             local i = selected(b, now)
-            if not i then return end
+            -- No portrait selected (-1): the game dropped a fatigued hero by
+            -- itself and Left and Right then moved nothing; the key was
+            -- silent (Q Trial, VM, 2026-10-20). The screen shows no hero.
+            if not i then return speech.say("No hero", true) end
             local o = option_for(b, text_of(b.ChoiceButton_Text))
             local text = hero_text(now[i], o and attribute_of(o))
             local c = o and chances(o, b, hero_skills(now, i))
             if c then text = text .. ". " .. c end
             speech.say(text .. ". " .. i .. " of " .. #now, true)
         end)
+    end
+    local np = { path = path_of(b), fn = say_hero }
+    if nav_last and nav_last.path == np.path and os.clock() - nav_last.at < 0.3 then
+        nav_last = nil
+        return ExecuteInGameThread(function() say_hero() end) or true
+    end
+    nav_pending = np
+    -- Without the hook, or if the game did not move (an end of the row),
+    -- read what there is.
+    ExecuteInGameThreadWithDelay(nav_hooked and 600 or 150, function()
+        if np.fn then
+            if nav_hooked then print("[VoyagerAccess] events: no hero move in time\n") end
+            local fn = np.fn; np.fn = nil; fn()
+        end
     end)
     return true
 end

@@ -420,6 +420,45 @@ end
 
 local TAB_WAIT = 450   -- ms for a clicked tab to show its technologies
 
+-- The view's own PostRefreshGrid runs when its grid has been rebuilt (a
+-- tab shown, a research begun): read then, not after a fixed wait
+-- (firefly82's review, 2026-10-20). A pre callback, so the grid is read on
+-- the next tick. Without the hook, or when the game does not refresh, the
+-- old wait is the fallback.
+local GRID_HOOK = "/Game/STVoyager/Tech/UI/WBP_TechTreeView.WBP_TechTreeView_C:PostRefreshGrid"
+local grid_hooked = false
+local grid_waiters = {}
+
+local function ensure_grid_hook()
+    if grid_hooked or not StaticFindObject(GRID_HOOK) then return end
+    grid_hooked = pcall(RegisterHook, GRID_HOOK, function()
+        ExecuteInGameThread(function()
+            local list0 = grid_waiters
+            grid_waiters = {}
+            for _, w in ipairs(list0) do w() end
+        end)
+    end)
+    print("[VoyagerAccess] techtree: grid hook " .. (grid_hooked and "installed" or "not installed") .. "\n")
+end
+
+-- fn once the grid has refreshed, or after wait_ms (twice that with the
+-- hook, as a safety net).
+local function after_grid(wait_ms, fn)
+    pcall(ensure_grid_hook)
+    local done = false
+    local function run()
+        if done then return end
+        done = true
+        local ok, err = pcall(fn)
+        if not ok then print("[VoyagerAccess] techtree: " .. tostring(err) .. "\n") end
+    end
+    if grid_hooked then grid_waiters[#grid_waiters + 1] = run end
+    ExecuteInGameThreadWithDelay(grid_hooked and wait_ms * 2 or wait_ms, function()
+        if not done and grid_hooked then print("[VoyagerAccess] techtree: no grid refresh in time\n") end
+        run()
+    end)
+end
+
 local function click_tab(path)
     local b = path and StaticFindObject(path)
     if b and b:IsValid() then press(b) return true end
@@ -440,10 +479,10 @@ local function build_az(done)
         local t = ts[i]
         if not t then
             if back then click_tab(back.path) end
-            return ExecuteInGameThreadWithDelay(TAB_WAIT, function() done(items) end)
+            return after_grid(TAB_WAIT, function() done(items) end)
         end
         click_tab(t.path)
-        ExecuteInGameThreadWithDelay(TAB_WAIT, function()
+        after_grid(TAB_WAIT, function()
             local ok, err = pcall(function()
                 for _, it in ipairs(build()) do
                     if it.row then
@@ -485,7 +524,7 @@ local function az_enter()
     if not it then return end
     building = true
     click_tab(it.tab)
-    ExecuteInGameThreadWithDelay(TAB_WAIT, function()
+    after_grid(TAB_WAIT, function()
         building = false
         pcall(function()
             if not refresh(false) then return end
@@ -509,6 +548,8 @@ function M.enter()
         end
         print("[VoyagerAccess] techtree: " .. (start and "begin" or "abort") .. " research\n")
         press(start or abort)
+        -- Beginning a research does not refresh the grid (VM, 2026-10-20),
+        -- so this one keeps its wait.
         ExecuteInGameThreadWithDelay(600, function()
             pcall(function()
                 if list and refresh(true) then say(false) end
@@ -538,7 +579,7 @@ function M.switch_tab(dir)
         -- Right goes on to the first category, Left back to the last.
         local t = dir > 0 and ts[1] or ts[#ts]
         if t then click_tab(t.path) end
-        ExecuteInGameThreadWithDelay(TAB_WAIT, function()
+        after_grid(TAB_WAIT, function()
             pcall(function()
                 if refresh(false) then
                     speech.say(require("tr").fill("{s} tab", list.tab), true)
@@ -562,7 +603,7 @@ function M.switch_tab(dir)
             b:HandleButtonClicked()
         end
     end
-    ExecuteInGameThreadWithDelay(400, function()
+    after_grid(400, function()
         pcall(function()
             if refresh(false) then
                 speech.say(require("tr").fill("{s} tab", list.tab), true)
