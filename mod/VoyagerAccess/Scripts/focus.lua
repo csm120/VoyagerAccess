@@ -248,6 +248,19 @@ M.ring_buttons = ring_buttons
 -- read. "OpenMenu_RoomCategory_BorgTechnology" was read "Open menu_room
 -- category_borg technology" (2026-10-14): a category is named alone.
 function M.radial_label(b)
+    -- The game's own name for the segment, in its language ("Trümmer
+    -- beseitigen", "Logistik"; firefly82's review, 2026-10-20). The asset
+    -- name below is the fallback for a command with none (the pause ring).
+    local okn, own = pcall(function()
+        local c = b.Command
+        if not (c and c:IsValid()) then return nil end
+        return c.CommandName:ToString()
+    end)
+    if okn and type(own) == "string" and own ~= "" then
+        local lockedn = false
+        pcall(function() lockedn = require("screen").shown(b.LockImage) end)
+        return lockedn and (own .. ", locked") or own
+    end
     local ok, name = pcall(function() return b.Command:GetFName():ToString() end)
     if not ok or not name then return nil end
     local key = name:gsub("^DA_Command_", "")

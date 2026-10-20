@@ -577,17 +577,9 @@ function M.open()
     list[i].hull:ClickedRoom()
     -- Work finished while the Construction Report was left with Enter Ship
     -- waits as "repairing done"; clicking the room finishes it, with nothing
-    -- opening (Workshop, Q Trial, VM, 2026-10-19). Say the new state.
-    if describe(list[i], false):find(" done", 1, true) then
-        local deck, y = list[i].deck, list[i].y
-        ExecuteInGameThreadWithDelay(800, function()
-            pcall(function()
-                for _, r in ipairs(rooms()) do
-                    if r.deck == deck and math.abs(r.y - y) < 1 then speech.say(describe(r, false), true) end
-                end
-            end)
-        end)
-    end
+    -- opening (Workshop, Q Trial, VM, 2026-10-19). The state hook below says
+    -- the new state; saying it here too said it twice (firefly82's review,
+    -- 2026-10-20).
 end
 
 -- Development (tools\vm\vm-room.ps1): select the first room whose reading
@@ -617,39 +609,53 @@ end
 -- window, damage, a finished job): a sighted player sees "Offline" appear
 -- on the room, and after E the mod said nothing, so a wrong E went
 -- unnoticed (firefly82's review, 2026-10-19; E on the lab was silent in the
--- VM the same day). The game's own event, hooked on its condition listener
--- (firefly82 found it); there are several listeners, so one change arrives
--- several times and only the first per room and state is said. Said only
--- in the ship view, after the game has applied the change.
-local HOOK = "/Script/STVoyager.STVConditionListener:OnBuildingChangedState"
-local last_change = {}   -- slot -> { state, at }
+-- VM the same day). Hooked after the room button's own OnSetState
+-- (WBP_Button_RoomSelection), which the game calls once per change; the
+-- quest condition listener hooked before arrived 8 times per change and
+-- exists only while a quest waits on buildings (firefly82's review,
+-- 2026-10-20). A room is said only when its reading differs from the last
+-- one seen, so loading a save says nothing and Enter on finished work is
+-- said once. Said only in the ship view.
+local HOOK = "/Game/STVoyager/ConstructionSideview/UI/Widgets/WBP_Button_RoomSelection.WBP_Button_RoomSelection_C:OnSetState"
+local last_text = {}   -- slot -> the room's last reading
+local hooked = false
 
--- UE4SS unregisters a mod's hooks itself when the mod is reloaded
--- ("Unregistering hook by id ... for mod VoyagerAccess" in UE4SS.log).
-function M.install()
-    local ok = pcall(RegisterHook, HOOK, function(_, payload)
-        pcall(function()
-            local p = payload:get()
-            local slot, state = p:GetSlotID(), p:GetCurrentRoomState()
-            local seen = last_change[slot]
-            if seen and seen.state == state and os.clock() - seen.at < 2 then return end
-            last_change[slot] = { state = state, at = os.clock() }
-            ExecuteInGameThreadWithDelay(300, function()
-                pcall(function()
-                    if not M.active() then return end
-                    for _, r in ipairs(rooms()) do
-                        if r.hull:BP_GetSlotIndex() == slot then
-                            local text = describe(r, false)
-                            print("[VoyagerAccess] ship: changed: " .. text .. "\n")
-                            speech.say(text, false)
-                            return
-                        end
-                    end
-                end)
-            end)
-        end)
+local function on_set_state(wname)
+    pcall(function()
+        for _, r in ipairs(rooms()) do
+            local hw = r.hull.RoomHullWidget
+            if not r.upper and hw and hw:IsValid() and hw:GetFullName() == wname then
+                local slot = r.hull:BP_GetSlotIndex()
+                local text = describe(r, false)
+                local before = last_text[slot]
+                last_text[slot] = text
+                if before and before ~= text and M.active() then
+                    print("[VoyagerAccess] ship: changed: " .. text .. "\n")
+                    speech.say(text, false)
+                end
+                return
+            end
+        end
     end)
-    print("[VoyagerAccess] ship: state hook " .. (ok and "installed" or "not installed") .. "\n")
+end
+
+-- The class loads with the ship view, after the mod starts: try every 3 s
+-- until the hook takes. UE4SS unregisters a mod's hooks itself when the mod
+-- is reloaded.
+function M.install()
+    LoopInGameThreadWithDelay(3000, function()
+        if hooked then return end
+        if not StaticFindObject(HOOK) then return end
+        -- UE4SS calls only the first (pre) callback for this Blueprint
+        -- function (VM, 2026-10-20), so the room is read on the next game
+        -- tick, once the function has applied the change.
+        local ok = pcall(RegisterHook, HOOK, function(ctx)
+            local okw, wname = pcall(function() return ctx:get():GetFullName() end)
+            if okw and wname then ExecuteInGameThread(function() on_set_state(wname) end) end
+        end)
+        hooked = ok
+        print("[VoyagerAccess] ship: state hook " .. (ok and "installed" or "not installed") .. "\n")
+    end)
 end
 
 return M

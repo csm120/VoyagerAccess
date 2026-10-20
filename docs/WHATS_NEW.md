@@ -2,6 +2,15 @@
 
 ## Tuesday October 20th 2026
 
+Version 0.3.65
+
+- Fixed: when a room changes, like when you switch it off with E or a repair finishes, you now hear its new state once. It used to come through several times, or not at all when no mission was waiting on your rooms.
+- Fixed: the segments in a room's ring now use the game's own names, in your language, when the mod can't read the ring's centre.
+
+Thanks again to firefly82, who found the better place to listen for room changes.
+
+## Tuesday October 20th 2026
+
 Version 0.3.64
 
 - New: the tech tree has an A to Z list of every technology from all five categories. Press Right past the last category, or Left before the first, and you'll hear each technology with its category, tier and state. Enter takes you to that technology in its own category and opens it, so you don't have to guess where something lives. Thanks to TheRev for asking for it.
