@@ -65,6 +65,7 @@ local GROUPS = {
     } },
     { "Tech tree", {
         "Up and Down: tiers, then technologies. Left and Right: switch category",
+        "Left and Right past the last or first category: every technology from A to Z. Enter there goes to it in its category",
         "Enter: open the item's panel. Enter again begins the research. Escape closes the panel, then the tree",
     } },
     { "Away missions", {

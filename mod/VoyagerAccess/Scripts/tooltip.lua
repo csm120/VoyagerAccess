@@ -31,7 +31,7 @@ local RESOURCE_ICONS = { Deuterium = true, Duranium = true, Tritanium = true, Fo
 local function resource_of(raw)
     local r = raw:match("^MI_UI_(%a+)_") or raw:match("^MI_UI_(%a+)$")
     if not (r and RESOURCE_ICONS[r]) then return nil end
-    return RESOURCE_WORDS[r] or r:lower()
+    return text.game_resource_name(r == "Crews" and "Crew" or r) or RESOURCE_WORDS[r] or r:lower()
 end
 
 -- Tokens in tree order: { kind = "text", name, value } or { kind = "key" }
@@ -121,8 +121,13 @@ function M.lines(root)
                 local j = i + 1
                 if toks[j].kind == "res" then res = toks[j].word; j = j + 1 end
                 local v = toks[j].value
+                -- With an icon between, the number is an amount of its own,
+                -- not this label's value: "Torpedo-Abschussrampe -6 energy"
+                -- glued a room's name to its energy (firefly82's review,
+                -- 2026-10-20).
+                local sep = res and ", " or " "
                 if res then v = v .. " " .. res; res = nil end
-                line = t.value .. " " .. v
+                line = t.value .. sep .. v
                 while toks[j + 2] and toks[j + 1].kind == "text" and toks[j + 1].value == "/"
                     and toks[j + 2].kind == "text" and number(toks[j + 2].value) do
                     line = line .. " / " .. toks[j + 2].value
@@ -139,7 +144,8 @@ function M.lines(root)
                 i = i + 1
             elseif NUMBER_NAMES[t.name] then
                 flush()
-                list[#list + 1] = NUMBER_NAMES[t.name] .. " " .. t.value
+                local word = NUMBER_NAMES[t.name]
+                list[#list + 1] = (text.game_resource_name(word) or word) .. " " .. t.value
             elseif t.name == "Level_Text" and toks[i + 1] and toks[i + 1].kind == "text" then
                 flush()
                 list[#list + 1] = t.value .. " " .. toks[i + 1].value

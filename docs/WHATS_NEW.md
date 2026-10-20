@@ -2,6 +2,20 @@
 
 ## Tuesday October 20th 2026
 
+Version 0.3.64
+
+- New: the tech tree has an A to Z list of every technology from all five categories. Press Right past the last category, or Left before the first, and you'll hear each technology with its category, tier and state. Enter takes you to that technology in its own category and opens it, so you don't have to guess where something lives. Thanks to TheRev for asking for it.
+- Fixed: moving Up and Down onto a tall room like a turbo lift now says the deck you're on first, like "Deck 7, Turbo lift, decks 2 to 9". Before, you heard the same "Decks 2 to 9" on every deck and it sounded like you were stuck.
+- Fixed: in a room's ring, the mouse pointer now points at the segment in any window shape. In a 4:3 window it missed, so the game's reason a segment was locked never came through.
+- Fixed: a locked ring segment with no reason from the game now just says "Not possible", instead of guessing that the ring was out of date.
+- Fixed: in other languages, the game's own words are used for energy, crew, cycles and research points in room details and the tech tree, and names like "Holodeck" and "Turbolift" are no longer split in two. In German you'll hear "18 Zyklen verbleibend" instead of "18 cycles verbleibend".
+- Fixed: a room's details list keeps its name and its energy apart, like "Science Laboratory, -7 energy".
+- Fixed: the Engineering office no longer repeats the ship's hull after everything it reads in other languages.
+
+Thanks to firefly82 for another careful review.
+
+## Tuesday October 20th 2026
+
 Version 0.3.63
 
 - Fixed: points and star systems hidden inside a nebula now use the game's own word for unknown in your language, like "Unbekannt" in German, instead of the English "Unknown".

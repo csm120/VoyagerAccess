@@ -15,8 +15,25 @@ local M = {}
 local UNITS = { BioNeuralGelPack = "bio-neural gel packs", SciencePoints = "science points", Cycles = "cycles",
                 Cycle = "cycles", BorgNanites = "Borg nanites", CombatPower = "combat power",
                 XP = "experience", Crews = "crew", SectorThreat = "sector threat level" }
+-- A resource's name in the game's language, or nil: in German "-6 energy"
+-- and "5 crew" were English (firefly82's review, 2026-10-20). The game's
+-- STVResourceManager:GetResourceDisplayNameById ("Energy", "Crew",
+-- "Bio-neural Gel Pack"; empty for an id it does not know).
+function M.game_resource_name(id)
+    local okl, english = pcall(function() return require("language").english() end)
+    if not okl or english then return nil end
+    local name = nil
+    pcall(function()
+        local s = FindFirstOf("STVResourceManager"):GetResourceDisplayNameById(id):ToString()
+        if s ~= "" then name = s end
+    end)
+    return name
+end
+
 local function unit(id)
     id = id:gsub("_.*$", "")
+    local game = M.game_resource_name(id == "Crews" and "Crew" or id)
+    if game then return game end
     if UNITS[id] then return UNITS[id] end
     return (id:gsub("(%l)(%u)", "%1 %2"):lower())
 end

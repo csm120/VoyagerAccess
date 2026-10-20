@@ -244,7 +244,14 @@ local function describe(r, with_deck)
     end
     if state ~= "" then text = text .. ", " .. state end
     if with_deck then
-        text = (tall > 1 and ("Decks " .. (low - tall + 1) .. " to " .. low) or ("Deck " .. low)) .. ", " .. text
+        -- A tall room says the deck the player is on first: moving down a
+        -- turbo lift said "Decks 2 to 9, Turbo lift" four times over decks
+        -- 6 to 9, which sounded stuck (firefly82's review, 2026-10-20).
+        if tall > 1 then
+            text = "Deck " .. r.deck .. ", " .. text .. ", decks " .. (low - tall + 1) .. " to " .. low
+        else
+            text = "Deck " .. low .. ", " .. text
+        end
     end
     return text
 end

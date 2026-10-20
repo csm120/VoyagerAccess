@@ -102,7 +102,10 @@ function M.say(text, interrupt)
     -- for this away mission] Send away team" ran together (VM, 2026-10-17).
     text = text:gsub("%[([^%[%]{}]-[^%.!%?%[%]{}])%]%s+(%u)", "%1. %2")
     text = text:gsub("%[([^%[%]{}]+)%]", "%1")
-    text = split_words(text)
+    -- English only: in German it changed the game's own words ("Holo
+    -- deck", "Aero shuttle-Rampe"; firefly82's review, 2026-10-20).
+    local okl, lang = pcall(require, "language")
+    if not (okl and lang and lang.english) or lang.english() then text = split_words(text) end
     if text == "" then return end
     -- Development sweep for labels with no words (unread.lua).
     local unread = package.loaded["unread"]

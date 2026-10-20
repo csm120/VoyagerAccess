@@ -114,6 +114,10 @@ follows them.
    what it builds on (the lines between fields on screen), and whether the
    game marks it important or as unlocking a feature.
    Each tier names the technologies it opens.
+   Past the last category and before the first, Left and Right reach one
+   more list: every category's technologies from A to Z, each with its
+   category; Enter there moves to that technology in its category and opens
+   its panel.
    Up, Down, Home, End move; Left and Right switch category; Enter opens the
    item's panel, which is read (costs, description, and whether Enter begins
    the research); Escape closes the panel, then the tree.

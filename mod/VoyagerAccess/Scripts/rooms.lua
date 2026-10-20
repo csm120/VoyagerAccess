@@ -727,6 +727,11 @@ function M.workteams_text()
         if okc and cost and cost:match("%d") then s = s .. ", " .. cost:gsub("%s+$", "") end
         out[#out + 1] = s
     end
+    -- The hull below is the header's, shown on every screen: alone it is
+    -- not this page. "Hull 220." was said after every reading in a German
+    -- Engineering office, where the tab names match no reader and each
+    -- reader is asked (firefly82's review, 2026-10-20).
+    if #out == 0 then return nil end
     pcall(function()
         for _, h in ipairs(FindAllOf("WBP_HullIntegrity_C") or {}) do
             if h:IsValid() and screen.shown(h) then

@@ -357,7 +357,30 @@ function M.radial_focus(b, path)
         pcall(function()
             local pos = b.Slot:GetPosition()
             local r = math.max(math.sqrt(pos.X * pos.X + pos.Y * pos.Y), 1)
-            speech.ring_mouse(pos.X / r, pos.Y / r)
+            -- The ring point is the segment's inner edge; its middle is half
+            -- the segment's height further out (Alignment 0.5/1.0). The
+            -- helper puts the pointer at 350/1080 of the window height per
+            -- unit, right only for 16:9: the UI scales by the viewport scale,
+            -- so in 1024x768 the pointer missed every segment and no centre
+            -- (and no locked reason) appeared (firefly82's review, German
+            -- game, 2026-10-20). Convert to the helper's unit here, so older
+            -- helpers point right too.
+            local k = 1
+            pcall(function()
+                local wll = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
+                local scale = wll:GetViewportScale(b)
+                local size = wll:GetViewportSize(b)
+                local half = 62
+                pcall(function()
+                    local d = b:GetDesiredSize()
+                    if d and d.Y and d.Y > 0 then half = d.Y / 2 end
+                end)
+                if type(scale) == "number" and scale > 0 and size and size.Y and size.Y > 0 then
+                    k = (r + half) * scale / (350 / 1080 * size.Y)
+                end
+            end)
+            print(string.format("[VoyagerAccess] radial: pointer %.2f radii\n", k))
+            speech.ring_mouse(k * pos.X / r, k * pos.Y / r)
         end)
     end
     local function say_it()
@@ -2087,19 +2110,12 @@ local function activate()
             -- Lebenserhaltung" (firefly82's review, 2026-10-19). "Missing
             -- resources" is the mod's own wording (construction.lua).
             local err = radial_error[current]
+            -- With no reason from the game, only "Not possible": the mod's
+            -- guesses ("the ring may be out of date", busy work teams) were
+            -- wrong where the game said "Keine Lebenserhaltung" (firefly82's
+            -- review, 2026-10-20).
             if err and err ~= "" then why = (err:gsub("%.%s*$", ""))
-            elseif why and not why:find("^Missing resources") then
-                -- Every work team busy: "Clear debris" said the ring may be
-                -- out of date seven times, and reopening it did not help
-                -- (firefly82, German game, 2026-10-18). The hero manager
-                -- counts the free teams.
-                local okw, free = pcall(function() return FindFirstOf("STVHeroManager"):GetUnassignedWorkTeamsAmount() end)
-                if okw and type(free) == "number" and free <= 0 then
-                    why = "no free work team, all are busy"
-                else
-                    why = "the ring may be out of date, Escape and open it again"
-                end
-            end
+            elseif why and not why:find("^Missing resources") then why = nil end
             speech.say("Not possible" .. (why and (": " .. why) or "") .. (name and (". " .. name) or ""), true)
             return
         end

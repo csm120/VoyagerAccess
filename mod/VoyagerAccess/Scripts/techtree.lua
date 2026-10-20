@@ -12,13 +12,20 @@
 -- bAlreadyResearched, bCanBeresearchItem, bCurrentResearch, bObfuscate).
 -- The tabs are WBP_CommonButton_RoomMgmt_V2 in WBP_TechTreeTabWidget
 -- (ButtonName, Selected); PreviousTabButton and NextTabButton switch them.
+--
+-- Past the last category (and before the first) Left and Right reach one
+-- more list, every category's technologies from A to Z (TheRev on the
+-- forum: finding one technology meant guessing its category; Casey agreed,
+-- 2026-10-20). It is built by showing each tab in turn, so it has only what
+-- the tabs show. Enter goes to the item in its own category and opens it.
 
 local speech = require("speech")
 local screen = require("screen")
 
 local M = {}
 
-local list = nil    -- { items = { {text, button path} }, index, tab }
+local list = nil    -- { items = { {text, button path} }, index, tab, az }
+local building = false   -- the A to Z list is being gathered tab by tab
 
 local function path_of(o)
     return o:GetFullName():match("^%S+%s+(.+)$")
@@ -53,6 +60,22 @@ local function tab_name()
         end
     end
     return "Tech tree"
+end
+
+-- The category tabs in their order on screen.
+local function tabs()
+    local out = {}
+    for _, b in ipairs(FindAllOf("WBP_CommonButton_RoomMgmt_V2_C") or {}) do
+        if live(b) and b:GetFullName():find("TechTreeTabWidget", 1, true) and screen.shown(b) then
+            local t = { path = path_of(b), name = "", selected = false, idx = 0 }
+            pcall(function() t.name = b.ButtonName:GetText():ToString() end)
+            pcall(function() t.selected = b:GetSelected() == true end)
+            pcall(function() t.idx = b.Slot.Parent:GetChildIndex(b) end)
+            out[#out + 1] = t
+        end
+    end
+    table.sort(out, function(a, b) return a.idx < b.idx end)
+    return out
 end
 
 -- The game's names wrap inside the field: a line break after a hyphen joins
@@ -276,6 +299,24 @@ end
 -- game, 2026-10-11).
 local ICONS = { Cycle = "cycles", SciencePoints = "research points" }
 
+-- "cycles" in the game's language: the English word went into the German
+-- text ("14 cycles verbleibend", firefly82's review, 2026-10-20). The
+-- game's own lowercase "cycles" (General.locres, empty namespace; German
+-- "Zyklen"), with English's singular kept.
+local function cycles_word(n)
+    if require("language").english() then return n == "1" and "cycle" or "cycles" end
+    local word = "cycles"
+    pcall(function()
+        local out = {}
+        local lib = StaticFindObject("/Script/Engine.Default__KismetTextLibrary")
+        if lib:FindTextInLocalizationTable("", "51E1BB5148FBCDD4B50B4D95F07DFCE1", out, "") then
+            local s = out.OutText:ToString()
+            if s ~= "" then word = s end
+        end
+    end)
+    return word
+end
+
 local function view_texts(view)
     local W = StaticFindObject("/Script/UMG.UserWidget")
     local PANEL = StaticFindObject("/Script/UMG.PanelWidget")
@@ -303,14 +344,25 @@ local function view_texts(view)
         if ok and type(txt) == "string" then
             local t = require("text").prep(txt):gsub("<[^>]*>", ""):gsub("%s+", " "):match("^%s*(.-)%s*$")
             if t ~= "" then
-                if t:match("^%d+$") and icon then t = t .. " " .. icon
+                if t:match("^%d+$") and icon then
+                    -- In the game's language outside English (firefly82's
+                    -- review, 2026-10-20: "18 cycles, 100 research points").
+                    local word = icon
+                    if not require("language").english() then
+                        if icon == "cycles" then word = cycles_word(t)
+                        else
+                            local id = icon == "research points" and "SciencePoints" or (icon:gsub("^%l", string.upper))
+                            word = require("text").game_resource_name(id) or icon
+                        end
+                    end
+                    t = t .. " " .. word
                 -- The game's own "14 remaining" in any language: a number
                 -- and one word ("14 verbleibend" had no unit, firefly82's
                 -- review, 2026-10-19). Icon numbers come bare, above.
                 -- The game writes it "14 remaining ..." (read in the VM).
                 elseif (t:gsub("%s*%.%.%.$", "")):match("^%d+ %S+$") then
                     local n, word = (t:gsub("%s*%.%.%.$", "")):match("^(%d+) (%S+)$")
-                    t = n .. (n == "1" and " cycle " or " cycles ") .. word
+                    t = n .. " " .. cycles_word(n) .. " " .. word
                 end
                 out[#out + 1] = t
                 icon = nil
@@ -362,7 +414,88 @@ local function press(b)
     b:HandleButtonClicked()
 end
 
+local TAB_WAIT = 450   -- ms for a clicked tab to show its technologies
+
+local function click_tab(path)
+    local b = path and StaticFindObject(path)
+    if b and b:IsValid() then press(b) return true end
+    return false
+end
+
+-- Shows each tab in turn, keeps its technologies (not the tiers), then
+-- shows again the tab the player was on. done(items) or done(nil).
+local function build_az(done)
+    local ts = tabs()
+    if #ts == 0 then return done(nil) end
+    local back = nil
+    for _, t in ipairs(ts) do if t.selected then back = t end end
+    local items, i = {}, 0
+    local function next_tab()
+        if not open_now() then return done(nil) end
+        i = i + 1
+        local t = ts[i]
+        if not t then
+            if back then click_tab(back.path) end
+            return ExecuteInGameThreadWithDelay(TAB_WAIT, function() done(items) end)
+        end
+        click_tab(t.path)
+        ExecuteInGameThreadWithDelay(TAB_WAIT, function()
+            local ok, err = pcall(function()
+                for _, it in ipairs(build()) do
+                    if it.row then
+                        items[#items + 1] = {
+                            name = it.name, row = it.row, col = it.col, tab = t.path,
+                            text = it.name .. ", " .. t.name .. it.text:sub(#it.name + 1),
+                        }
+                    end
+                end
+            end)
+            if not ok then print("[VoyagerAccess] techtree A to Z: " .. tostring(err) .. "\n") end
+            next_tab()
+        end)
+    end
+    next_tab()
+end
+
+local function open_az()
+    building = true
+    speech.say("A to Z, every category", true)
+    build_az(function(items)
+        building = false
+        if not (items and #items > 0 and list) then return end
+        table.sort(items, function(a, b)
+            local x, y = a.name:lower(), b.name:lower()
+            if x ~= y then return x < y end
+            return a.text < b.text
+        end)
+        list = { items = items, index = 1, tab = "A to Z", az = true }
+        print("[VoyagerAccess] techtree: A to Z, " .. #items .. " items\n")
+        say(false)
+    end)
+end
+
+-- Enter in the A to Z list: shows the item's category, moves there and
+-- opens the item as Enter in that category would.
+local function az_enter()
+    local it = list.items[list.index]
+    if not it then return end
+    building = true
+    click_tab(it.tab)
+    ExecuteInGameThreadWithDelay(TAB_WAIT, function()
+        building = false
+        pcall(function()
+            if not refresh(false) then return end
+            for i, x in ipairs(list.items) do
+                if x.row == it.row and x.col == it.col and x.name == it.name then list.index = i end
+            end
+            M.enter()
+        end)
+    end)
+end
+
 function M.enter()
+    if building then return end
+    if list.az then return az_enter() end
     local view, start, abort = selected_view()
     local it = list.items[list.index]
     if view and it and it.button == view_for then
@@ -395,6 +528,28 @@ function M.enter()
 end
 
 function M.switch_tab(dir)
+    if building then return true end
+    local ts = tabs()
+    if list and list.az then
+        -- Right goes on to the first category, Left back to the last.
+        local t = dir > 0 and ts[1] or ts[#ts]
+        if t then click_tab(t.path) end
+        ExecuteInGameThreadWithDelay(TAB_WAIT, function()
+            pcall(function()
+                if refresh(false) then
+                    speech.say(list.tab .. " tab", true)
+                    say(false)
+                end
+            end)
+        end)
+        return true
+    end
+    local cur = nil
+    for i, t in ipairs(ts) do if t.selected then cur = i end end
+    if cur and ((dir > 0 and cur == #ts) or (dir < 0 and cur == 1)) then
+        open_az()
+        return true
+    end
     local name = dir < 0 and "PreviousTabButton" or "NextTabButton"
     for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
         if live(b) and b:GetFName():ToString() == name and b:GetFullName():find("TechTreeView", 1, true) then
