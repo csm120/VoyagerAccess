@@ -183,7 +183,7 @@ local function room_state(h, raw)
             if raw == "None" and (kind == 5 or st:lower():find("^remov")) then return "just cleared" end
             -- Enter on the room finishes it (VM, 2026-10-19); the screen
             -- shows "Ready", which says as much to a sighted player.
-            return st:lower() .. " done, Enter finishes it"
+            return st:lower() .. " done" .. require("hints").text("done_enter", ", Enter finishes it")
         end
         -- Paused work keeps its text ("removing, 3 cycles") but has no
         -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).

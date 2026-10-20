@@ -423,7 +423,7 @@ local function poll()
         if refresh(false) then
             require("focus").park_focus()
             print("[VoyagerAccess] techtree: " .. #list.items .. " items\n")
-            speech.say("Tech tree, " .. list.tab .. " tab. Up and Down move, Left and Right switch category, Enter researches, Escape closes.", true)
+            speech.say("Tech tree, " .. list.tab .. " tab." .. require("hints").text("tree_keys", " Up and Down move, Left and Right switch category, Enter researches, Escape closes."), true)
             say(false)
         end
     elseif not now and list then

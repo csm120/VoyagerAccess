@@ -394,7 +394,7 @@ local function poll_calls()
     end
     if waiting and not call_waiting then
         print("[VoyagerAccess] view: incoming call waiting\n")
-        speech.say("Incoming call. To answer, press N and choose Incoming calls.", false)
+        speech.say("Incoming call." .. require("hints").text("call_n", " To answer, press N and choose Incoming calls."), false)
     end
     call_waiting = waiting
 end

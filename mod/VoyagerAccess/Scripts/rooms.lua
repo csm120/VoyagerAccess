@@ -157,7 +157,7 @@ function M.research_label(path)
         -- 2026-10-17).
         if paused_shown(path) then label = label .. ", paused" end
         if name == "ResearchButton" then
-            label = label .. ". Enter opens the tech tree"
+            label = label .. require("hints").text("lab_tree", ". Enter opens the tech tree")
         elseif by.OnClickAction_TXT and by.OnClickAction_TXT ~= "" then
             label = label .. ". Enter: " .. by.OnClickAction_TXT
         end

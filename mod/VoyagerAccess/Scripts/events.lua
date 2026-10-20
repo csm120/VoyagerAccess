@@ -649,7 +649,7 @@ function M.option_label(b)
         -- The hero the game will send, as its selected portrait shows.
         local g = selected(b, heroes)
         local h = (g and not heroes[g].none) and ("Hero: " .. heroes[g].name) or "No hero"
-        if not chosen[key_of(b)] then h = h .. ". Left and Right choose another" end
+        if not chosen[key_of(b)] then h = h .. require("hints").text("hero_lr", ". Left and Right choose another") end
         parts[#parts + 1] = (skill and (skill .. " task. ") or "") .. h
     end
     crumb.at("events: position")

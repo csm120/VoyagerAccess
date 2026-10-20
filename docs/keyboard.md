@@ -41,6 +41,10 @@ follows them.
    (35% or less). A bar with one outcome is not read.
 9. A key the mod uses must be unbound in the game in that context
    (the game's own key bindings), because the game also receives it.
+10. Key hints the mod adds to a reading ("Left and Right choose another",
+   "R repeats the line", "Enter to choose a hero") are said the first two
+   times only, counted across sessions in hints.txt; F1 and Ctrl+F1 still list
+   every key (Casey, 2026-10-19: "once or twice is fine").
 
 ## Keys in use
 

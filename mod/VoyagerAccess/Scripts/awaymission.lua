@@ -259,11 +259,11 @@ function M.slot_label(path)
             end)
         end)
         if full and path:find("WBP_AwayMissionLoadout_C", 1, true) then
-            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete: Enter starts the mission."
+            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete" .. require("hints").text("team_enter", ": Enter starts the mission") .. "."
         end
         return head .. ": " .. hero
     end
-    return head .. ", empty. Enter to choose a hero."
+    return head .. ", empty" .. require("hints").text("slot_enter", ". Enter to choose a hero") .. "."
 end
 
 -- Home and End on a team screen: the first slot, or Start Mission (the last

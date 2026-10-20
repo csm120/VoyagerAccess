@@ -1052,7 +1052,7 @@ function M.enter()
     crumb.at("system: enter")
     local p = selected_point()
     if not p then
-        speech.say("Nothing selected. Use Up and Down Arrow to choose a point of interest.", true)
+        speech.say("Nothing selected." .. require("hints").text("map_updown", " Use Up and Down Arrow to choose a point of interest."), true)
         return
     end
     if not menu then

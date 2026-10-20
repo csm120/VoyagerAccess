@@ -2,6 +2,13 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.60
+
+- Changed: the little key reminders Voyager Access adds, like "R repeats the line", "Left and Right choose another" and "Enter to choose a hero", are now said the first two times only. After a couple of hours of play they were getting in the way of the story. F1 and Control F1 still list every key whenever you need them.
+- New: pressing Enter on a choice or button you can't use now tells you so, and why, when the game gives a reason, like "Not available. Needs Science Laboratory Level 0." Before, Enter just did nothing. Thanks to stickbear for this one.
+
+## Monday October 19th 2026
+
 Version 0.3.59
 
 - Fixed: at a point of interest where an option can take a hero, Left and Right could name one hero while a different one went on the mission. The game moves its own choice of hero with those same keys, and the mod was keeping a separate count that drifted. Now Left and Right say the hero the game has actually moved to, and Enter sends that hero. If you came across this in 0.3.58, I'm sorry about that.

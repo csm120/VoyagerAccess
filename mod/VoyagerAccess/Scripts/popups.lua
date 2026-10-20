@@ -491,8 +491,10 @@ local function construction_report(parts)
             end
         end
     end
-    out[#out + 1] = "Close finishes all actions, activates the rooms and collects resources"
-        .. (other and "; Enter Ship lets you manage it yourself" or "")
+    if require("hints").fresh("report_close") then
+        out[#out + 1] = "Close finishes all actions, activates the rooms and collects resources"
+            .. (other and "; Enter Ship lets you manage it yourself" or "")
+    end
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
     return table.concat(out, ". ") .. "."
 end
@@ -610,7 +612,7 @@ local function overview_lines(path)
     if tab and tab_id == "Hero" then
         local n = 0
         pcall(function() n = require("view").hero_count() end)
-        return nil, "Overview, " .. tab .. " tab. " .. n .. " heroes. Up and Down choose one and read its details."
+        return nil, "Overview, " .. tab .. " tab. " .. n .. " heroes" .. require("hints").text("ov_heroes", ". Up and Down choose one and read its details") .. "."
     end
     -- The Combat tab is two tables (rooms, how many, their combat power)
     -- and a sum; read as a flat list it came out "combat power 0 of 12 ...

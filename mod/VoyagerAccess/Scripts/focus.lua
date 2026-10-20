@@ -1801,6 +1801,16 @@ local function activate()
         local c = cpath and resolve(cpath)
         local target = c and c.RightButton
         if not (target and target:IsValid()) then target = resolve(current) end
+        -- A choice that cannot be taken: Enter did nothing and said nothing
+        -- (stickbear, forum, 2026-10-19: "pressing enter should give some
+        -- kind of feedback"). Say so, with the game's own requirement.
+        local okd, off = pcall(function() return not c.LeftButton:GetIsEnabled() end)
+        if okd and off then
+            local l = label_for(choice, current) or ""
+            local need = l:match("(Needs [^%.]+)")
+            speech.say("Not available" .. (need and (". " .. need) or "") .. ".", true)
+            return
+        end
         if target then
             print("[VoyagerAccess] enter: choice " .. tostring(current) .. "\n")
             -- The Array's "Destroy the Array or go home" choice is a hold
@@ -2138,6 +2148,16 @@ local function activate()
         if require("qtrials").enter(b, current) then return end
         -- An event option with a hero chosen (Left and Right).
         if require("events").enter(b, current) then return end
+        -- Any other button the game shows switched off: say so, with the
+        -- reason its label gives, instead of nothing (stickbear, forum,
+        -- 2026-10-19: "hey you can't do that, here's why").
+        local oke, en = pcall(function() return b:GetIsEnabled() end)
+        if oke and en == false then
+            local l = label_for(b, current) or ""
+            local why = l:match("(Needs [^%.]+)") or l:match("Not possible: ([^%.]+)") or l:match("[Nn]ot available: ([^%.]+)")
+            speech.say("Not available" .. (why and (". " .. why) or "") .. ".", true)
+            return
+        end
         -- A locked sector in Leave Sector: holding it did nothing but say
         -- "Holding" (VM, 2026-10-14). Say why instead.
         if b:GetClass():GetFName():ToString() == "WBP_LeaveSectorEntry_C" then

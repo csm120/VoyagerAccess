@@ -7,6 +7,7 @@ local speech = require("speech")
 
 local M = {}
 
+
 -- Only the keys that work on the screen you are on (Casey, 2026-10-11:
 -- F1 said too much; the general keys came after every screen's own).
 local HELP = {
@@ -201,7 +202,7 @@ function M.say_where()
             if result then
                 parts[1] = "Away mission result"
                 parts[2] = result ~= "" and result or nil
-                parts[3] = "R repeats it, Enter continues"
+                parts[3] = require("hints").fresh("r_result") and "R repeats it, Enter continues" or nil
             elseif label and label:find("^Choice %d") then
                 parts[2] = label
             else
@@ -220,7 +221,10 @@ function M.say_where()
                 -- A story card has no speaker, only its Continue: I said
                 -- just "Dialogue. R repeats the line." (VM, 2026-10-16).
                 if not (who and who ~= "") and label and label ~= "" then parts[#parts + 1] = label end
-                parts[#parts + 1] = "R repeats the line"
+                -- Only the first two times in a session: said with every
+                -- conversation, it broke into the story (Casey, 2026-10-19:
+                -- "once or twice when they come up is fine").
+                if require("hints").fresh("r_line") then parts[#parts + 1] = "R repeats the line" end
             end
         elseif ctx == "cutscene" or ctx == "story" then
             parts[2] = nil
