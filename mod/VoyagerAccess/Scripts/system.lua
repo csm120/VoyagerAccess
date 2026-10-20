@@ -140,9 +140,20 @@ function M.spoken_number(raw)
     if not num then num, dec = numtxt, "" end
     num = num:gsub("[%.,]", "")
     if num == "" then return raw end
-    local function digits(s) return (s:gsub("%d", "%0 "):gsub("0 ", "oh "):gsub(" $", "")) end
+    -- "oh" and "point" are English words (Casey's choice for English,
+    -- 2026-10-11); in another language the digit 0 and the game's own
+    -- decimal mark are read by the synthesizer in that language.
+    local okl, english = pcall(function() return require("language").english() end)
+    english = not okl or english ~= false
+    local function digits(s)
+        s = s:gsub("%d", "%0 ")
+        if english then s = s:gsub("0 ", "oh ") end
+        return (s:gsub(" $", ""))
+    end
     local out = digits(num)
-    if dec ~= "" and tonumber(dec) ~= 0 then out = out .. " point " .. digits(dec) end
+    if dec ~= "" and tonumber(dec) ~= 0 then
+        out = out .. (english and " point " or (numtxt:match("([%.,])%d$") .. " ")) .. digits(dec)
+    end
     if rest ~= "" then out = out .. ", " .. rest end
     return out
 end
@@ -183,7 +194,9 @@ local function name_of(actor)
             -- The game's own word before the number ("System", "Système"):
             -- matching the English word worked only by luck in German
             -- (firefly82's review, 2026-10-19).
-            local word, n = tip:match("^(%D-)%s*(%d[%d%.,]*)$")
+            -- Words may follow the number ("System 8.240.2 Krowtonanisches
+            -- Zivilsystem", German, VM, 2026-10-19); spoken_number keeps them.
+            local word, n = tip:match("^(%D-)%s*(%d.*)$")
             if n and word ~= "" then name = word .. " " .. M.spoken_number(n) elseif tip ~= "" then name = tip end
         end)
         pcall(function()

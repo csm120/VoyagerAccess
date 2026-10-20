@@ -1178,6 +1178,23 @@ end
 -- their headings (injured_headline is Injuries, injured_headline_1 Damaged
 -- Rooms); Win_Text or Lose_Text is the outcome.
 local none_word = nil   -- the game's "None" in its language, once seen
+-- The lists as data, before the window draws them: SetDamageSummary on the
+-- result window (firefly82's review, 2026-10-19). An empty array is "none"
+-- in every language, with no word to recognise. Counts, or nil until a
+-- battle has ended since the mod started.
+local damage = nil
+local DAMAGE_HOOK = "/Game/CombatPrototype/Blueprints/UI/WBP_BattleResultLCARS.WBP_BattleResultLCARS_C:SetDamageSummary"
+local damage_hooked = false
+function M.ensure_damage_hook()
+    if damage_hooked or not StaticFindObject(DAMAGE_HOOK) then return end
+    damage_hooked = pcall(RegisterHook, DAMAGE_HOOK, function(_, summary)
+        pcall(function()
+            local s = summary:get()
+            damage = { injured = #s.InjuredCrewMembers + #s.InjuredHeroes, rooms = #s.DamagedRooms }
+            print("[VoyagerAccess] battle: injured " .. damage.injured .. ", damaged rooms " .. damage.rooms .. "\n")
+        end)
+    end)
+end
 local function battle_result(_, path)
     local w = StaticFindObject(path)
     if not (w and w:IsValid()) then return "" end
@@ -1239,6 +1256,12 @@ local function battle_result(_, path)
     local inj, rooms = lists["Injuries"], lists["Damaged rooms"]
     if inj and rooms and #inj == 1 and #rooms == 1 and inj[1] == rooms[1] then none_word = inj[1]:lower() end
     local function is_none(t) t = t:lower() return t == "none" or t == none_word end
+    local function empty(s)
+        if not damage then return nil end
+        if s == "Injuries" then return damage.injured == 0 end
+        if s == "Damaged rooms" then return damage.rooms == 0 end
+        return nil
+    end
     local out = { "Combat result: " .. (outcome or "over") }
     if hull then out[#out + 1] = "Hull status " .. hull .. "%" end
     for _, s in ipairs(order) do
@@ -1246,7 +1269,8 @@ local function battle_result(_, path)
         -- (Q Trial defeat, VM, 2026-10-14). "None" stays as it is.
         local n = #lists[s]
         local counted = s == "Injuries" or s == "Damaged rooms"
-        if n == 1 and is_none(lists[s][1]) then out[#out + 1] = s .. ": none"
+        local e = empty(s)
+        if n == 1 and (e == true or (e == nil and is_none(lists[s][1]))) then out[#out + 1] = s .. ": none"
         elseif n > 0 and s == "Damaged rooms" then
             -- Two rooms of one type were said apart: "Life Support,
             -- Stellar Cartography, Life Support" (VM, 2026-10-17).
@@ -2077,6 +2101,7 @@ function M.install()
         if not ok then print("[VoyagerAccess] save poll error: " .. tostring(err) .. "\n") end
     end)
     LoopInGameThreadWithDelay(3000, function()
+        pcall(M.ensure_damage_hook)
         local ok, err = pcall(adopt_subclasses)
         if not ok then print("[VoyagerAccess] popups adopt error: " .. tostring(err) .. "\n") end
     end)

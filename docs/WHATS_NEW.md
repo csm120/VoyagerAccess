@@ -2,6 +2,13 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.62
+
+- Fixed: after a battle, "Injuries: none" and "Damaged rooms: none" now come out right in every language. The mod reads the game's own lists instead of guessing its word for "none", so the German game no longer says "Injuries, 1: K/A". Thanks to firefly82 for working out where the game keeps them.
+- Fixed: in other languages, star system numbers are now read digit by digit, even when a name follows the number, and without the English "oh" and "point". English still says "System 8 2 4 oh point 3".
+
+## Monday October 19th 2026
+
 Version 0.3.61
 
 A few more fixes for players using the game in another language, from firefly82's review.
