@@ -97,9 +97,10 @@ follows them.
    event by itself. When the chosen point is off screen (after story
    scenes, for example), Set course zooms the map out by itself first. In an event at a point of interest, Up and Down
    move through the options; where an option can take a hero (Q Trials),
-   Left and Right choose one ("No hero" first), each with the chances the
-   game's bar shows for that hero, and Enter carries the option out with
-   that hero.
+   the option names the hero the game will send (it starts on the best
+   available one). Left and Right move the game's own choice of hero and say
+   the hero it moved to, with the chances the game's bar shows for that hero,
+   and Enter carries the option out with that hero.
 7. Main menu Credits: a list, one heading with its names per item; Escape
    closes it. In the main menu's save window, Enter on Restart Sector or
    Delete Profile opens its confirmation, which is read, with BACK and

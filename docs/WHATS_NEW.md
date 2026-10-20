@@ -2,6 +2,13 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.59
+
+- Fixed: at a point of interest where an option can take a hero, Left and Right could name one hero while a different one went on the mission. The game moves its own choice of hero with those same keys, and the mod was keeping a separate count that drifted. Now Left and Right say the hero the game has actually moved to, and Enter sends that hero. If you came across this in 0.3.58, I'm sorry about that.
+- The option now says which hero will go before you press anything. The game starts on the best available hero, so you only need Left and Right if you'd rather send someone else.
+
+## Monday October 19th 2026
+
 Version 0.3.58
 
 - New: at a point of interest where an option can take a hero, Left and Right now give each hero's chances, the same bar a sighted player sees with the mouse on that hero's portrait. For example, "No hero" might be 20% good and 75% bad, while Chakotay brings it to 35% good and 60% bad. Once you've picked a hero, the option reads that hero's chances too.

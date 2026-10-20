@@ -415,9 +415,9 @@ local HERO_NAMES = { Char_Tom_Paris = "Tom Paris", Char_Neelix = "Neelix", Char_
     Char_Kim = "Harry Kim", Char_Harry_Kim = "Harry Kim", Char_Doctor = "The Doctor", Char_The_Doctor = "The Doctor",
     Char_Tuvok = "Tuvok", Char_Chakotay = "Chakotay", Char_Kes = "Kes" }
 local ATTR = nil
--- key_of(option) -> index into its heroes (1 is no hero). Not the path
--- alone: the next option of an event reuses the button, and kept the last
--- one's choice (VM, 2026-10-19).
+-- key_of(option) -> true once Left or Right moved its hero selection. Not
+-- the path alone: the next option of an event reuses the button, and kept
+-- the last one's choice (VM, 2026-10-19).
 local chosen = {}
 
 -- The game's own name for a hero id. HERO_NAMES has the campaign's starting
@@ -483,54 +483,70 @@ local function hero_skills(list, i)
     return { skill = list[i].none and 0 or (tonumber(list[i].value) or 0), best = best }
 end
 
--- The hero chosen with Left and Right on option b, for chances(), or nil.
+-- The hero the option will send: its CurrentSelectedHero (0-based into its
+-- portraits, 0 being No hero). The game moves it itself with Left and
+-- Right (the option's DoCustomNavigation), and Enter on the option sends
+-- it. It starts on the available hero with the highest skill, the one
+-- whose chances the option's bar shows. A mod count of its own drifted
+-- from the game's after seven Lefts and the wrong hero went; clicking a
+-- portrait from script changed nothing (VM, 2026-10-19). Index into
+-- heroes_of(b), or nil.
+local function selected(b, list)
+    local ok, s = pcall(function() return b.CurrentSelectedHero end)
+    if ok and type(s) == "number" and list[s + 1] then return s + 1 end
+    return nil
+end
+
+-- The hero selected on option b for chances(), once the player has moved
+-- the selection (before that, the option's own bar is the game's), or nil.
 local function chosen_hero(b)
-    local i = chosen[key_of(b)]
-    if not (i and i > 1) then return nil end
+    if not chosen[key_of(b)] then return nil end
     local list = heroes_of(b)
-    if not list[i] then return nil end
+    local i = selected(b, list)
+    if not i then return nil end
     return hero_skills(list, i)
 end
 
--- Left and Right on an option with heroes. True when it handled the key.
--- Each hero's chances are said with them, the bar a sighted player sees
--- with the mouse on that portrait (it changed from 20% good with No hero
--- to 30% with Chakotay; VM, 2026-10-19).
+-- Left and Right on an option with heroes: the game moves its selection,
+-- and the mod says the hero it moved to with that hero's chances, the bar a
+-- sighted player sees with the mouse on that portrait (20% good with No
+-- hero, 30% with Chakotay; VM, 2026-10-19). True when it handled the key.
 function M.hero_step(path, dir)
     local b = path and StaticFindObject(path)
     if not (b and b:IsValid() and b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C") then return false end
     local list = heroes_of(b)
     if #list < 2 then return false end
-    local key = key_of(b)
-    local i = (chosen[key] or 1) + dir
-    if i < 1 then i = 1 elseif i > #list then i = #list end
-    chosen[key] = i
-    local o = option_for(b, text_of(b.ChoiceButton_Text))
-    local text = hero_text(list[i], o and attribute_of(o))
-    local c = o and chances(o, b, hero_skills(list, i))
-    if c then text = text .. ". " .. c end
-    speech.say(text .. ". " .. i .. " of " .. #list, true)
+    chosen[key_of(b)] = true
+    ExecuteInGameThreadWithDelay(150, function()
+        pcall(function()
+            if not b:IsValid() then return end
+            local now = heroes_of(b)
+            local i = selected(b, now)
+            if not i then return end
+            local o = option_for(b, text_of(b.ChoiceButton_Text))
+            local text = hero_text(now[i], o and attribute_of(o))
+            local c = o and chances(o, b, hero_skills(now, i))
+            if c then text = text .. ". " .. c end
+            speech.say(text .. ". " .. i .. " of " .. #now, true)
+        end)
+    end)
     return true
 end
 
--- Enter on an option with a hero chosen: click that hero, which carries
--- the option out with them. True when it handled the key.
+-- Enter on an option: the game sends the selected hero itself. A hero the
+-- game will not take (fatigued) is said instead of sending nothing. True
+-- when it handled the key.
 function M.enter(b, path)
-    local key = key_of(b)
-    local i = chosen[key]
-    if not (i and i > 1) then return false end
-    local h = heroes_of(b)[i]
-    if not (h and h.button:IsValid()) then return false end
-    if not h.usable then
+    local list = heroes_of(b)
+    if #list < 2 then return false end
+    local i = selected(b, list)
+    local h = i and list[i]
+    if h and not h.none and not h.usable then
         speech.say(h.name .. " is not available for this", true)
         return true
     end
-    chosen[key] = nil
-    print("[VoyagerAccess] events: sending " .. h.name .. "\n")
-    h.button:HandleButtonPressed()
-    h.button:HandleButtonReleased()
-    h.button:HandleButtonClicked()
-    return true
+    print("[VoyagerAccess] events: sending " .. (h and h.name or "?") .. "\n")
+    return false
 end
 
 -- An option that cannot be picked: a requirement not met, or disabled (a
@@ -630,8 +646,10 @@ function M.option_label(b)
     local heroes = is_locked(b) and {} or heroes_of(b)
     if #heroes > 1 then
         local skill = o and attribute_of(o)
-        local i = chosen[key_of(b)] or 1
-        local h = (i > 1 and heroes[i]) and ("Hero: " .. heroes[i].name) or "Left and Right choose a hero"
+        -- The hero the game will send, as its selected portrait shows.
+        local g = selected(b, heroes)
+        local h = (g and not heroes[g].none) and ("Hero: " .. heroes[g].name) or "No hero"
+        if not chosen[key_of(b)] then h = h .. ". Left and Right choose another" end
         parts[#parts + 1] = (skill and (skill .. " task. ") or "") .. h
     end
     crumb.at("events: position")

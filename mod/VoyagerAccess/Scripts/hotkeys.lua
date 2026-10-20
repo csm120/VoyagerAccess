@@ -55,7 +55,7 @@ local GROUPS = {
     } },
     { "Events at a point of interest", {
         "Up and Down: the options. R reads the locked ones",
-        "Left and Right: choose a hero, where the option can take one, with the chances the game shows for that hero",
+        "Left and Right: choose a hero, where the option can take one, with the chances the game shows for that hero. The option names the hero the game will send",
         "Enter: pick the option, with the hero you chose",
     } },
     { "Overview", {
