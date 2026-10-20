@@ -301,8 +301,8 @@ local ICONS = { Cycle = "cycles", SciencePoints = "research points" }
 
 -- "cycles" in the game's language: the English word went into the German
 -- text ("14 cycles verbleibend", firefly82's review, 2026-10-20). The
--- game's own lowercase "cycles" (General.locres, empty namespace; German
--- "Zyklen"), with English's singular kept.
+-- game's own lowercase "cycles" text (empty namespace; German "Zyklen"),
+-- with English's singular kept.
 local function cycles_word(n)
     if require("language").english() then return n == "1" and "cycle" or "cycles" end
     local word = "cycles"
