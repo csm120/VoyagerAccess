@@ -162,6 +162,23 @@ end
 -- (its selection label said "Unknown, 3 cycles Away" for a Class P planet
 -- and for a system the mod called by name; Nebula Sector, Q Trial, VM,
 -- 2026-10-18). Inside means within a nebula phenomenon's sphere.
+-- The game's own word for such a point, in its language: the localization
+-- entry STVSectorActor / UnScannableName ("Unknown", German "Unbekannt";
+-- found in the game's language files, 2026-10-20). "Unknown" if the lookup
+-- fails.
+local function unknown_word()
+    local word = "Unknown"
+    pcall(function()
+        local lib = StaticFindObject("/Script/Engine.Default__KismetTextLibrary")
+        local out = {}
+        if lib:FindTextInLocalizationTable("STVSectorActor", "UnScannableName", out, "") then
+            local s = out.OutText:ToString()
+            if s ~= "" then word = s end
+        end
+    end)
+    return word
+end
+
 local function in_nebula(actor)
     local ok, hidden = pcall(function()
         local loc = actor:K2_GetActorLocation()
@@ -183,7 +200,7 @@ local function name_of(actor)
     if cls == "BP_STVSolarSystem_C" then
         local marks = system_marks(actor)
         if in_nebula(actor) then
-            return "Unknown" .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
+            return unknown_word() .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
         end
         -- Its hover label names it ("System 3,520.1"); four systems all
         -- read "Star system" (State of Flux, VM, 2026-10-15). A warning
@@ -207,7 +224,7 @@ local function name_of(actor)
         end)
         return name .. (#marks > 0 and (", " .. table.concat(marks, ", ")) or "")
     end
-    if in_nebula(actor) then return "Unknown" end
+    if in_nebula(actor) then return unknown_word() end
     -- The game's own name, as its hover label shows it: "Class L Planet
     -- with Potential Food Sources" was read from the class as "Planet story
     -- yellow greenish eco zone planet", and ships as "Ship" where the game

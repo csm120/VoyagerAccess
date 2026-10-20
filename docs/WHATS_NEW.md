@@ -1,5 +1,11 @@
 # New in Voyager Access
 
+## Tuesday October 20th 2026
+
+Version 0.3.63
+
+- Fixed: points and star systems hidden inside a nebula now use the game's own word for unknown in your language, like "Unbekannt" in German, instead of the English "Unknown".
+
 ## Monday October 19th 2026
 
 Version 0.3.62
