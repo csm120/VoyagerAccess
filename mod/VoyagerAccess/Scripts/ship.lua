@@ -183,7 +183,7 @@ local function room_state(h, raw)
             if raw == "None" and (kind == 5 or st:lower():find("^remov")) then return "just cleared" end
             -- Enter on the room finishes it (VM, 2026-10-19); the screen
             -- shows "Ready", which says as much to a sighted player.
-            return st:lower() .. " done" .. require("hints").text("done_enter", ", Enter finishes it")
+            return require("tr").fill("{s} done", st:lower()) .. require("hints").text("done_enter", ", Enter finishes it")
         end
         -- Paused work keeps its text ("removing, 3 cycles") but has no
         -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).
@@ -239,10 +239,13 @@ local function describe(r, with_deck)
             if not deck_has_life(d) then dark[#dark + 1] = tostring(d) end
         end
         if #dark > 0 then
-            state = state:gsub("no life support", "no life support on deck " .. table.concat(dark, " and "), 1)
+            state = state:gsub("no life support", "no life support on deck " .. table.concat(dark, require("tr").word(" and ")), 1)
         end
     end
-    if state ~= "" then text = text .. ", " .. state end
+    -- A lone state word in the game's language (tr.lua); longer states are
+    -- phrases the line pass translates.
+    -- tr.word: on | off
+    if state ~= "" then text = text .. ", " .. require("tr").word(state) end
     if with_deck then
         -- A tall room says the deck the player is on first: moving down a
         -- turbo lift said "Decks 2 to 9, Turbo lift" four times over decks

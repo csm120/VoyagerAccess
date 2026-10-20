@@ -232,7 +232,8 @@ local function name_of(actor)
     -- the fallback.
     local ok, tip = pcall(function() return actor:GetTooltipWidgetText():ToString() end)
     if ok and type(tip) == "string" and tip ~= "" then return tip end
-    if NAMES[cls] then return NAMES[cls] end
+    -- tr.word: Ship
+    if NAMES[cls] then return require("tr").word(NAMES[cls]) end
     local class = cls:match("^BP_STVPlanet_Class(%w+)_C$")
     if class then return "Class " .. class .. " planet" end
     -- Unknown classes: "BP_CustomPOILocation_RepairStation_C" was read as
@@ -269,7 +270,7 @@ local function resources(poi)
             end
         end)
     end)
-    return table.concat(found, " and ")
+    return table.concat(found, require("tr").word(" and "))
 end
 
 local function status(p)
@@ -304,7 +305,7 @@ local function status(p)
             end
         end)
     end)
-    if done then return (res ~= "" and (res .. ", ") or "") .. "done" end
+    if done then return (res ~= "" and (res .. ", ") or "") .. require("tr").word("done") end
     return res ~= "" and res or "scanned"
 end
 
@@ -1090,7 +1091,7 @@ function M.enter()
     end
     if not menu then
         menu = 1
-        speech.say(ACTIONS[1] .. ", 1 of " .. #ACTIONS, true)
+        speech.say(require("tr").word(ACTIONS[1]) .. ", 1 of " .. #ACTIONS, true)
         return
     end
     local action = ACTIONS[menu]
@@ -1111,7 +1112,7 @@ function M.where()
     end
     local travel = travel_time(p)
     local text = string.format("%s, %s, %s%d of %d", name, status(p), travel and (travel .. ", ") or "", i, #list)
-    if menu then text = text .. ". Action list open: " .. ACTIONS[menu] end
+    if menu then text = text .. ". Action list open: " .. require("tr").word(ACTIONS[menu]) end
     return text
 end
 
@@ -1120,12 +1121,13 @@ function M.menu_step(dir)
     local i = menu + dir
     if not ACTIONS[i] then return end
     menu = i
-    speech.say(ACTIONS[i] .. ", " .. i .. " of " .. #ACTIONS, true)
+    -- tr.word: Scan
+    speech.say(require("tr").word(ACTIONS[i]) .. ", " .. i .. " of " .. #ACTIONS, true)
 end
 
 function M.menu_edge(last)
     menu = last and #ACTIONS or 1
-    speech.say(ACTIONS[menu] .. ", " .. menu .. " of " .. #ACTIONS, true)
+    speech.say(require("tr").word(ACTIONS[menu]) .. ", " .. menu .. " of " .. #ACTIONS, true)
 end
 
 function M.menu_close()

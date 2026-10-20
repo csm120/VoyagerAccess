@@ -80,8 +80,12 @@ end
 
 -- The game's names wrap inside the field: a line break after a hyphen joins
 -- the word, any other is a space, and a zero-width space goes (firefly82's
--- review, 2026-10-19: "Deuterium-Abfall- reduzierung").
+-- review, 2026-10-19: "Deuterium-Abfall- reduzierung"). Before a lowercase
+-- letter the hyphen only broke the word for the layout and goes too
+-- ("Verhandlungs-taktiken", VM, 2026-10-20); before a capital it is real.
+-- Lowercase here is ASCII or a Latin-1 letter (UTF-8 C3 A0 to C3 BF).
 local function clean_name(s)
+    s = s:gsub("%-[ \t]*\r?\n%s*(%l)", "%1"):gsub("%-[ \t]*\r?\n%s*(\195[\160-\191])", "%1")
     return (s:gsub("%-[ \t]*\r?\n%s*", "-"):gsub("%s*\r?\n%s*", " "):gsub("\226\128\139", ""))
 end
 
@@ -195,7 +199,7 @@ local function build()
             if s and s.obf then unknown = unknown + 1 elseif s then names[#names + 1] = s.name end
         end
         if unknown > 0 then names[#names + 1] = unknown == 1 and "an unknown technology" or (unknown .. " unknown technologies") end
-        if #names > 0 then t.text = t.text .. ", builds on " .. table.concat(names, " and ") end
+        if #names > 0 then t.text = t.text .. ", builds on " .. table.concat(names, require("tr").word(" and ")) end
         if t.important then t.text = t.text .. ", important" end
         if t.feature then t.text = t.text .. ", unlocks a feature" end
     end
@@ -537,7 +541,7 @@ function M.switch_tab(dir)
         ExecuteInGameThreadWithDelay(TAB_WAIT, function()
             pcall(function()
                 if refresh(false) then
-                    speech.say(list.tab .. " tab", true)
+                    speech.say(require("tr").fill("{s} tab", list.tab), true)
                     say(false)
                 end
             end)
@@ -561,7 +565,7 @@ function M.switch_tab(dir)
     ExecuteInGameThreadWithDelay(400, function()
         pcall(function()
             if refresh(false) then
-                speech.say(list.tab .. " tab", true)
+                speech.say(require("tr").fill("{s} tab", list.tab), true)
                 say(false)
             end
         end)

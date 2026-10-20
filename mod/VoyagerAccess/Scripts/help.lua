@@ -279,6 +279,8 @@ function M.say_where()
         end
     end
     local out = {}
+    -- tr.word: Menu | Game
+    if parts[1] then parts[1] = require("tr").word(parts[1]) end
     for _, p in ipairs(parts) do
         if p and p ~= "" then out[#out + 1] = (p:gsub("%.%s*$", "")) end
     end

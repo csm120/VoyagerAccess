@@ -462,7 +462,7 @@ function M.enter(b, path)
     end
     if kind ~= "hero" then return false end
     local win = window_of_choice(b)
-    local name = valid(b.HeroPlaque) and text(b.HeroPlaque.HeroNameText) or "Hero"
+    local name = valid(b.HeroPlaque) and text(b.HeroPlaque.HeroNameText) or require("tr").word("Hero")
     local okW, was_marked = pcall(function() return b.bIsMarked end)
     was_marked = okW and was_marked == true
     b:HandleButtonPressed()

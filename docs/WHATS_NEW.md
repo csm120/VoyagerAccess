@@ -2,6 +2,15 @@
 
 ## Tuesday October 20th 2026
 
+Version 0.3.66
+
+- New: the mod's own words now come out in your game's language. If you play in German, Spanish, French, Japanese, Polish, Russian or Simplified Chinese, the words the mod adds to the game's text are spoken in that language too: deck and tier names, room states like on and off, where you are in a list ("5 von 10"), the chances in an event, key hints, and the F1 and Ctrl+F1 lists. Switch the game's language in Settings and the mod follows it.
+- Fixed: in German, a tech tree name the game breaks across two lines is now read as one word, like "Verhandlungstaktiken" instead of "Verhandlungs-taktiken".
+
+The translations are brand new, so if a word sounds odd in your language, please tell us on the forum and we'll fix it. Thanks to firefly82, who asked for this one.
+
+## Tuesday October 20th 2026
+
 Version 0.3.65
 
 - Fixed: when a room changes, like when you switch it off with E or a repair finishes, you now hear its new state once. It used to come through several times, or not at all when no mission was waiting on your rooms.

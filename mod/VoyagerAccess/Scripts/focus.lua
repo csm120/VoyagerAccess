@@ -338,7 +338,7 @@ local function radial_details(menu)
     if #gives > 0 then parts[#parts + 1] = "Gives " .. table.concat(gives, ", ") end
     local op = {}
     if by.EnergyValue then op[#op + 1] = "energy " .. by.EnergyValue end
-    if by.CrewValue then op[#op + 1] = "crew " .. by.CrewValue end
+    if by.CrewValue then op[#op + 1] = require("tr").fill("crew {s}", by.CrewValue) end
     if #op > 0 then parts[#parts + 1] = (by.OperationText or "Operation") .. ": " .. table.concat(op, ", ") end
     local build = {}
     local okc, costs = pcall(function() return center and require("rooms").costs_under(center) or "" end)

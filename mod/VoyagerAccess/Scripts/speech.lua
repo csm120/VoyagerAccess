@@ -65,7 +65,7 @@ function M.say(text, interrupt)
     text = text:gsub('([%.!%?]")%.', "%1"):gsub("([%.!%?]\226\128\157)%.", "%1")
     -- "Severely Injured & Sick" (Sickbay patients, VM, 2026-10-16): with
     -- punctuation off a screen reader may say nothing for the "&".
-    text = text:gsub("%s+&%s+", " and ")
+    text = text:gsub("%s+&%s+", " " .. require("tr").word("and") .. " ")
     -- Species 8472 is said digit by digit, as the crew and the Borg say it,
     -- not "eight thousand four hundred..." (Casey, 2026-10-17).
     text = text:gsub("%f[%d]8472%f[%D]", "8 4 7 2")
@@ -105,7 +105,16 @@ function M.say(text, interrupt)
     -- English only: in German it changed the game's own words ("Holo
     -- deck", "Aero shuttle-Rampe"; firefly82's review, 2026-10-20).
     local okl, lang = pcall(require, "language")
-    if not (okl and lang and lang.english) or lang.english() then text = split_words(text) end
+    if not (okl and lang and lang.english) or lang.english() then
+        text = split_words(text)
+    else
+        -- The mod's own words in the game's language (tr.lua).
+        local okt, tr = pcall(require, "tr")
+        if okt and tr then
+            local oka, out = pcall(tr.apply, text)
+            if oka and type(out) == "string" then text = out end
+        end
+    end
     if text == "" then return end
     -- Development sweep for labels with no words (unread.lua).
     local unread = package.loaded["unread"]

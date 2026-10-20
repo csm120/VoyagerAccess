@@ -287,7 +287,7 @@ function M.hero_step(dir, edge)
     -- And "Rank 01, Neelix" (the same day).
     name = (name:gsub("^[Rr]ank 0*(%d+), (.+)$", "%2, rank %1"))
     pcall(function() c.w["BndEvt__WBP_Hero_InfoCardButton_Button_K2Node_ComponentBoundEvent_0_OnButtonClickedEvent__DelegateSignature"](c.w) end)
-    speech.say(string.format("%s, %d of %d", name ~= "" and name or "Hero", hero_index, #cards), true)
+    speech.say(string.format("%s, %d of %d", name ~= "" and name or require("tr").word("Hero"), hero_index, #cards), true)
     ExecuteInGameThreadWithDelay(250, function()
         pcall(function() speech.say(hero_details(), false) end)
     end)

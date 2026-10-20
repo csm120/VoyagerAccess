@@ -329,9 +329,11 @@ local function chances(o, b, hero)
     for i, e in ipairs(list) do
         local word = OUTCOMES[e.outcome] or "another"
         local article = word == "another" and "" or (word:match("^[aeiou]") and "an " or "a ")
-        out[#out + 1] = string.format("%d%% chance of %s%s outcome", pct[i], article, word)
+        -- tr.word: good | bad
+        out[#out + 1] = string.format("%d%% chance of %s%s outcome", pct[i], article, require("tr").word(word))
     end
-    return verdict .. ": " .. table.concat(out, ", ")
+    -- tr.word: Good | Bad
+    return require("tr").word(verdict) .. ": " .. table.concat(out, ", ")
 end
 
 -- Rooms that improve an option. Each result's BonusWeight entries
@@ -636,7 +638,7 @@ function M.option_label(b)
     if c then parts[#parts + 1] = c:sub(1, 1):upper() .. c:sub(2) end
     crumb.at("events: room_names")
     local better = o and room_names(o) or {}
-    if #better > 0 then parts[#parts + 1] = "Better with " .. table.concat(better, " or ") end
+    if #better > 0 then parts[#parts + 1] = "Better with " .. table.concat(better, " " .. require("tr").word("or") .. " ") end
     -- Position among the event's options, so one option is not heard as
     -- running into the next ("Leave the storage alone..." is not "Leave for
     -- now"; Casey, 2026-10-11).
@@ -650,7 +652,7 @@ function M.option_label(b)
         local g = selected(b, heroes)
         local h = (g and not heroes[g].none) and ("Hero: " .. heroes[g].name) or "No hero"
         if not chosen[key_of(b)] then h = h .. require("hints").text("hero_lr", ". Left and Right choose another") end
-        parts[#parts + 1] = (skill and (skill .. " task. ") or "") .. h
+        parts[#parts + 1] = (skill and (require("tr").fill("{s} task", skill) .. ". ") or "") .. h
     end
     crumb.at("events: position")
     local pos = position(b)

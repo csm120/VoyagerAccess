@@ -79,7 +79,8 @@ local function shields(view)
     for _, side in ipairs({ "Front", "Back", "Left", "Right" }) do
         local ok, w = pcall(function() return view["Shield_" .. side] end)
         local v = ok and w and w:IsValid() and plain(text_of(w.TXT_SHIELD)) or ""
-        if v ~= "" then vals[#vals + 1] = { side = WORD[side], v = v } end
+        -- tr.word: bow | aft | port
+        if v ~= "" then vals[#vals + 1] = { side = require("tr").word(WORD[side]), v = v } end
     end
     if #vals == 0 then return nil end
     local same = true
@@ -138,7 +139,7 @@ local function ship_line(view, subs)
     if not (view and view:IsValid()) then return nil end
     local parts = { title(plain(text_of(view.ShipNameText))) }
     local hull = plain(text_of(view.T_HullIntegrity)):gsub("%s*/%s*", " of ")
-    if hull ~= "" then parts[#parts + 1] = "hull " .. hull end
+    if hull ~= "" then parts[#parts + 1] = require("tr").fill("hull {s}", hull) end
     local sh = shields(view)
     if sh then parts[#parts + 1] = sh end
     if subs then parts[#parts + 1] = table.concat(subs, ", ") end
@@ -305,7 +306,7 @@ function M.status()
                 end
                 local pct = a.IntegrityBarProgress
                 if name ~= "" then
-                    parts[#parts + 1] = "Ally: " .. name .. (type(pct) == "number" and (", hull " .. math.floor(pct * 100 + 0.5) .. "%") or "")
+                    parts[#parts + 1] = "Ally: " .. name .. (type(pct) == "number" and (", " .. require("tr").fill("hull {s}", math.floor(pct * 100 + 0.5) .. "%")) or "")
                 end
             end
         end
@@ -314,7 +315,7 @@ function M.status()
     -- "ATTACK // Right": the side as bow, aft, port or starboard, as the
     -- shields are read (VM, 2026-10-14).
     local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
-    order = order:gsub(", (%a+)$", function(s) return SIDES[s] and (", " .. SIDES[s]) or nil end)
+    order = order:gsub(", (%a+)$", function(s) return SIDES[s] and (", " .. require("tr").word(SIDES[s])) or nil end)
     if order ~= "" then parts[#parts + 1] = "Order: " .. title(order) end
     local okt, ammo = pcall(function() return plain(text_of(w.FireControlWidget.CT_TorpedoAmmo)) end)
     -- With a damaged Torpedo Launch Bay the counter keeps its placeholder
@@ -390,7 +391,7 @@ function M.handles(b, path)
 end
 
 function M.button_label(b, path)
-    if path:find("%.BackButton$") then return "Back" end
+    if path:find("%.BackButton$") then return require("tr").word("Back") end
     local prefix = path .. "."
     local by = {}
     for _, t in ipairs(FindAllOf("TextBlock") or {}) do
@@ -407,7 +408,7 @@ function M.button_label(b, path)
     local okl, loc = pcall(function() return b["Section Location"] end)
     -- The same words as the attack side ("Attack: starboard").
     local SECTIONS = { [0] = "bow", [1] = "starboard", [2] = "aft", [3] = "port", [4] = "middle" }
-    if okl and SECTIONS[loc] and not label:find("^Repair ") then label = label .. ", " .. SECTIONS[loc] end
+    if okl and SECTIONS[loc] and not label:find("^Repair ") then label = label .. ", " .. require("tr").word(SECTIONS[loc]) end
     if by.hp and by.hp ~= "" then label = label .. ", " .. by.hp .. " health" end
     if label:find("^Repair ") then label = label:gsub(", (%d+) health$", ", health %1") end
     local okr, full = pcall(M.repair_label, label)
@@ -450,7 +451,7 @@ local function abilities_poll()
                 -- cooldown and said nothing (System Recharge, VM,
                 -- 2026-10-16): that is "used".
                 local said = state
-                if was == "ready" and state == "cooldown" then said = "used" end
+                if was == "ready" and state == "cooldown" then said = require("tr").word("used") end
                 if was and was ~= state and said ~= "cooldown" then
                     local text = string.format("%s %s", plain(ab.AbilityName:ToString()), said)
                     print("[VoyagerAccess] combat: " .. text .. "\n")

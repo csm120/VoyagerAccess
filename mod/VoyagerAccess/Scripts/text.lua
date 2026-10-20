@@ -34,7 +34,8 @@ local function unit(id)
     id = id:gsub("_.*$", "")
     local game = M.game_resource_name(id == "Crews" and "Crew" or id)
     if game then return game end
-    if UNITS[id] then return UNITS[id] end
+    -- tr.word: crew
+    if UNITS[id] then return require("tr").word(UNITS[id]) end
     return (id:gsub("(%l)(%u)", "%1 %2"):lower())
 end
 

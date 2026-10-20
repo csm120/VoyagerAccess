@@ -108,7 +108,7 @@ end
 
 local function size_text(w, d)
     if d > 1 then return spaces(w) .. " wide and " .. d .. " decks tall" end
-    return spaces(w) .. " wide"
+    return require("tr").fill("{s} wide", spaces(w))
 end
 
 -- Added to a room choice's reading: its size and whether it fits.

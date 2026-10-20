@@ -205,7 +205,7 @@ function M.research_label(path)
     end
     if path:find("WBP_ItemButton_C_%d+$") and workshop_open() then
         local by = texts_under(path)
-        local label = by.ItemName or "Item"
+        local label = by.ItemName or require("tr").word("Item")
         local n = by.Duration
         if n and n:match("^%d+$") then label = label .. ", " .. n .. (n == "1" and " cycle" or " cycles") end
         local costs = costs_under(path)
@@ -351,9 +351,10 @@ function M.button_label(path, label)
         -- room's own state, not the English label (firefly82's review,
         -- 2026-10-19); the label is the fallback.
         local ok, state = pcall(function() return require("ship").selected_state() end)
-        if ok and (state == "on" or state == "off") then label = room .. " " .. state
-        elseif lower == "switch off" then label = room .. " on"
-        elseif lower == "switch on" then label = room .. " off" end
+        local tr = require("tr")
+        if ok and (state == "on" or state == "off") then label = tr.fill("{s} " .. state, room)
+        elseif lower == "switch off" then label = tr.fill("{s} on", room)
+        elseif lower == "switch on" then label = tr.fill("{s} off", room) end
     end
     local parts = { label }
     -- The Heroes tab: the skill this room uses, and what a hero gives.
@@ -458,7 +459,7 @@ function M.hero_label(path)
     if skills ~= "" then parts[#parts + 1] = skills end
     -- The bonus this hero gives the room ("+11% warp core repair rate.").
     for _, text in pairs(by) do
-        if text:find("%%") then parts[#parts + 1] = (text:gsub("^%+", "Plus ")) end
+        if text:find("%%") then parts[#parts + 1] = (text:gsub("^%+", require("tr").word("Plus "))) end
     end
     -- "2 of 3": the list said nothing at either end, so there was no way to
     -- know how many heroes it had (Mess Hall, VM, 2026-10-15).
@@ -627,7 +628,7 @@ function M.patients_text()
         -- A star before a hero's name (Image_75; Chakotay, Harry Kim and
         -- Tom Paris among crew, VM, 2026-10-16).
         local okh, hero = pcall(function() return screen.shown(r.Image_75) end)
-        if okh and hero then item = item .. ", hero" end
+        if okh and hero then item = item .. ", " .. require("tr").word("hero") end
         if cond ~= "" then item = item .. ", " .. cond end
         if cycles:match("^%d+$") then
             item = item .. ", " .. cycles .. (cycles == "1" and " cycle" or " cycles") .. " to recover"
@@ -669,7 +670,7 @@ local function amount_of(n, what)
 end
 
 function M.biolab_item_label(b)
-    local parts = { amount_of(plain(text_of(b.ResourceAmount)), icon_of(b.ResourceIcon) or "item") }
+    local parts = { amount_of(plain(text_of(b.ResourceAmount)), icon_of(b.ResourceIcon) or require("tr").word("item")) }
     if screen.shown(b.Selected_TXT) then parts[#parts + 1] = "selected" end
     if screen.shown(b.ProdOnHold_Container) then parts[#parts + 1] = "on hold" end
     local costs = {}
@@ -697,7 +698,7 @@ function M.biolab_text()
     end
     if not lab then return nil end
     if screen.shown(lab.NoRequirementYet_Crafting_Overlay) then return "Crafting: nothing" end
-    local item = amount_of(plain(text_of(lab.ResourceAmount)), icon_of(lab.ResourceIcon) or "item")
+    local item = amount_of(plain(text_of(lab.ResourceAmount)), icon_of(lab.ResourceIcon) or require("tr").word("item"))
     local out = "Crafting " .. item
     if screen.shown(lab.Paused_IMG) or screen.shown(lab.ProdOnHold_Container) then out = out .. ", on hold" end
     local left = plain(text_of(lab.RemainigCyclesCount_Text))
@@ -737,7 +738,7 @@ function M.workteams_text()
             if h:IsValid() and screen.shown(h) then
                 local cur, per = plain(text_of(h.CurrentHullValue)), plain(text_of(h.HullValuePerCycle))
                 if cur:match("%d") then
-                    out[#out + 1] = "Hull " .. cur .. (per:match("%d") and (", " .. per .. " per cycle") or "")
+                    out[#out + 1] = require("tr").fill("Hull {s}", cur) .. (per:match("%d") and (", " .. per .. " per cycle") or "")
                 end
             end
         end
@@ -1020,8 +1021,8 @@ function M.switch_tab(dir)
             local ok, sel = pcall(function() return b:GetSelected() end)
             if ok and sel then
                 local name = plain(text_of(b.ButtonName))
-                name = (name ~= "" and name or "Tab"):gsub("^%l", string.upper)
-                require("speech").say(name .. " tab", true)
+                name = (name ~= "" and name or require("tr").word("Tab")):gsub("^%l", string.upper)
+                require("speech").say(require("tr").fill("{s} tab", name), true)
                 -- The tab's page is filled after the switch.
                 ExecuteInGameThreadWithDelay(300, function()
                     pcall(function()
@@ -1067,7 +1068,7 @@ end
 -- Read when a room window opens: name, level, state, and the description.
 function M.window_text(path)
     local by = texts_under(path)
-    local head = by.RoomNameText or "Room"
+    local head = by.RoomNameText or require("tr").word("Room")
     if by.RoomLevel then head = head .. ", " .. by.RoomLevel:gsub("^lvl 0*", "level ") end
     if by.ActiveText and by.ActiveText ~= "" then head = head .. ", " .. by.ActiveText:lower() end
     -- The energy it uses, a number beside a lightning icon in the header

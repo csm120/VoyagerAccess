@@ -343,10 +343,12 @@ function M.hero_condition(id)
         if ok and has == true then
             local okc, n = pcall(function() return m:GetHeroRemainingRecoveryCycles(id, c[1]) end)
             -- "away" counts 1 whatever the mission's length, so no number there.
+            -- tr.word: dead | sick | busy | away
+            local word = require("tr").word(c[2])
             if okc and type(n) == "number" and n > 1 and c[1] ~= 6 then
-                out[#out + 1] = string.format("%s, %d cycles", c[2], n)
+                out[#out + 1] = string.format("%s, %d cycles", word, n)
             else
-                out[#out + 1] = c[2]
+                out[#out + 1] = word
             end
         end
     end
@@ -824,7 +826,7 @@ local function item_label(it)
         if not (h and h:IsValid()) then return nil end
         local skill, needed = choice_skill(c)
         local value = plain(text_of(h.WBP_HeroAbilityIcon and h.WBP_HeroAbilityIcon.AttributeValue))
-        local text = it.name .. ", " .. ((value == "" or value == "-") and ("no " .. skill)
+        local text = it.name .. ", " .. ((value == "" or value == "-") and require("tr").fill("no {s}", skill)
             or (skill .. " " .. value .. (needed ~= "" and (" of " .. needed .. " needed") or "")))
         -- "Engineering 21 of 15 needed" read as a shortfall (2026-10-14).
         local v, n = tonumber(value), tonumber(needed)
@@ -877,7 +879,7 @@ local function item_label(it)
             end
         end
         if #who == 0 then return "Lock In: select a hero for this choice first." end
-        local names = #who == 1 and who[1] or (table.concat(who, ", ", 1, #who - 1) .. " and " .. who[#who])
+        local names = #who == 1 and who[1] or (table.concat(who, ", ", 1, #who - 1) .. require("tr").word(" and ") .. who[#who])
         local cw = chance_words()
         return "Confirm with " .. names .. (cw and (", " .. cw) or "") .. "."
     end
@@ -1106,7 +1108,7 @@ local function result_poll()
                 -- "Neelix, Tuvok and Chakotay", not "Neelix and Tuvok and Chakotay".
                 if #tired > 0 then
                     local names = #tired == 1 and tired[1]
-                        or (table.concat(tired, ", ", 1, #tired - 1) .. " and " .. tired[#tired])
+                        or (table.concat(tired, ", ", 1, #tired - 1) .. require("tr").word(" and ") .. tired[#tired])
                     parts[#parts + 1] = names .. (#tired == 1 and " is" or " are") .. " fatigued"
                 end
                 local text = sentences(parts)

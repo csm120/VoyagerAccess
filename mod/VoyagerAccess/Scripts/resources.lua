@@ -79,7 +79,7 @@ local function lines()
                 add("plasma storm or asteroid field", ph.HullDepletionPhenomena, -1)
                 add("repairs", rp.HullRepair, 1)
                 add("rooms", rm.RoomHullChange, 1)
-                add("Q", am.AmusementHullChange, 1)
+                add(require("tr").word("Q"), am.AmusementHullChange, 1)
                 if #why > 0 then t = t .. ": " .. table.concat(why, ", ") end
                 -- Which state the Main Deflector is in (Damaged on deck 14,
                 -- VM, 2026-10-17), so you know what to fix.
@@ -109,7 +109,8 @@ local function lines()
     for _, key in ipairs(ORDER) do
         local w = by[key]
         if w then
-            local text = (NAMES[key] or key) .. " " .. text_of(w.CurrentResourceAmountText)
+            -- tr.word: Food
+            local text = (NAMES[key] or require("tr").word(key)) .. " " .. text_of(w.CurrentResourceAmountText)
             local okc, cap = pcall(function() return manager:GetResourceCapacity(key) end)
             if okc and type(cap) == "number" and cap > 0 and cap < 9999 then text = text .. ", max " .. cap end
             local change = text_of(w.CyclePreview)
@@ -125,7 +126,7 @@ local function lines()
             ids[#parts] = id
         end
     end
-    team("WBP_Crew_Resource_C", "Crew", "Crew")
+    team("WBP_Crew_Resource_C", require("tr").word("Crew"), "Crew")
     team("WBP_WorkTeams_Resource_C", "Work teams")
     local cycles = by.Cycles
     -- Not cycles passed: it went 16, then 14 as Deuterium went 396, then 348

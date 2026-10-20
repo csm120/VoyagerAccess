@@ -463,7 +463,7 @@ local function construction_report(parts)
             local ls = text_of_widget(w.LifeSupport)
             if ls ~= "" then entry[#entry + 1] = ls:lower() end
             local crew = text_of_widget(w.CrewValueNew)
-            if crew ~= "" then entry[#entry + 1] = "crew " .. crew end
+            if crew ~= "" then entry[#entry + 1] = require("tr").fill("crew {s}", crew) end
             local energy = text_of_widget(w.EnergyValueNew)
             if energy ~= "" then entry[#entry + 1] = "energy " .. energy end
             sections[section] = sections[section] or {}
@@ -474,7 +474,7 @@ local function construction_report(parts)
         if sections[name] then out[#out + 1] = name .. ": " .. table.concat(sections[name], "; ") end
     end
     local totals = {}
-    if by.CrewValue then totals[#totals + 1] = "crew " .. by.CrewValue end
+    if by.CrewValue then totals[#totals + 1] = require("tr").fill("crew {s}", by.CrewValue) end
     if by.EnergyValue then totals[#totals + 1] = "energy " .. by.EnergyValue end
     if #totals > 0 then
         out[#out + 1] = (by.NewUsage or "Total costs after activation") .. ": " .. table.concat(totals, ", ")
@@ -542,7 +542,7 @@ local function number_lines(texts)
         local number = t:match("^[%+%-]?[%d,%.]+%%?$") or t:match("^%(?[%d,]+ %- [%d,]+%)?$")
         if number and #out > 0 then
             run = run + 1
-            out[#out] = out[#out] .. (run == 2 and " of " or " ") .. t
+            out[#out] = out[#out] .. (run == 2 and require("tr").word(" of ") or " ") .. t
         else
             run = 0
             out[#out + 1] = t
@@ -688,6 +688,7 @@ local function overview_lines(path)
             -- "uses -24 deuterium": the sign is in "uses" already.
             local v = t:gsub("^%+", ""):gsub("/$", "")
             if name == "ConsumedDeuteriumText" then v = v:gsub("^%-", "") end
+            if OVERVIEW_LABELS[name] == "%s crew" then return require("tr").fill("{s} crew", v) end
             return string.format(OVERVIEW_LABELS[name], v)
         end
         if name == "LevelText" then
@@ -779,7 +780,7 @@ local function log_multitab(_, path)
     end
     local out = {}
     if by.Header then out[#out + 1] = by.Header end
-    if tabs > 1 then out[#out + 1] = (cur and (cur .. " tab") or "Tab") .. ", Left and Right switch logs" end
+    if tabs > 1 then out[#out + 1] = (cur and require("tr").fill("{s} tab", cur) or require("tr").word("Tab")) .. ", Left and Right switch logs" end
     -- The body is not spoken: the game plays the officer reading the log
     -- (Casey, 2026-10-15, "the personal log has audio").
     for i, s in ipairs(out) do out[i] = s:gsub("%.%s*$", "") end
@@ -827,7 +828,7 @@ local function auto_resolve(_, path)
     end
     local out = { "Combat autoresolve" }
     if by.PlayerScoreText_ then out[#out + 1] = "Combat power " .. by.PlayerScoreText_ .. (by.EnemyScoreText_ and (" against " .. by.EnemyScoreText_) or "") end
-    if by.Voyager_Hull then out[#out + 1] = "Hull " .. by.Voyager_Hull end
+    if by.Voyager_Hull then out[#out + 1] = require("tr").fill("Hull {s}", by.Voyager_Hull) end
     if by.success_chance_value then out[#out + 1] = "Survival chance " .. by.success_chance_value:gsub("%%$", "") .. "%" end
     if by.TorpedoCountText then out[#out + 1] = "Torpedoes added " .. by.TorpedoCountText .. (by.TorpedoCountMax and (" of " .. by.TorpedoCountMax) or "") end
     return table.concat(out, ". ") .. "."
@@ -854,7 +855,7 @@ function M.meta_reward_label(b, path)
     local out = {}
     local kind = by.TypeText or "Reward"
     if by.TechName then
-        out[#out + 1] = kind .. ": " .. by.TechName .. (by.NewText and ", new" or "")
+        out[#out + 1] = kind .. ": " .. by.TechName .. (by.NewText and require("tr").word(", new") or "")
         local where = {}
         if by.TechTreeName then where[#where + 1] = by.TechTreeName end
         if by.TierNr_TXT then where[#where + 1] = (by.TierNr_TXT:gsub("0(%d)", "%1")) end
@@ -872,7 +873,7 @@ function M.meta_reward_label(b, path)
     elseif by.AmusementName then
         -- A Q Modifier card: its name and what it does ("Party Ship" was
         -- read only as "Q Modifier", VM, 2026-10-16).
-        out[#out + 1] = kind .. ": " .. by.AmusementName .. (by.NewText and ", new" or "")
+        out[#out + 1] = kind .. ": " .. by.AmusementName .. (by.NewText and require("tr").word(", new") or "")
         if by.AmusementDesc then out[#out + 1] = by.AmusementDesc end
     elseif #res > 0 then
         out[#out + 1] = kind .. ": " .. table.concat(res, ", ")
@@ -1262,7 +1263,7 @@ local function battle_result(_, path)
         if s == "Damaged rooms" then return damage.rooms == 0 end
         return nil
     end
-    local out = { "Combat result: " .. (outcome or "over") }
+    local out = { "Combat result: " .. (outcome or require("tr").word("over")) }
     if hull then out[#out + 1] = "Hull status " .. hull .. "%" end
     for _, s in ipairs(order) do
         -- With a count first: 22 injured names came with no hint of how many
@@ -1469,7 +1470,7 @@ end
 -- Compound: costs 99, 9,999 light years bonus distance."
 function M.bonus_fuel_label(b)
     local function t(w) return text_of_widget(w) end
-    local out = { "Use " .. (t(b.ItemName_TXT) ~= "" and t(b.ItemName_TXT) or "bonus fuel") }
+    local out = { require("tr").fill("Use {s}", t(b.ItemName_TXT) ~= "" and t(b.ItemName_TXT) or "bonus fuel") }
     local cost = t(b.BonusFuelCost_TXT):gsub("^#", "")
     if cost ~= "" then out[#out + 1] = "costs " .. cost end
     local dist = t(b.BonusDistance_TXT)
@@ -1539,7 +1540,9 @@ local function sandbox_result(parts)
     for _, pair in ipairs({ { "Passed cycles", "passedCycles_TXT" }, { "Points of interest explored", "POIsExplored_TXT" },
         { "Technologies researched", "TechResearched_TXT" }, { "Rooms built or upgraded", "RoomsBuilt_TXT" },
         { "Time", "PlayTime_TXT" } }) do
-        if by[pair[2]] then stats[#stats + 1] = pair[1] .. " " .. by[pair[2]] end
+        if by[pair[2]] then
+            stats[#stats + 1] = pair[1] == "Time" and require("tr").fill("Time {s}", by[pair[2]]) or (pair[1] .. " " .. by[pair[2]])
+        end
     end
     if #stats > 0 then out[#out + 1] = "Sector performance: " .. table.concat(stats, ", ") end
     if by.RemainingDistance_TXT then
@@ -1839,7 +1842,7 @@ local function poll()
             if p:find("Toast_Notification", 1, true) then
                 local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
                 text = text:gsub(":%s*(%a+)(%.?)$", function(w, dot)
-                    return SIDES[w] and (": " .. SIDES[w] .. dot) or nil
+                    return SIDES[w] and (": " .. require("tr").word(SIDES[w]) .. dot) or nil
                 end)
                 -- "Subsystem Destroyed: Weapons" did not say whose.
                 local sys = text:match("Subsystem Destroyed:%s*([%a ]-)%.?$")
@@ -1849,7 +1852,7 @@ local function poll()
                     low = sys ~= nil
                 end
                 local okw, owner = pcall(function() return sys and require("combat").destroyed_owner(sys, low) end)
-                if okw and owner then text = text:gsub(":%s*" .. sys, ": " .. owner .. "'s " .. sys, 1) end
+                if okw and owner then text = text:gsub(":%s*" .. sys, function() return ": " .. require("tr").fill("{s}'s {s}", owner, sys) end, 1) end
             end
             if p:find("FewerHeroesConfirmWidget", 1, true) then
                 -- Also after the title: "Warning. Return. Continue. You

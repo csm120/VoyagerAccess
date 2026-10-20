@@ -31,7 +31,7 @@ local RESOURCE_ICONS = { Deuterium = true, Duranium = true, Tritanium = true, Fo
 local function resource_of(raw)
     local r = raw:match("^MI_UI_(%a+)_") or raw:match("^MI_UI_(%a+)$")
     if not (r and RESOURCE_ICONS[r]) then return nil end
-    return text.game_resource_name(r == "Crews" and "Crew" or r) or RESOURCE_WORDS[r] or r:lower()
+    return text.game_resource_name(r == "Crews" and "Crew" or r) or (RESOURCE_WORDS[r] and require("tr").word(RESOURCE_WORDS[r])) or r:lower()
 end
 
 -- Tokens in tree order: { kind = "text", name, value } or { kind = "key" }
