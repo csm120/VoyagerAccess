@@ -397,14 +397,16 @@ function M.choice_label(path)
         local unmet = req:find("ColorNegative", 1, true) ~= nil
         -- "Phaser Control Room Level 1- Chance: 50% + 35%" has no space
         -- before the dash (Mirror, Mirror, VM, 2026-10-15).
-        req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub("%s*%-%s*Chance:", ", chance")
+        -- The game's own word for chance is kept, so this works in every
+        -- language ("Erfolgschance: 70%" was read raw in German; firefly82's
+        -- review, 2026-10-19): "Room Level 1 - Chance: 50%" becomes "Room
+        -- Level 1, Chance 50%", and "Success Chance: 70%" (no room or hero
+        -- needed; black hole, sector 7, 2026-10-18) "Success Chance 70%".
+        req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub("%s*%-%s*([^%d%-:]+):%s*(%d)", ", %1 %2")
+        req = (req:gsub("^([^%d:]+):%s*(%d+%%)", "%1 %2"))
         -- The second number is the hero's bonus, shown highlighted: "chance
         -- 40% + 45%" read as a sum to work out (Jetrel, 2026-10-15).
-        req = (req:gsub("chance (%d+%%) %+ (%d+%%)", "chance %1, plus %2 bonus"))
-        -- A choice with no room or hero needed says only "Success Chance:
-        -- 70%", where the rest say "chance 70%" (black hole, sector 7,
-        -- 2026-10-18).
-        req = (req:gsub("^Success Chance:%s*(%d+%%)", "Chance %1"))
+        req = (req:gsub("(%d+%%) %+ (%d+%%)", "%1, plus %2 bonus"))
         parts[#parts + 1] = (unmet and "Needs " or "") .. req
     end
     local reward = ""

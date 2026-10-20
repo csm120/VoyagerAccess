@@ -180,8 +180,11 @@ local function name_of(actor)
         local name = "Star system"
         pcall(function()
             local tip = actor:GetTooltipWidgetText():ToString()
-            local n = tip:match("^System%s+(.+)$")
-            if n then name = "System " .. M.spoken_number(n) elseif tip ~= "" then name = tip end
+            -- The game's own word before the number ("System", "Système"):
+            -- matching the English word worked only by luck in German
+            -- (firefly82's review, 2026-10-19).
+            local word, n = tip:match("^(%D-)%s*(%d[%d%.,]*)$")
+            if n and word ~= "" then name = word .. " " .. M.spoken_number(n) elseif tip ~= "" then name = tip end
         end)
         pcall(function()
             local warn = actor.SystemWarning:ToString()

@@ -278,6 +278,8 @@ end
 -- WBP_RadialMenuCenter_BuildRoom has the room's name, a missing-resources
 -- warning, its description, operation and construction costs. That only
 -- appears on mouse hover (2026-10-14), so the mod hovers the focused one.
+local last_center_error = nil   -- set by radial_details
+
 local function radial_details(menu)
     local by, order = {}, {}
     local center = nil
@@ -316,6 +318,7 @@ local function radial_details(menu)
         return #parts > 0 and table.concat(parts, ". ") or nil
     end
     local parts = { by.CenterText }
+    last_center_error = by.ErrorText
     if by.ErrorText then parts[#parts + 1] = by.ErrorText end
     if by.RoomDescriptionText then parts[#parts + 1] = by.RoomDescriptionText end
     if by.DescriptionText then parts[#parts + 1] = by.DescriptionText end
@@ -335,6 +338,9 @@ local function radial_details(menu)
 end
 
 local radial_said = {}   -- segment path -> what was said, for L and R
+-- segment path -> the ring centre's own error text (the game's words, in its
+-- language), the reason a locked segment gives on Enter.
+local radial_error = {}
 
 -- Focus reached a segment: hover it with the mouse (through the helper),
 -- then say the centre's details and its place in the ring; with no
@@ -364,7 +370,9 @@ function M.radial_focus(b, path)
             if okr and ring then
                 text = ring.text
             elseif menu then
+                last_center_error = nil
                 text = radial_details(menu)
+                radial_error[path] = last_center_error
             end
             if not text or text == "" then text = M.radial_label(nb) or "Button" end
             if text:find("^[^%.]+%. Missing resources%.") then
@@ -2074,7 +2082,13 @@ local function activate()
             -- resources came in said "Not possible: Accommodates 10 CREW
             -- ..." (VM, 2026-10-17). Closing and opening the ring again
             -- clears that lock.
-            if why and not (why:find("^Missing") or why:find("^No ") or why:find("^Not ")) then
+            -- The game's own error for the segment, in its language; the
+            -- English check this replaced ("^No ") missed "Keine
+            -- Lebenserhaltung" (firefly82's review, 2026-10-19). "Missing
+            -- resources" is the mod's own wording (construction.lua).
+            local err = radial_error[current]
+            if err and err ~= "" then why = (err:gsub("%.%s*$", ""))
+            elseif why and not why:find("^Missing resources") then
                 -- Every work team busy: "Clear debris" said the ring may be
                 -- out of date seven times, and reopening it did not help
                 -- (firefly82, German game, 2026-10-18). The hero manager

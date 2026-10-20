@@ -2,6 +2,16 @@
 
 ## Monday October 19th 2026
 
+Version 0.3.61
+
+A few more fixes for players using the game in another language, from firefly82's review.
+
+- Fixed: in a story conversation, a choice's chance now reads cleanly in every language, using the game's own word for it. In German, "Erfolgschance: 70%" used to come through raw.
+- Fixed: when you press Enter on a locked action in a room's ring, you now hear the game's own reason in your language, like "Not possible: No Life support". In other languages it used to tell you the ring might be out of date instead.
+- Fixed: star systems on the Sector Map keep the game's own word before their number in every language.
+
+## Monday October 19th 2026
+
 Version 0.3.60
 
 - Changed: the little key reminders Voyager Access adds, like "R repeats the line", "Left and Right choose another" and "Enter to choose a hero", are now said the first two times only. After a couple of hours of play they were getting in the way of the story. F1 and Control F1 still list every key whenever you need them.
