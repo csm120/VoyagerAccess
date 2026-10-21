@@ -24,6 +24,16 @@ if not VOYAGER_LOOP_WRAPPED then
     end
 end
 
+-- Development only: how long the mod's own work holds the game (timing.lua,
+-- flag file "timing").
+do
+    local flag = io.open((os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\timing", "r")
+    if flag then
+        flag:close()
+        require("timing").install()
+    end
+end
+
 local speech = require("speech")
 local focus = require("focus")
 
@@ -33,6 +43,7 @@ focus.install()
 require("dialogue").install()
 require("story").install()
 require("popups").install()
+require("system").install()
 require("quest").install()
 require("help").install()
 require("resources").install()
@@ -44,6 +55,7 @@ require("credits").install()
 require("techtree").install()
 require("combat").install()
 require("ship").install()
+require("events").install()
 require("language").install()
 require("keys").install()
 require("reload")()

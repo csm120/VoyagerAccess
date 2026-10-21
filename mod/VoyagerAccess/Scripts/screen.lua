@@ -86,6 +86,40 @@ function M.inside(w, target_path)
     return ok2 and r
 end
 
+-- The texts inside one widget, in the order of its own widget tree, as
+-- strings: read from that widget's parts, not by searching every text in
+-- the game (quest.lua read each objective that way, about 480 ms a second;
+-- timing log, 2026-10-21). Only visible branches are entered: walking the
+-- children of a hidden panel crashed the game (probe, 2026-10-20).
+-- skip: a class name whose widgets inside root are left out (a mission
+-- line's own goal widgets, read separately).
+function M.texts_in(root, skip)
+    local W = StaticFindObject("/Script/UMG.UserWidget")
+    local P = StaticFindObject("/Script/UMG.PanelWidget")
+    local out, count = {}, 0
+    local function walk(w, depth)
+        if depth > 30 or count > 400 or not valid(w) then return end
+        count = count + 1
+        if not w:IsVisible() then return end
+        if w:IsA(W) then
+            if skip and depth > 0 and w:GetClass():GetFName():ToString() == skip then return end
+            local tree = w.WidgetTree
+            if valid(tree) and valid(tree.RootWidget) then walk(tree.RootWidget, depth + 1) end
+            return
+        end
+        local okt, s = pcall(function() return w:GetText():ToString() end)
+        if okt and type(s) == "string" then
+            if s ~= "" then out[#out + 1] = s end
+            return
+        end
+        if P and w:IsA(P) then
+            for i = 0, w:GetChildrenCount() - 1 do walk(w:GetChildAt(i), depth + 1) end
+        end
+    end
+    pcall(walk, root, 0)
+    return out
+end
+
 -- All on-screen texts as a sorted list of "text" strings.
 function M.texts()
     local items, seen = {}, {}

@@ -1,25 +1,42 @@
 -- Speaks the focused button whenever keyboard/gamepad focus moves.
 -- Proven 2026-10-10 on the main menu: arrow keys move Slate focus to a widget
 -- INSIDE a CommonButtonBase, and CommonButtonBase:HandleFocusReceived never
--- fires, so this polls HasFocusedDescendants/HasKeyboardFocus on buttons.
+-- fires, so focus has to be looked up (HasFocusedDescendants or
+-- HasKeyboardFocus on buttons).
+--
+-- When: once after anything that can move focus, never on a timer. The
+-- 100 ms loop held the game long enough to swallow keys (E on the Mess
+-- Hall: 14 of 56 lost with the mod's loops running, 36 of 36 with them
+-- stopped; firefly82, 2026-10-21). What moves focus is the player's input
+-- (keys.lua tells after every key and mouse button, the game's own too) and
+-- the game opening or closing a window or showing choices (popups.lua and
+-- dialogue.lua ask for a look then): M.request_check.
 
 local speech = require("speech")
 
 local M = {}
 
-local INTERVAL_MS = 100
 -- Never keep a UObject across ticks: the game destroys widgets (menus close,
 -- dialogue ends) and touching the stale object crashed UE4SS while wrapping
 -- a garbage pointer (symbolized crash, 2026-10-10 21:55). Keep paths and
 -- look them up again with resolve() each time.
 local current = nil          -- path of the focused button
-local ticks, focus_tick = 0, -100   -- focus polls so far, and the poll choices appeared
-local choice_seen_at = -100         -- os.clock() when the focused dialogue choice was last on screen
-local arrow_tick = -100              -- the poll the game was last given Up or Down
-local go_in_until = -100             -- polls until which a crossing in the main menu is allowed (Enter, Right, Left, Backspace, Escape)
+-- The last of the mod's keys that moves in or between menus, so a focus
+-- change is put down to the key that caused it, not to a time window:
+-- "arrow" (Up, Down) or "go_in" (Enter, Left, Right, Backspace, Escape).
+-- The 100 ms loop used "within 2 polls of an arrow" and "30 polls after
+-- Enter" instead (firefly82's review, 2026-10-21).
+local last_nav = nil
+-- The dialogue choice whose label was said last; Enter picks only a choice
+-- the player has heard (it used to be "not within 10 polls of the choices
+-- appearing").
+local heard_choice = nil
+-- The focused choice was seen hidden since it was last said: when it is
+-- shown again, it is said again (was "not seen for 0.6 s").
+local choice_hidden = false
 -- Paths of buttons Enter was pressed on, oldest first; Backspace returns to them.
 local back_stack = {}
-local pending_click = nil    -- { button = path, menu = path, polls = n }
+local pending_click = nil    -- { button = path, menu = path }
 local click
 local label_for
 local confirm_order
@@ -167,9 +184,6 @@ local function skip_heading(b)
     local i = list:GetChildIndex(b)
     return skip_toward(list, i, last_dir) or skip_toward(list, i, -last_dir)
 end
-
--- How many polls a pending click waits for a panel animation (100 ms each).
-local MAX_WAIT_POLLS = 15
 
 local crumb = require("crumb")
 
@@ -407,10 +421,16 @@ local ring_hooked = false
 local radial_error = {}
 
 -- Focus reached a segment: hover it with the mouse (through the helper),
--- then say the centre's details and its place in the ring; with no
--- details (no helper, or a centre without them), the command's name.
+-- say at once what the segment itself gives (a room's data, or the
+-- command's name), and the centre's details once the game reports the
+-- hover.
+local install_ring_hover   -- below
+
 function M.radial_focus(b, path)
     local menu = path:match("^(.-WBP_RadialMenu_C_%d+)%.")
+    -- The segment's class is loaded now that focus is on one: hook its hover
+    -- before the pointer moves (no 3 s install loop).
+    pcall(install_ring_hover, b)
     -- A room to build is read from the game's data at once: the hover and
     -- its 450 ms wait matched the centre for none of 45 room segments in a
     -- two-hour session, so every arrow key waited for nothing (firefly82,
@@ -431,26 +451,37 @@ function M.radial_focus(b, path)
             -- so in 1024x768 the pointer missed every segment and no centre
             -- (and no locked reason) appeared (firefly82's review, German
             -- game, 2026-10-20). Convert to the helper's unit here, so older
-            -- helpers point right too.
-            local k = 1
+            -- helpers point right too. Every number comes from the game (the
+            -- segment's own size, the viewport's scale and size); without one
+            -- of them the pointer stays where it is rather than going to a
+            -- guessed place (the old fallback was a fixed 62).
+            -- 350/1080 is the helper's own unit (speech.ring_mouse), not a
+            -- game value.
+            local k = nil
             pcall(function()
                 local wll = StaticFindObject("/Script/UMG.Default__WidgetLayoutLibrary")
                 local scale = wll:GetViewportScale(b)
                 local size = wll:GetViewportSize(b)
-                local half = 62
-                pcall(function()
-                    local d = b:GetDesiredSize()
-                    if d and d.Y and d.Y > 0 then half = d.Y / 2 end
-                end)
-                if type(scale) == "number" and scale > 0 and size and size.Y and size.Y > 0 then
-                    k = (r + half) * scale / (350 / 1080 * size.Y)
+                local d = b:GetDesiredSize()
+                if type(scale) == "number" and scale > 0 and size and size.Y and size.Y > 0
+                    and d and d.Y and d.Y > 0 then
+                    k = (r + d.Y / 2) * scale / (350 / 1080 * size.Y)
                 end
             end)
+            if not k then
+                print("[VoyagerAccess] radial: no segment size or viewport scale, pointer not moved\n")
+                return
+            end
             print(string.format("[VoyagerAccess] radial: pointer %.2f radii\n", k))
             speech.ring_mouse(k * pos.X / r, k * pos.Y / r)
         end)
     end
-    local function say_it()
+    -- hovered: the game has said this segment is under the pointer, so its
+    -- centre is this segment's and may be read. Before that only what
+    -- belongs to the segment itself is read (its name, a room's data): a
+    -- centre read without the game's word may still show the segment the
+    -- pointer was on before.
+    local function say_it(hovered)
         pcall(function()
             if current ~= path then return end
             local nb = resolve(path)
@@ -462,7 +493,7 @@ function M.radial_focus(b, path)
                 -- The centre's reason when it shows one. "Missing resources"
                 -- keeps the mod's, which names the short ones (a sighted
                 -- player sees those costs in red).
-                if menu and ring_hooked and not (ring.why and ring.why:find("^Missing resources")) then
+                if menu and hovered and not (ring.why and ring.why:find("^Missing resources")) then
                     last_center_error = nil
                     pcall(radial_details, menu)
                     local ge = last_center_error and last_center_error:gsub("%.%s*$", "")
@@ -475,7 +506,7 @@ function M.radial_focus(b, path)
                         end
                     end
                 end
-            elseif menu then
+            elseif menu and hovered then
                 last_center_error = nil
                 text = radial_details(menu)
                 radial_error[path] = last_center_error
@@ -493,43 +524,66 @@ function M.radial_focus(b, path)
             if okf and fit then text = text:gsub("%.%s*$", "") .. ". " .. fit end
             local place = ring_place(nb)
             if place ~= "" then text = text .. ". " .. place end
+            -- The hover's reading only when it adds something: a room whose
+            -- centre gave no other reason is not said twice.
+            if hovered and radial_said[path] == text then return end
             radial_said[path] = text
-            print("[VoyagerAccess] radial: " .. text .. "\n")
+            print("[VoyagerAccess] radial: " .. (hovered and "hovered: " or "") .. text .. "\n")
             speech.say(text, true)
         end)
     end
-    if direct and not ring_hooked then return say_it() end
-    -- Read when the game says the segment is hovered (its BP_OnHovered,
-    -- hooked in M.install), not after a fixed 450 ms (firefly82's review,
-    -- 2026-10-20). With no hover in time, the pointer missed: read what
-    -- there is.
-    local p = { path = path, fn = say_it }
-    ring_pending = p
-    ExecuteInGameThreadWithDelay(ring_hooked and 1000 or 450, function()
-        if p.fn then
-            if ring_hooked then print("[VoyagerAccess] radial: no hover in time\n") end
+    -- At once what the segment itself gives (no waiting); then again, with
+    -- its centre, when the game says the segment is hovered (BP_OnHovered,
+    -- install_ring_hover). There is no timer: a pointer that missed the
+    -- segment leaves the first reading standing, and the log says so when
+    -- focus moves on (firefly82's review, 2026-10-21; the fixed 450 ms and
+    -- then the 1000 ms fallback read a centre that could still be another
+    -- segment's).
+    if ring_pending and ring_pending.fn then
+        print("[VoyagerAccess] radial: no hover came for " .. ring_pending.path:match("([^%.]+)$") .. "\n")
+    end
+    ring_pending = nil
+    say_it(false)
+    if ring_hooked then ring_pending = { path = path, fn = function() say_it(true) end } end
+end
+
+-- The segment's own hover event: a pre callback, so the centre is read on
+-- the next tick, after the game has filled it. BP_OnHovered is CommonUI's
+-- event, which every segment class implements for itself
+-- (WBP_RadialButton_C and the six WBP_RadialButtonCombat*_C, CXX dump
+-- 2026-10-18; WBP_RadialButton_Small_C uses its parent's), so the hook goes
+-- on the class that defines it for this segment, found from the segment
+-- itself when focus first reaches one of its kind.
+local ring_hooked_on = {}   -- function path -> true once hooked
+
+local function on_ring_hover(ctx)
+    local okp, bp = pcall(function() return path_of(ctx:get()) end)
+    if not okp then return end
+    ExecuteInGameThread(function()
+        local p = ring_pending
+        if p and p.fn and p.path == bp then
+            print("[VoyagerAccess] radial: hovered\n")
             local fn = p.fn; p.fn = nil; fn()
         end
     end)
 end
 
--- The segment's own hover event: a pre callback, so the centre is read on
--- the next tick, after the game has filled it.
-local RING_HOVER = "/Game/STVoyager/GXUI/WBP_RadialButton.WBP_RadialButton_C:BP_OnHovered"
-local function install_ring_hover()
-    if ring_hooked or not StaticFindObject(RING_HOVER) then return end
-    ring_hooked = pcall(RegisterHook, RING_HOVER, function(ctx)
-        local okp, bp = pcall(function() return path_of(ctx:get()) end)
-        if not okp then return end
-        ExecuteInGameThread(function()
-            local p = ring_pending
-            if p and p.fn and p.path == bp then
-                print("[VoyagerAccess] radial: hovered\n")
-                local fn = p.fn; p.fn = nil; fn()
-            end
-        end)
-    end)
-    print("[VoyagerAccess] radial: hover hook " .. (ring_hooked and "installed" or "not installed") .. "\n")
+install_ring_hover = function(b)
+    ring_hooked = false
+    local cls = b and b:GetClass()
+    while cls and cls:IsValid() do
+        local fpath = cls:GetFullName():match("^%S+%s+(.+)$") .. ":BP_OnHovered"
+        if ring_hooked_on[fpath] then ring_hooked = true; return end
+        if StaticFindObject(fpath) then
+            local ok = pcall(RegisterHook, fpath, on_ring_hover)
+            ring_hooked_on[fpath] = ok or nil
+            ring_hooked = ok
+            print("[VoyagerAccess] radial: hover hook on " .. fpath:match("([%w_]+:BP_OnHovered)$") .. (ok and " installed" or " not installed") .. "\n")
+            return
+        end
+        cls = cls:GetSuperStruct()
+    end
+    print("[VoyagerAccess] radial: no BP_OnHovered for this segment's class\n")
 end
 
 function M.radial_said(path)
@@ -1277,10 +1331,10 @@ local function wire_rows(path)
     pcall(function()
         local cur = resolve(path)
         if not (cur and cur:IsValid()) or cur:GetIsEnabled() then return end
-        -- Only just after an arrow: Auto Resolve disables its own button as
-        -- its window opens, and focus was sent off somewhere hidden (VM,
-        -- 2026-10-16).
-        if not (arrow_tick and ticks and ticks - arrow_tick <= 3) then return end
+        -- Only when an arrow moved it there: Auto Resolve disables its own
+        -- button as its window opens, and focus was sent off somewhere
+        -- hidden (VM, 2026-10-16).
+        if last_nav ~= "arrow" then return end
         local at = nil
         for i, b in ipairs(all) do if path_of(b) == path then at = i end end
         if not at then return end
@@ -1558,15 +1612,29 @@ label_for = function(b, path)
     return label
 end
 
+local poll_again   -- below: one more look on the next tick
+
 local function poll()
+    -- New windows of a kind seen for the first time, not on screen when
+    -- they were made (popups.lua).
+    pcall(function() require("popups").recheck_fresh() end)
     crumb.at("focus: pending click")
     if pending_click then
         local p = pending_click
-        p.polls = p.polls + 1
         local menu = resolve(p.menu)
         local switcher = menu and menu.ContentPanel
         local animating = switcher and switcher:IsValid() and switcher:IsTransitionPlaying()
-        if not animating or p.polls >= MAX_WAIT_POLLS then
+        p.since = p.since or os.clock()
+        if animating and os.clock() - p.since < 1.5 then
+            -- OPEN POINT: the panel's switcher gives no event when its
+            -- animation ends that the mod knows of yet, so it is asked again
+            -- while the game itself says it is still switching. Every
+            -- 100 ms and for 1.5 s at most, then the click goes anyway: a
+            -- look on every tick with no limit was a per-frame loop heavier
+            -- than the ones removed, had the transition stuck (review of
+            -- firefly82's patch, 2026-10-21; 0.3.67 stopped after 15 polls).
+            ExecuteInGameThreadWithDelay(100, function() poll_again() end)
+        else
             pending_click = nil
             local button = resolve(p.button)
             if button then click(button) end
@@ -1650,27 +1718,27 @@ local function poll()
         track_unfocused_window()
     end
     local path = b and path_of(b) or nil
-    ticks = ticks + 1
     -- After an optional dialogue choice the choices come back on the same
     -- button, focus never changes, and nothing was said; Enter then took the
     -- next choice unheard, three in a row (distress call, VM, 2026-10-15).
-    -- A choice that shows again is read again, with the Enter guard.
-    -- Polls while the choice is hidden can return early above, so the test
-    -- is how long since it was last seen on screen.
+    -- A choice seen hidden (the line after it playing) and then shown again
+    -- is read again, with the Enter guard.
     local is_choice = path and require("dialogue").is_choice(path)
     local shown_now = is_choice and b and require("screen").shown(b) or false
     if path and path == current and is_choice then
-        if shown_now and os.clock() - choice_seen_at > 0.6 then
-            focus_tick = ticks
+        if not shown_now then
+            choice_hidden = true
+        elseif choice_hidden then
+            choice_hidden = false
             local label = label_for(b, path)
             picked_choice, picked_label = nil, nil
             print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
+            heard_choice = label and path or nil
             if label then speech.say(label, true) end
         end
-        if shown_now then choice_seen_at = os.clock() end
         return
     end
-    if shown_now then choice_seen_at = os.clock() end
+    choice_hidden = false
     if path == current then return end
     -- In the full game the item whose panel was open stays selected after
     -- Backspace, with its panel still open beside the menu, and Down from
@@ -1697,9 +1765,10 @@ local function poll()
     -- The game can move focus on Down before the mod reads that Down from
     -- keys.txt, so a crossing did not look like an arrow (1 run in 3 in the
     -- VM, 2026-10-14). Inside the menu's own tree a crossing is allowed only
-    -- just after Enter, Right, Left, Backspace or Escape.
+    -- when the last key was Enter, Right, Left, Backspace or Escape. The look
+    -- now comes after the key that moved focus, so the key is known.
     local inside = zone(current or "") ~= "outside" and zone(path or "") ~= "outside"
-    local by_arrow = ticks - arrow_tick <= 2 or (inside and ticks > go_in_until)
+    local by_arrow = last_nav == "arrow" or (inside and last_nav ~= "go_in")
     if path and current and by_arrow and resolve(current)
             and zone(current) ~= zone(path)
             and (current:find("WBP_MainMenu", 1, true) or current:find("LCARS_Button_MainMenu", 1, true)) then
@@ -1715,7 +1784,7 @@ local function poll()
     current = path
     -- The battle setup's Start action follows focus (combat.lua).
     if path and path:find(".HeroLoadout.", 1, true) then pcall(require("combat").setup_sync) end
-    if path and not was_choice and require("dialogue").is_choice(path) then focus_tick = ticks end
+    if path and not was_choice and require("dialogue").is_choice(path) then heard_choice = nil end
     if path then
         local ok, err = pcall(wire_rows, path)
         if not ok then print("[VoyagerAccess] rows error: " .. tostring(err) .. "\n") end
@@ -1762,8 +1831,10 @@ local function poll()
     -- go_back is putting a room's hero back and says the result itself.
     if os.clock() < (M.hush_focus_until or 0) then return end
     -- An event between its choice and its result (popups.lua).
+    -- Held until the game shows the result (popups.result_pending), not for
+    -- up to 10 s.
     if path:find("WBP_POIMultipleChoice_C", 1, true)
-        and (os.clock() < (require("popups").result_pending_until or 0) or require("popups").event_unread(path)) then
+        and (require("popups").result_pending or require("popups").event_unread(path)) then
         print("[VoyagerAccess] focus: held until the event result is read\n")
         return
     end
@@ -1788,25 +1859,68 @@ local function poll()
     -- Selection" when focus was polled first (demo, VM, 2026-10-15).
     -- And a battle's result: "Proceed" came before "Combat result:
     -- victory..." (Q Trials ambush, VM, 2026-10-15).
-    for _, cls in ipairs({ "WBP_RoomManagementV2_C", "WBP_POIMultipleChoice_C", "WBP_MultipleChoiceWidget_C",
-                           "WBP_FirstPerformanceSelection_C", "WBP_GammaCorrection_C", "WBP_BattleResultLCARS_C",
-                           "WBP_SandboxSectorResult_C", "WBP_CombatAutoResolve_C",
-                           -- "Stay Here, 1 of 2" before "Old Friends, New
-                           -- Enemies. Completed..." (sector 7, 2026-10-18).
-                           "WBP_MissionInfoWidget_C", "WBP_SideMissionFinished_C",
-                           -- "Sector 01: Trading Sector, 1 of 3" came before
-                           -- "Leave Sector: ..." (Q Trial, VM, 2026-10-18).
-                           "WBP_LeaveSector_C" }) do
-        if not (cls == "WBP_RoomManagementV2_C" and okm and map) then
-            for _, w in ipairs(FindAllOf(cls) or {}) do
-                if w:IsValid() and live(w) and require("screen").shown(w) and not popups.was_announced(path_of(w)) then
-                    return
-                end
-            end
-        end
-    end
+    -- popups.lua knows which windows the game has opened and which it has
+    -- read; asking it replaces a search over these classes on every look.
+    local HOLD = { WBP_RoomManagementV2_C = not (okm and map), WBP_POIMultipleChoice_C = true,
+        WBP_MultipleChoiceWidget_C = true, WBP_FirstPerformanceSelection_C = true, WBP_GammaCorrection_C = true,
+        WBP_BattleResultLCARS_C = true, WBP_SandboxSectorResult_C = true, WBP_CombatAutoResolve_C = true,
+        -- "Stay Here, 1 of 2" before "Old Friends, New Enemies.
+        -- Completed..." (sector 7, 2026-10-18).
+        WBP_MissionInfoWidget_C = true, WBP_SideMissionFinished_C = true,
+        -- "Sector 01: Trading Sector, 1 of 3" came before "Leave Sector:
+        -- ..." (Q Trial, VM, 2026-10-18).
+        WBP_LeaveSector_C = true }
+    if popups.unread_of(HOLD) then return end
     label = with_position(label, path)
-    if label then speech.say(label, true) end
+    if label then
+        if require("dialogue").is_choice(path) then heard_choice = path end
+        speech.say(label, true)
+    end
+end
+
+-- One look after whatever may have moved focus: queued for the next game
+-- tick (the game has taken the key by then), and only once however many
+-- ask before it runs.
+local check_queued = false
+function M.request_check()
+    if check_queued then return end
+    check_queued = true
+    ExecuteInGameThread(function()
+        check_queued = false
+        local ok, err = pcall(poll)
+        if not ok then print("[VoyagerAccess] focus error: " .. tostring(err) .. "\n") end
+    end)
+end
+poll_again = M.request_check
+
+-- The focused button is said again on the next look: a hold that ran out
+-- without its window being read (the 10 s event result limit, the 2 s
+-- grace for a window never shown) left the button it had held unsaid, as
+-- the look took it for the one already current (GPT review, 2026-10-21).
+function M.reannounce()
+    current = nil
+    M.request_check()
+end
+
+-- A look now and three more shortly after, for focus that moves a moment
+-- after a key or a window event: the mod's own delayed SetFocus calls
+-- (about 45 of them, dialogue's sector choices 200 ms after Down) and the
+-- game's after an animation were never said once looks came only with
+-- input (review of firefly82's patch, 2026-10-21). One-off looks, not a
+-- loop; a newer request replaces the older one's pending looks.
+local settle_token = 0
+function M.request_settle()
+    settle_token = settle_token + 1
+    local mine = settle_token
+    M.request_check()
+    -- 1500: the main menu took focus after the performance screen's fade,
+    -- later than 700 ms, and "CAMPAIGN, 1 of 7" was not said (VM,
+    -- 2026-10-21).
+    for _, ms in ipairs({ 250, 700, 1500 }) do
+        ExecuteInGameThreadWithDelay(ms, function()
+            if settle_token == mine then M.request_check() end
+        end)
+    end
 end
 
 -- The game binds no keyboard key to Accept (only Escape, to Cancel), so
@@ -1933,11 +2047,12 @@ local function activate()
     end
     -- The Enter that moves the last line on can land just as the choices
     -- come up, and it picked "Choice 1" before it was heard (twice,
-    -- 2026-10-14). Within a second of the choices appearing, Enter says
-    -- the focused choice instead of picking it.
-    if choice and require("screen").shown(choice) and ticks - focus_tick < 10 then
+    -- 2026-10-14). Enter picks only a choice whose label has been said;
+    -- otherwise it says it (was: within a second of the choices appearing).
+    if choice and require("screen").shown(choice) and heard_choice ~= current then
         local label = label_for(choice, current)
-        print("[VoyagerAccess] enter: choice just appeared, reading it\n")
+        print("[VoyagerAccess] enter: choice not heard yet, reading it\n")
+        heard_choice = label and current or nil
         if label then speech.say(label, true) end
         return
     end
@@ -2810,7 +2925,7 @@ function M.install()
     -- walks them (awaymission.lua).
     local away = require("awaymission")
     keys.on("enter", function()
-        go_in_until = ticks + 30   -- a panel animates open first
+        last_nav = "go_in"   -- a panel may animate open first; focus moves in after
         if require("popups").close_tutorial() then return end
         if require("whatsnew").open() then return require("whatsnew").close() end
         if require("hotkeys").open() then return require("hotkeys").repeat_item() end
@@ -2840,7 +2955,7 @@ function M.install()
         activate()
     end)
     keys.on("backspace", function()
-        go_in_until = ticks + 5
+        last_nav = "go_in"
         if require("whatsnew").close() then return end
         if require("hotkeys").close() then return end
         if require("credits").close() then return end
@@ -2874,7 +2989,7 @@ function M.install()
         ExecuteInGameThreadWithDelay(100, function() pcall(check) end)
     end
     keys.on("escape", function()
-        go_in_until = ticks + 5
+        last_nav = "go_in"
         local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
             or require("view").nav_close() or (map_mode() and system.menu_close())
         if closed then undo_pause() return end
@@ -2934,6 +3049,7 @@ function M.install()
     keys.on("up", function()
         pcall(require("combat").energy_key)
         if require("qtrials").step(current, -1) then return end
+        if require("popups").leave_sector_step(current, -1) then return end
         if require("rooms").trade_offer_step(current, -1) then return end
         if require("whatsnew").open() then require("whatsnew").step(-1)
         elseif require("hotkeys").open() then require("hotkeys").step(-1)
@@ -2947,14 +3063,15 @@ function M.install()
         elseif require("view").overview_list_step(-1) then return
         elseif M.virtual_active() then M.virtual_step(-1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
-        elseif require("dialogue").choice_step(current, -1) then last_dir = -1 arrow_tick = ticks
+        elseif require("dialogue").choice_step(current, -1) then last_dir = -1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
-        else last_dir = -1 arrow_tick = ticks end
+        else last_dir = -1 last_nav = "arrow" end
     end)
     keys.on("down", function()
         pcall(require("combat").energy_key)
         if require("qtrials").step(current, 1) then return end
+        if require("popups").leave_sector_step(current, 1) then return end
         if require("rooms").trade_offer_step(current, 1) then return end
         if require("whatsnew").open() then require("whatsnew").step(1)
         elseif require("hotkeys").open() then require("hotkeys").step(1)
@@ -2968,15 +3085,15 @@ function M.install()
         elseif require("view").overview_list_step(1) then return
         elseif M.virtual_active() then M.virtual_step(1)
         elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
-        elseif require("dialogue").choice_step(current, 1) then last_dir = 1 arrow_tick = ticks
+        elseif require("dialogue").choice_step(current, 1) then last_dir = 1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
-        else last_dir = 1 arrow_tick = ticks end
+        else last_dir = 1 last_nav = "arrow" end
     end)
     local rooms = require("rooms")
     keys.on("left", function()
         pcall(require("combat").energy_key)
-        go_in_until = ticks + 5
+        last_nav = "go_in"
         if require("qtrials").switch_ship(current, -1) then return end
         if require("events").hero_step(current, -1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(-1) end
@@ -2987,7 +3104,7 @@ function M.install()
     end)
     keys.on("right", function()
         pcall(require("combat").energy_key)
-        go_in_until = ticks + 5
+        last_nav = "go_in"
         if require("qtrials").switch_ship(current, 1) then return end
         if require("events").hero_step(current, 1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(1) end
@@ -3026,15 +3143,12 @@ function M.install()
     end
     keys.on("home", function() home_end(false) end)
     keys.on("end", function() home_end(true) end)
-    -- On the game thread directly; LoopAsync plus ExecuteInGameThread is a
-    -- suspect in an idle crash inside UE4SS (2026-10-10 20:28, not proven).
-    -- The ring button's class loads with the first ring: try every 3 s.
-    LoopInGameThreadWithDelay(3000, function() pcall(install_ring_hover) end)
-    LoopInGameThreadWithDelay(INTERVAL_MS, function()
-        local ok, err = pcall(poll)
-        if not ok then print("[VoyagerAccess] focus error: " .. tostring(err) .. "\n") end
-    end)
-    print("[VoyagerAccess] focus polling installed\n")
+    -- A look after every key and mouse button (keys.lua), and one now for
+    -- whatever has focus as the mod starts; windows and dialogue ask for
+    -- theirs (popups.lua, dialogue.lua). No loop.
+    keys.on_any(M.request_settle)
+    M.request_check()
+    print("[VoyagerAccess] focus: looks after input and window changes\n")
 end
 
 return M

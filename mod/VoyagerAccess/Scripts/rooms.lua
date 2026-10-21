@@ -33,7 +33,9 @@ local open_window   -- defined below; the power button label needs it
 local BUTTON_NAMES = { OpenSelectionButton = "Assign a hero" }
 
 -- Texts on screen under path, as name -> text (first of each name).
-local function texts_under(path)
+-- stop (optional): texts count as shown when they are shown inside that
+-- widget, for a window still fading in.
+local function texts_under(path, stop)
     local by = {}
     local prefix = path .. "."
     -- FindAllOf does not include subclasses: a room hero's bonus,
@@ -42,7 +44,7 @@ local function texts_under(path)
     for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and path_of(t)
-            if tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
+            if tp and tp:sub(1, #prefix) == prefix and screen.shown(t, stop) then
                 local name = tp:match("([^%.]+)$")
                 if not by[name] then by[name] = plain(text_of(t)) end
             end
@@ -121,7 +123,7 @@ function M.workteam_label(path)
         local by = texts_under(info)
         local action = by.ActionText and by.ActionText:gsub("^%l", string.upper) or "Assign"
         local id = by.WorkTeamID or "Work team"
-        local activity = by.WorkTeamActivity and by.WorkTeamActivity:lower() or nil
+        local activity = by.WorkTeamActivity and require("tr").lower(by.WorkTeamActivity) or nil
         return id .. (activity and (", " .. activity) or "") .. ". " .. action .. "."
     end
     return nil
@@ -251,7 +253,7 @@ function M.serving_label(path)
     if not by.TitleText then return nil end
     local label = by.TitleText
     if by.ContentText and by.ContentText ~= "" then
-        label = label .. ", " .. (by.TextBlock_106 or "Morale"):lower() .. " " .. by.ContentText
+        label = label .. ", " .. require("tr").lower(by.TextBlock_106 or "Morale") .. " " .. by.ContentText
     end
     -- The window describes only the ration in use: say it with that one.
     local b = StaticFindObject(path)
@@ -370,7 +372,7 @@ function M.button_label(path, label)
         -- without life support read "Dismantle" as if it could be done and
         -- Enter did nothing (VM, 2026-10-15).
         if (name:find("ImpossibleReason") or name:find("InactiveReason") or name:find("CantActivateReason")) and text ~= "" then
-            parts[#parts + 1] = "Not possible: " .. text:lower()
+            parts[#parts + 1] = "Not possible: " .. require("tr").lower(text)
         end
     end
     local needs = {}
@@ -443,7 +445,7 @@ function M.hero_label(path)
     local name = plain(text_of(plaque.HeroNameText))
     local by = texts_under(bpath)
     local head = name
-    if by.RankText then head = head .. ", " .. by.RankText:lower() end
+    if by.RankText then head = head .. ", " .. require("tr").lower(by.RankText) end
     if by.TraitText and by.TraitText ~= "" then head = head .. ", " .. by.TraitText end
     -- Injured or Severely Injured over the portrait, as in the away team
     -- list (awaymission.lua plaque_text, 2026-10-17).
@@ -451,7 +453,7 @@ function M.hero_label(path)
         local st = plaque.HeroRoomText
         if st and st:IsValid() and screen.shown(st) then
             local s = plain(text_of(st))
-            if s ~= "" and s:sub(1, 1) ~= "#" and s:lower():find("injur") then head = name .. ", " .. s:lower() .. head:sub(#name + 1) end
+            if s ~= "" and s:sub(1, 1) ~= "#" and s:lower():find("injur") then head = name .. ", " .. require("tr").lower(s) .. head:sub(#name + 1) end
         end
     end)
     parts[#parts + 1] = head
@@ -846,7 +848,7 @@ function M.crew_text()
         local item = plain(text_of(r.CrewName))
         local cond = plain(text_of(r.Condition))
         local work = plain(text_of(r.Workplace))
-        if cond ~= "" and cond ~= "-" then item = item .. ", " .. cond:lower() end
+        if cond ~= "" and cond ~= "-" then item = item .. ", " .. require("tr").lower(cond) end
         if work ~= "" and work ~= "-" then item = item .. ", " .. work end
         if item ~= "" then items[#items + 1] = item end
     end
@@ -972,7 +974,7 @@ function M.trade_offer_label(offer)
     -- designer text: "Not possible: #trade blocked text" (VM, 2026-10-16).
     local blocked = ""
     pcall(function() if screen.shown(offer.TradeBlockedText) then blocked = plain(text_of(offer.TradeBlockedText)) end end)
-    if blocked ~= "" and not blocked:find("^#") then out[#out + 1] = "Not possible: " .. blocked:lower() end
+    if blocked ~= "" and not blocked:find("^#") then out[#out + 1] = "Not possible: " .. require("tr").lower(blocked) end
     return table.concat(out, ". ") .. "."
 end
 
@@ -1067,17 +1069,21 @@ end
 
 -- Read when a room window opens: name, level, state, and the description.
 function M.window_text(path)
-    local by = texts_under(path)
+    -- Shown inside the window, not up to the screen: a room window opened a
+    -- second time is read while it still fades in, and every text counted as
+    -- hidden, so it was read as "Room." (demo, VM, 2026-10-21).
+    local by = texts_under(path, StaticFindObject(path))
     local head = by.RoomNameText or require("tr").word("Room")
     if by.RoomLevel then head = head .. ", " .. by.RoomLevel:gsub("^lvl 0*", "level ") end
-    if by.ActiveText and by.ActiveText ~= "" then head = head .. ", " .. by.ActiveText:lower() end
+    if by.ActiveText and by.ActiveText ~= "" then head = head .. ", " .. require("tr").lower(by.ActiveText) end
     -- The energy it uses, a number beside a lightning icon in the header
     -- (not read until 2026-10-14, when power ran short).
     local energy = by.EnergyConsumptionText
     if energy and energy:match("^%d+$") then head = head .. ", uses " .. energy .. " energy" end
     local out = { head }
+    local win = StaticFindObject(path)
     for _, w in ipairs(FindAllOf("WBP_RoomDescriptionModule_C") or {}) do
-        if w:IsValid() and screen.shown(w) then
+        if w:IsValid() and screen.shown(w, win) then
             local d = plain(text_of(w.DescriptionText))
             if d ~= "" then out[#out + 1] = d end
         end

@@ -54,6 +54,34 @@ class LuaCallTests(unittest.TestCase):
                 problems[f.name] = sorted(bad)
         self.assertEqual(problems, {})
 
+    def test_no_local_function_called_above_its_definition(self):
+        # A local function is not visible above its own "local function"
+        # line, so a call written earlier looks up a global of that name,
+        # which is nil: I with the N list open said nothing because
+        # view.lua's nav_where called nav_text, defined below it (review of
+        # firefly82's patch, 2026-10-21). A "local name" forward
+        # declaration above the call makes it fine.
+        problems = []
+        for f in sorted(SCRIPTS.glob("*.lua")):
+            code = re.sub(r"--\[\[.*?\]\]", lambda m: "\n" * m.group(0).count("\n"),
+                          f.read_text(encoding="utf-8"), flags=re.S)
+            lines = [re.sub(r"--.*$", "", re.sub(r'"(?:\\.|[^"\\])*"', '""', ln)) for ln in code.splitlines()]
+            for n, line in enumerate(lines):
+                m = re.match(r"\s*local\s+function\s+([A-Za-z_]\w*)", line)
+                if not m:
+                    continue
+                name = m.group(1)
+                above = lines[:n]
+                if any(re.search(r"\blocal\s+([\w\s,]*\b)?%s\b" % name, a) for a in above):
+                    continue
+                if any(re.search(r"\bfunction\s+%s\s*\(" % name, a) for a in above):
+                    continue
+                for k, a in enumerate(above):
+                    if re.search(r"(?<![\w.:])%s\s*\(" % name, a):
+                        problems.append(f"{f.name}:{k + 1} calls {name} (defined at line {n + 1})")
+                        break
+        self.assertEqual(problems, [])
+
     def test_no_unchecked_brush_reads(self):
         # Brush.ResourceObject:GetFName() with no IsValid() check is an
         # access violation when the image has no asset, and pcall cannot

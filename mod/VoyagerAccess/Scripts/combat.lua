@@ -775,6 +775,10 @@ function M.install()
         local ok, err = pcall(poll)
         if not ok then print("[VoyagerAccess] combat error: " .. tostring(err) .. "\n") end
         pcall(fewer_heroes_focus)
+        -- The combat setup's text (awaymission.lua; it was read from the
+        -- away mission's 300 ms loop, which is gone). OPEN POINT: this loop
+        -- itself waits for the combat census (Audit-Restschleifen.md).
+        pcall(function() require("awaymission").combat_prep_poll() end)
     end)
 end
 

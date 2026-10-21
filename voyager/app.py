@@ -394,6 +394,7 @@ def launch_game(command):
             return 0
         time.sleep(1)
     log.info("game started")
+    clear_game_state()
     session = PlaySession()
     tolk = Tolk(DEFAULT_TOLK)
     try:
@@ -441,16 +442,26 @@ def launch_game(command):
 PLAY_CHECK_SECONDS = int(os.environ.get("VOYAGER_PLAY_CHECK_SECONDS", 10 * 60))
 # Long enough for the game to load to its main menu (about half a minute).
 RESTART_WINDOW_SECONDS = 180
-# The mod writes "menu" or "game" here about once a second (help.lua).
+# The mod writes "menu" when the game makes its main menu and "game" when it
+# makes the HUD or a loading screen (help.lua). It used to rewrite the file
+# about once a second from a loop, and the helper took an old file as "not
+# at the menu"; the mod's loops held the game long enough to swallow keys
+# (firefly82, 2026-10-21), so the file is written on change only and is
+# cleared when the game starts (clear_game_state), so an old "menu" from an
+# earlier run never counts.
 GAME_STATE = DATA_DIR / "game-state.txt"
-GAME_STATE_FRESH_SECONDS = 5
+
+
+def clear_game_state():
+    try:
+        GAME_STATE.unlink(missing_ok=True)
+    except OSError:
+        pass
 
 
 def at_main_menu():
-    """True when the mod has just reported the game's main menu."""
+    """True when the mod has reported the game's main menu this run."""
     try:
-        if time.time() - GAME_STATE.stat().st_mtime > GAME_STATE_FRESH_SECONDS:
-            return False
         return GAME_STATE.read_text(encoding="utf-8").strip() == "menu"
     except OSError:
         return False
@@ -574,7 +585,13 @@ def patch_running_game(found):
         except OSError as e:
             log.info("patching scripts in %s failed: %s", game.bin_dir, e)
     if patched:
-        RELOAD_FLAG.write_text("")
+        # A line in keys.txt, which the mod reads anyway (reload.lua): the
+        # flag file it used to look for every second was one of the loops
+        # that held the game long enough to swallow keys (firefly82,
+        # 2026-10-21).
+        from voyager.helper import DEFAULT_KEYS
+        with open(DEFAULT_KEYS, "a", encoding="utf-8") as f:
+            f.write("cmd:reload\n")
         log.info("scripts from %s patched into the running game", found[0])
     return patched
 

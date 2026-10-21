@@ -305,134 +305,146 @@ end
 -- Entering and leaving a room window (Casey, 2026-10-11): the first room
 -- window ever opened says once that Escape closes it (kept in a file, so
 -- reloads and updates do not repeat it; the old per-screen F1 hint came
--- back after every reload).
+-- back after every reload). Said when popups.lua has read the window.
 local HINT_FILE = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\hint-room-escape"
-local room_was_open = false
 
--- Arriving in the ship view or the System Map says where you are, as L
+local function room_hint(_, cls)
+    if cls ~= "WBP_RoomManagementV2_C" then return end
+    local f = io.open(HINT_FILE, "r")
+    if f then f:close() return end
+    speech.say("Escape closes the room. F1 lists the keys.", false)
+    local w = io.open(HINT_FILE, "w")
+    if w then w:write("heard\n") w:close() end
+end
+
+-- Arriving in the ship view or the System Map says where you are, as I
 -- does (Casey, 2026-10-11: resuming a game said nothing about where you
--- were). That covers a resumed game, a closed room or dialogue, and V. A
--- view must hold for two polls (600 ms) before it is spoken, so loading
--- screens do not make it speak twice.
-local stable_view, candidate, candidate_polls = nil, nil, 0
+-- were). That covers a resumed game, a closed room or dialogue, and V.
+-- Looked at when the game says something changed (its view change, a
+-- window or dialogue closing), not every 300 ms: the mod's loops held the
+-- game long enough to swallow keys (firefly82, 2026-10-21). Gone with the
+-- loop: the 600 ms "view must hold for two polls", the 5 s wait after a
+-- loading screen, the 2 s quiet after moving on the map and the second
+-- reading 1 s after a ring closed (the ship's state hook says a room's new
+-- state itself).
+local stable_view = nil
+local queued = false
+-- The view the game last said it changed to (view.lua, from the navigation
+-- bar's OnViewChanged), "ship", "system" or "other".
+local event_view = nil
 
--- After a loading screen, wait before saying where you are: a new campaign's
--- narration starts about 3 s after the load, and "System map. Nothing
--- selected" was said first (2026-10-14).
-local LOAD_SETTLE = 5
-local last_loading = -100
-
-local function view_poll()
-    for _, w in ipairs(FindAllOf("WBP_Loading_Screen_C") or {}) do
-        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
-            last_loading = os.clock()
-        end
-    end
-    if os.clock() - last_loading < LOAD_SETTLE then
-        candidate, candidate_polls = nil, 0
-        return
-    end
+local function view_now()
     local ctx = M.context()
+    -- Nothing in front, and the game has said which view it changed to:
+    -- that view, even before its input is applied.
+    if ctx == "none" and event_view then ctx = event_view end
     local v = (ctx == "ship" or ctx == "system") and ctx or "other"
     -- A window with its own button list is up (Exit to Main Menu's
     -- confirmation): "System map. Class M planet" broke into its BACK and
     -- ACCEPT (Casey, 2026-10-14).
     if require("focus").virtual_active() then v = "other" end
     -- The confirmation opens before its button list exists (heard again in
-    -- the VM with the check above alone).
-    -- Game Over too: "System map. Nothing selected" came after "Game Over.
-    -- The hull ruptured..." (Casey's machine, 2026-10-15).
-    for _, cls in ipairs({ "WBP_PauseMenu_Confirms_C", "WBP_PauseMenu_C", "WBP_GameOver_C" }) do
-        for _, w in ipairs(FindAllOf(cls) or {}) do
-            if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
-                v = "other"
-            end
-        end
+    -- the VM with the check above alone). Game Over too: "System map.
+    -- Nothing selected" came after "Game Over. The hull ruptured..."
+    -- (Casey's machine, 2026-10-15). popups.lua knows which are open.
+    for _, wp in ipairs(require("popups").open_windows()) do
+        if wp:find("WBP_PauseMenu_Confirms_C", 1, true) or wp:find("WBP_GameOver_C", 1, true) then v = "other" end
     end
-    if v ~= candidate then
-        candidate, candidate_polls = v, 1
-        return
-    end
-    candidate_polls = candidate_polls + 1
-    if candidate_polls < 2 or v == stable_view then return end
+    return v
+end
+
+local function view_look()
+    local v = view_now()
+    if v == stable_view then return end
     stable_view = v
     if v == "other" then return end
     -- Not over one of the mod's own lists: "Ship view. Deck 2, Ruined room"
     -- broke into the J room list (2026-10-14).
     if require("ship").list_open() or require("resources").list_open() or require("view").nav_open()
         or require("whatsnew").open() or require("hotkeys").open() then return end
-    -- Not while moving through the map: a tutorial closing made "System
-    -- map. Repair station, 3 of 12" repeat the point just heard (2026-10-14).
-    if v == "system" and os.clock() - (require("system").last_move or -100) < 2 then return end
     local here
     if v == "ship" then here = require("ship").where() or "No room selected"
     else here = require("system").where() or "Nothing selected" end
     local map = require("system").sector() and "Sector map" or "System map"
     local text = (v == "ship" and "Ship view" or map) .. ". " .. here
     -- V already said the view's name (view.toggle).
-    if os.clock() - (require("view").toggled_at or -100) < 4 and map ~= "Sector map" then text = here end
+    -- What is selected then follows the name, it does not cut it off: "Ship
+    -- view" was interrupted at once by "Deck 10, Stellarkartographie"
+    -- (firefly82, 2026-10-21).
+    local view = require("view")
+    local after_name = view.toggled == v and map ~= "Sector map"
+    if after_name then text = here end
+    view.toggled = nil
     print("[VoyagerAccess] view: " .. text .. "\n")
-    speech.say(text, true)
-    -- A room's state text changes a moment after its ring closes: "Deck 11,
-    -- Workshop, on" right after Repair, "repairing" a second later (VM,
-    -- 2026-10-17). Say the room again if it changed in that time.
-    if v == "ship" then
-        ExecuteInGameThreadWithDelay(1000, function()
-            if stable_view ~= "ship" then return end
-            local ok, now = pcall(function() return require("ship").where() end)
-            if ok and now and now ~= here then speech.say(now, true) end
-        end)
+    speech.say(text, not after_name)
+end
+
+-- Something that can change the view happened: one look on the next tick.
+-- view: the view the game said it changed to, when the call comes from its
+-- view change event.
+function M.view_check(view)
+    if view then
+        event_view = view
+        -- The game changed to a play view, so it is not at the main menu
+        -- (state file below).
+        pcall(M.mark_game)
     end
+    if queued then return end
+    queued = true
+    ExecuteInGameThread(function()
+        queued = false
+        local ok, err = pcall(view_look)
+        if not ok then print("[VoyagerAccess] view check error: " .. tostring(err) .. "\n") end
+    end)
 end
 
 -- For the helper's update restart (Casey, 2026-10-14): it closes the game
--- for an update only at the main menu, so the mod reports "menu" or "game"
--- about once a second. The helper treats a file older than a few seconds
--- as not at the menu.
+-- for an update only at the main menu. The mod writes "menu" when the game
+-- makes its main menu and "game" when it makes the HUD or shows a loading
+-- screen, instead of rewriting the file about once a second (the helper
+-- clears the file when the game starts).
 local STATE_FILE = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\game-state.txt"
-local state_ticks = 0
-
-local function write_state()
-    state_ticks = state_ticks + 1
-    if state_ticks < 3 then return end
-    state_ticks = 0
-    local menu = false
-    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
-        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
-            menu = true
-        end
-    end
+local written_state = nil
+local function write_state(state)
+    if state == written_state then return end
     local f = io.open(STATE_FILE, "w")
     if f then
-        f:write(menu and "menu\n" or "game\n")
+        f:write(state .. "\n")
         f:close()
+        written_state = state
     end
 end
 
-local function room_poll()
-    pcall(write_state)
-    local open = require("rooms").window_open()
-    if open and not room_was_open then
-        local f = io.open(HINT_FILE, "r")
-        if f then
-            f:close()
-        else
-            speech.say("Escape closes the room. F1 lists the keys.", false)
-            local w = io.open(HINT_FILE, "w")
-            if w then w:write("heard\n") w:close() end
-        end
-    end
-    room_was_open = open
-    view_poll()
-end
+-- "game" also on each of the game's view changes: if the HUD or the loading
+-- screen were reused rather than made again, a "menu" from the main menu
+-- stayed in the file during play, and the update restart could close the
+-- game mid-play (review of firefly82's patch, 2026-10-21). Written only on
+-- a change of state.
+function M.mark_game() write_state("game") end
 
 function M.install()
     require("keys").on("f1", M.say_help)
     require("keys").on("i", M.say_where)
-    LoopInGameThreadWithDelay(300, function()
-        local ok, err = pcall(room_poll)
-        if not ok then print("[VoyagerAccess] room poll error: " .. tostring(err) .. "\n") end
+    local popups = require("popups")
+    popups.on_read(room_hint)
+    -- A room, event or report closing can bring the ship view or the map
+    -- back to the front.
+    popups.on_read(function() M.view_check() end)
+    popups.on_close(function() M.view_check() end)
+    popups.on_widget("WBP_MainMenu_C", function()
+        write_state("menu")
+        -- Back at the main menu: the view the game last changed to is over.
+        event_view, stable_view = nil, nil
     end)
+    popups.on_widget("WBP_HUD_C", function() write_state("game") M.view_check() end)
+    popups.on_widget("WBP_Loading_Screen_C", function() write_state("game") end)
+    -- As the mod starts (a reload): where the game is now.
+    local menu = false
+    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then menu = true end
+    end
+    write_state(menu and "menu" or "game")
+    M.view_check()
 end
 
 return M

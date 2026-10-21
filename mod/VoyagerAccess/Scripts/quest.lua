@@ -11,7 +11,6 @@ local crumb = require("crumb")
 
 local M = {}
 
-local INTERVAL_MS = 1000
 
 -- The last objective announced is kept in a file, so reloading the mod
 -- (or restarting the game on the same objective) does not repeat it.
@@ -58,12 +57,50 @@ end
 -- mission's name, so a side mission's goal sounded like part of the story
 -- (full game, VM, 2026-10-14). An objective's parent is its mission's
 -- QuestRoot; the main mission (MainQuestLineDisplayWidget) comes first.
+-- A tracker widget's text, from its own parts (screen.texts_in), cleaned as
+-- popups.lua cleans window text: not popups.text_under, which searched every
+-- text in the game for each widget (about 480 ms a reading, timing log,
+-- 2026-10-21).
+local function text_of_widget(w, skip)
+    local out, seen = {}, {}
+    for _, s in ipairs(screen.texts_in(w, skip)) do
+        local t = popups.plain(s)
+        if t ~= "" and t:sub(1, 1) ~= "#" and not seen[t] then
+            seen[t] = true
+            out[#out + 1] = t
+        end
+    end
+    return table.concat(out, ". ")
+end
+
+-- A mission's name and countdown, from the line's own fields
+-- (USTVQuestLineDisplayWidget.QuestLineText, WBP_QuestLineDisplay.CurrentCycle
+-- while its CycleCounter is shown). Read from all of the line's texts in
+-- their order it came out "Deuterium wird knapp. 15: ...", the number with
+-- no word (firefly82, 2026-10-21). The texts are the fallback.
+local function line_name(w)
+    local name = ""
+    pcall(function()
+        local t = w.QuestLineText
+        if t and t:IsValid() then name = popups.plain(t:GetText():ToString()) end
+    end)
+    if name == "" then return quest_name(text_of_widget(w, "WBP_QuestDisplay_C")) end
+    local n = nil
+    pcall(function()
+        local c = w.CurrentCycle
+        if c and c:IsValid() and screen.shown(c) then n = tonumber(c:GetText():ToString()) end
+    end)
+    if n then name = name .. ", " .. n .. (n == 1 and " cycle left" or " cycles left") end
+    return name
+end
+
 function M.objective()
     local lines = {}
     for _, w in ipairs(FindAllOf("WBP_QuestLineDisplay_C") or {}) do
         local path = w:IsValid() and w:GetFullName():match("^%S+%s+(.+)$")
         if path and path:find("^/Engine/Transient%.") and screen.shown(w) then
-            local line = { path = path .. ".", name = popups.text_under(path), goals = {} }
+            -- The line's own texts (name, cycles left), not its goals'.
+            local line = { path = path .. ".", name = line_name(w), goals = {} }
             if path:find("MainQuestLineDisplayWidget", 1, true) then table.insert(lines, 1, line)
             else lines[#lines + 1] = line end
         end
@@ -72,7 +109,7 @@ function M.objective()
     for _, w in ipairs(FindAllOf("WBP_QuestDisplay_C") or {}) do
         local path = w:IsValid() and w:GetFullName():match("^%S+%s+(.+)$")
         if path and path:find("^/Engine/Transient%.") and screen.shown(w) then
-            local t = popups.text_under(path):gsub("%s*%.%s*$", "")
+            local t = text_of_widget(w):gsub("%s*%.%s*$", "")
             if t ~= "" then
                 local par = w:GetParent()
                 local pp = par and par:IsValid() and par:GetFullName():match("^%S+%s+(.+)$") or ""
@@ -214,57 +251,59 @@ function M.say_objective()
 end
 
 local last_missions = nil   -- the list behind last, once read this session
-local settle_text, settle_polls = nil, 0   -- a changed list waiting to hold still
-local loaded_at = -100                     -- os.clock() when a loading screen was last seen
+-- A load is under way (the main menu, Game Over, a sector result or the
+-- save window was up): the next reading is the whole list, not changes.
+local fresh_load = false
 
-local function poll()
-    crumb.at("quest: poll")
+-- Read when the game changes the quest tracker, not every second: the
+-- 1 s loop read every objective by searching all texts in the game and
+-- held the game about 480 ms each time (timing log, 2026-10-21; the cause
+-- of most swallowed keys). The tracker's own calls (CXX/UHT dump):
+-- STVQuestTrackerWidget:UpdateQuestLine (its event bus listener), and on
+-- each mission line and goal OnAddedDisplayedQuest, OnUpdateDisplayedQuest,
+-- UpdateQuestTracker, DisplayQuest_BP(Text) and OnUpdateValues(Current,
+-- Target). OPEN POINT: which of them come, and in what order while a save
+-- loads, is still to be seen in the game (Audit-Restschleifen.md, probe D).
+-- Gone with the loop: the 4 s and 8 s quiet after a load and the "list
+-- held for two polls" wait. A load now reads the whole list at its first
+-- change after the loading screen.
+local function look()
+    crumb.at("quest: look")
     -- At the main menu the game is left: the next game loaded may be another
     -- save, and its objectives came out as "Done:" the old save's ones
     -- (Profile 03 to Profile 02, VM, 2026-10-15). It is read whole instead.
-    -- Likewise between Q Trial sectors: the results screen said "Done:
-    -- Leave Sector. Objective: Acquire at least 90 DURANIUM (10/90)" as the
-    -- exit spent the duranium (VM, 2026-10-15).
-    -- Not the loading screen: away missions show it too, and every
-    -- objective change after one read the whole list again (VM, 2026-10-15).
-    -- Game Over too: its Reload Save loads without the main menu, and "New
-    -- mission" over Game Over then "Mission ended" after the reload were
-    -- said (VM, 2026-10-15).
-    -- And the profile's save window (Continue, Load Autosave), which both
-    -- games show before a load: the demo's objective was not read after
-    -- loading (VM, 2026-10-16).
-    for _, cls in ipairs({ "WBP_MainMenu_C", "WBP_SandboxSectorResult_C", "WBP_GameOver_C",
-            "WBP_LoadSectorSaveWindow_C" }) do
-        for _, w in ipairs(FindAllOf(cls) or {}) do
-            if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
-                last_missions = nil
-                -- And the objective itself, so a save loaded from here is
-                -- read once even when it is the one just left (nothing was
-                -- said after the wait for the list to fill, 2026-10-15).
-                last = nil
-                -- And quiet for a while after it closes: between Reload
-                -- Save and the loading screen the lost game's missions were
-                -- read again, and the save then came out as "Done: Accept
-                -- COMMS request. Missions ended: ..." (VM, 2026-10-17).
-                loaded_at = os.clock() + 8
-                return
-            end
+    -- Likewise between Q Trial sectors, Game Over (Reload Save loads without
+    -- the main menu) and the profile's save window (VM, 2026-10-15 and 16).
+    -- popups.lua knows which windows are open.
+    local loading, leaving = false, false
+    for _, p in ipairs(popups.open_windows()) do
+        if p:find("WBP_SandboxSectorResult_C", 1, true) or p:find("WBP_GameOver_C", 1, true)
+            or p:find("WBP_LoadSectorSaveWindow_C", 1, true) then
+            fresh_load = true
+            leaving = true
         end
+        if p:find("WBP_Loading_Screen_C", 1, true) then loading = true end
     end
+    if fresh_load then last_missions, last = nil, nil end
+    -- Nothing is read while one of those windows is up: the list behind
+    -- Game Over would be read, fresh_load cleared, and the reload compared
+    -- with the lost game ("Done: Accept COMMS request", 2026-10-15; 0.3.67
+    -- returned here; review of firefly82's patch, 2026-10-21). Its close
+    -- asks for a look (popups.on_close below).
+    if leaving then return end
     -- During a conversation or a battle the main mission's line is gone
     -- while the game moves to its next objective: "Mission ended: Maneuvers"
     -- was said as the Kazon battle began, and "New mission: Maneuvers" after
-    -- it (Casey's machine, 2026-10-15). The change is said once both are over.
-    -- A loaded save's missions arrive one at a time for a few seconds: the
-    -- two-poll wait alone still gave "Objective: Maneuvers" and then "New
-    -- mission" for the rest (VM, 2026-10-15). Nothing is said until four
-    -- seconds after the loading screen.
-    for _, w in ipairs(FindAllOf("WBP_Loading_Screen_C") or {}) do
-        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
-            loaded_at = os.clock()
-        end
+    -- it (Casey's machine, 2026-10-15). The change is said once both are
+    -- over: the next look after them (the tracker changes again then).
+    -- Looked at again a second later while the loading screen is up: the
+    -- tracker's events came during the load and nothing asked again after
+    -- it, so a loaded save never said its objective (VM, 2026-10-21, the
+    -- event version). Only while loading; a quick check each time.
+    if loading then
+        ExecuteInGameThreadWithDelay(1000, function() M.request_look() end)
+        return
     end
-    if os.clock() - loaded_at < 4 then return end
     local okd, talking = pcall(function() return require("dialogue").active() ~= nil end)
     if (okd and talking) or require("combat").screen_up() then return end
     -- Nor over a cutscene or Q's voiced story: "Objective: The Long Way
@@ -274,23 +313,11 @@ local function poll()
     end)
     if okc and scene then return end
     local now, missions = M.objective()
-    -- A side mission's countdown changes every cycle; only a change in
-    -- the objectives themselves is announced (VM, 2026-10-14). Progress
-    -- counts too: "Store DEUTERIUM (552/900)" drops every cycle as fuel
-    -- burns, and the objective was read four times in one trip (VM,
-    -- 2026-10-15). O reads the current counts.
-    -- The list fills in over a second or two after a load: "Objective:
-    -- Maneuvers" came alone, then "New mission: Faces. New mission: Hull
-    -- Integrity Low..." for missions that were there all along (VM,
-    -- 2026-10-15). A change is said once the list has held for two polls.
-    if now and (not last or bare(now) ~= bare(last)) then
-        if bare(now) ~= settle_text then
-            settle_text, settle_polls = bare(now), 1
-            return
-        end
-        settle_polls = settle_polls + 1
-        if settle_polls < 2 then return end
-    end
+    -- A side mission's countdown changes every cycle; only a change in the
+    -- objectives themselves is announced (VM, 2026-10-14). Progress counts
+    -- too: "Store DEUTERIUM (552/900)" drops every cycle as fuel burns, and
+    -- the objective was read four times in one trip (VM, 2026-10-15). O
+    -- reads the current counts.
     if now and (not last or bare(now) ~= bare(last)) then
         print("[VoyagerAccess] objective: " .. now .. "\n")
         -- After the first reading, only what changed is said; the whole
@@ -300,15 +327,85 @@ local function poll()
         last = now
         write_last(now)
     end
-    if now then last_missions = missions end
+    if now then
+        last_missions = missions
+        fresh_load = false
+    end
+end
+
+local queued = false
+-- After a load the missions arrive one tracker event at a time, so the
+-- first look read part of the list and the rest came as "New mission: ..."
+-- or "Done: Accept COMMS request" (2026-10-15 and 17, back with the event
+-- version; review of firefly82's patch, 2026-10-21). While a load is under
+-- way the look waits until the tracker has been quiet for LOAD_SETTLE_MS;
+-- each new event starts the wait again. Not a loop.
+local LOAD_SETTLE_MS = 1500
+local settle_token = 0
+function M.request_look()
+    if fresh_load then
+        settle_token = settle_token + 1
+        local mine = settle_token
+        ExecuteInGameThreadWithDelay(LOAD_SETTLE_MS, function()
+            if settle_token ~= mine then return end
+            local ok, err = pcall(look)
+            if not ok then print("[VoyagerAccess] quest error: " .. tostring(err) .. "\n") end
+        end)
+        return
+    end
+    if queued then return end
+    queued = true
+    ExecuteInGameThread(function()
+        queued = false
+        local ok, err = pcall(look)
+        if not ok then print("[VoyagerAccess] quest error: " .. tostring(err) .. "\n") end
+    end)
+end
+
+local hooked = {}
+local function hook_widget(path, names)
+    local w = StaticFindObject(path)
+    if not (w and w:IsValid()) then return end
+    local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    if not cpath or hooked[cpath] then return end
+    hooked[cpath] = true
+    local got = {}
+    for _, fn in ipairs(names) do
+        if StaticFindObject(cpath .. ":" .. fn) and pcall(RegisterHook, cpath .. ":" .. fn, function() M.request_look() end) then
+            got[#got + 1] = fn
+        end
+    end
+    print("[VoyagerAccess] quest: " .. cpath:match("([%w_]+)$") .. " events: " .. table.concat(got, ", ") .. "\n")
+    M.request_look()
 end
 
 function M.install()
     require("keys").on("o", M.say_objective)
-    LoopInGameThreadWithDelay(INTERVAL_MS, function()
-        local ok, err = pcall(poll)
-        if not ok then print("[VoyagerAccess] quest error: " .. tostring(err) .. "\n") end
-    end)
+    local okh = pcall(RegisterHook, "/Script/STVoyager.STVQuestTrackerWidget:UpdateQuestLine", function() M.request_look() end)
+    print("[VoyagerAccess] quest: tracker event " .. (okh and "hooked" or "not hooked") .. "\n")
+    local LINE = { "OnAddedDisplayedQuest", "OnUpdateDisplayedQuest", "UpdateQuestTracker" }
+    local GOAL = { "DisplayQuest_BP", "OnUpdateValues" }
+    popups.on_widget("WBP_QuestLineDisplay_C", function(p) hook_widget(p, LINE) end)
+    popups.on_widget("WBP_QuestDisplay_C", function(p) hook_widget(p, GOAL) end)
+    -- The main menu: a load is coming.
+    popups.on_widget("WBP_MainMenu_C", function() fresh_load = true end)
+    -- Likewise a Q Trial sector's results, Game Over and the save window,
+    -- when one is read: look() only saw them if a tracker event came while
+    -- they were open, and after a Q Trial sector change the old sector's
+    -- goals were said as "Missions ended: Scientific Survey, Krowtonan
+    -- Guard" instead of the new list (VM, 2026-10-21). On reading, not on
+    -- the game making the widget, which it may do without showing it.
+    local LEAVING = { WBP_SandboxSectorResult_C = true, WBP_GameOver_C = true, WBP_LoadSectorSaveWindow_C = true }
+    popups.on_read(function(_, cls) if LEAVING[cls] then fresh_load = true end end)
+    for cls, names in pairs({ WBP_QuestLineDisplay_C = LINE, WBP_QuestDisplay_C = GOAL }) do
+        for _, w in ipairs(FindAllOf(cls) or {}) do
+            local p = w:IsValid() and w:GetFullName():match("^%S+%s+(.+)$")
+            if p and p:find("^/Engine/Transient%.") then pcall(hook_widget, p, names) break end
+        end
+    end
+    -- After a loading screen and after dialogue or battle, the tracker may
+    -- not change again: a window closing (popups.lua) asks for a look too.
+    popups.on_close(function() M.request_look() end)
 end
 
 return M

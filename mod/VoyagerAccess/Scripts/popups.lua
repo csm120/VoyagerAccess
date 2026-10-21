@@ -57,7 +57,13 @@ local WATCH = {
     "WBP_POIDetailView_C", "WBP_PlanetDetailView_C", "WBP_ShipDetailView_C",
     "WBP_StoryDetailView_C", "WBP_ResourceEventDetailView_C",
     "WBP_GenericLocationDetailView_C", "WBP_AwayMissionDetailView_C",
-    "WBP_AwayMissionEventView_C", "WBP_PoiEventWidget_C",
+    -- Not WBP_PoiEventWidget_C: it is a point's marker on the map (PoiCircle,
+    -- HarvestTimeRemaining_TXT in the dump), not a window. Watched since
+    -- 0.1.0, it never said anything (no "popup:" line from it in any log;
+    -- system.lua already treats it as no window), but each of the map's
+    -- markers was read as a window on arriving at the System Map, 53 ms
+    -- each, about 0.8 s in all (timing log, 2026-10-21 11:10:56).
+    "WBP_AwayMissionEventView_C",
     -- Away team selection: the mission, heroes needed, recommendations and
     -- challenges (awaymission.lua reads the slots and heroes)
     "WBP_AwayMissionLoadout_C",
@@ -193,8 +199,14 @@ local function plain(s)
     return s
 end
 
+M.plain = plain
+
 -- On-screen texts inside the widget at path, in creation order, as
 -- { name = last part of the text widget's name, text = plain text }.
+-- read_stop: a window the game has just activated while a parent is still
+-- fading in; its texts count as shown when shown inside it (set by
+-- process below for the read of that window only).
+local read_stop = nil
 local function parts_under(path)
     local prefix = path .. "."
     local parts, seen_obj = {}, {}
@@ -202,7 +214,7 @@ local function parts_under(path)
         for _, t in ipairs(FindAllOf(cls) or {}) do
             if t:IsValid() then
                 local tp = path_of(t)
-                if tp and not seen_obj[tp] and tp:sub(1, #prefix) == prefix and screen.shown(t) then
+                if tp and not seen_obj[tp] and tp:sub(1, #prefix) == prefix and screen.shown(t, read_stop) then
                     seen_obj[tp] = true
                     local ok, s = pcall(function() return t:GetText():ToString() end)
                     s = ok and plain(s) or ""
@@ -329,7 +341,7 @@ local function poi_result(parts, by, path)
     local out = {}
     if by.Header_Text then out[#out + 1] = by.Header_Text end
     if by.PoI_Description_RichText then out[#out + 1] = by.PoI_Description_RichText end
-    out[#out + 1] = "Outcome: " .. by.ResultOutcome_Text:lower()
+    out[#out + 1] = "Outcome: " .. require("tr").lower(by.ResultOutcome_Text)
     -- Each reward row (WBP_PoIMultipleChoice_Reward) is read on its own:
     -- pairing amounts and lines by position read "445 Deuterium stored in
     -- total. 137 Deuterium, 65% of the maximum" for "+445, 65% reward
@@ -459,9 +471,9 @@ local function construction_report(parts)
             if section == "Removed" then section = "Dismantled" end
             local entry = { text_of_widget(w.RoomName) }
             local level = text_of_widget(w.RoomLevel)
-            if level ~= "" then entry[#entry + 1] = level:lower() end
+            if level ~= "" then entry[#entry + 1] = require("tr").lower(level) end
             local ls = text_of_widget(w.LifeSupport)
-            if ls ~= "" then entry[#entry + 1] = ls:lower() end
+            if ls ~= "" then entry[#entry + 1] = require("tr").lower(ls) end
             local crew = text_of_widget(w.CrewValueNew)
             if crew ~= "" then entry[#entry + 1] = require("tr").fill("crew {s}", crew) end
             local energy = text_of_widget(w.EnergyValueNew)
@@ -663,7 +675,7 @@ local function overview_lines(path)
             if by.TECH_PWR then out[#out + 1] = "Tech combat power " .. by.TECH_PWR end
             if by.HULL_PWR then out[#out + 1] = "Defensive combat power " .. (by.Def_PWR or by.HULL_PWR) .. ", from hull " .. by.HULL_PWR end
             if by.OFF_PWR then out[#out + 1] = "Offensive combat power " .. by.OFF_PWR .. (by.BATT_PWR and (", base attack power " .. by.BATT_PWR) or "") end
-            if by.WarpCoreTier then out[#out + 1] = "Warp core " .. by.WarpCoreTier:lower() end
+            if by.WarpCoreTier then out[#out + 1] = "Warp core " .. require("tr").lower(by.WarpCoreTier) end
             if by.ReqCE_Value then out[#out + 1] = "Required combat energy " .. by.ReqCE_Value:gsub("/", " of ") end
             if by.reduction then out[#out + 1] = "Combat power lost to missing energy " .. by.reduction end
             if by.ACP then out[#out + 1] = "Combat ally " .. by.ACP end
@@ -869,7 +881,7 @@ function M.meta_reward_label(b, path)
         if by.TechDesc then out[#out + 1] = by.TechDesc end
     elseif by.HeroName_TXT then
         local head = kind .. ": " .. by.HeroName_TXT
-        if by.HeroLevel_TXT then head = head .. ", " .. by.HeroLevel_TXT:gsub("0(%d)", "%1"):lower() end
+        if by.HeroLevel_TXT then head = head .. ", " .. require("tr").lower((by.HeroLevel_TXT:gsub("0(%d)", "%1"))) end
         if by.TraitText then head = head .. ", " .. by.TraitText end
         out[#out + 1] = head
         local skills = ""
@@ -1239,8 +1251,8 @@ local function battle_result(_, path)
                 section = HEAD[name] or t
                 if not lists[section] then lists[section] = {} order[#order + 1] = section end
             -- "Destroyed" or "Fled" alone did not say who won (2026-10-14).
-            elseif name == "Win_Text" then outcome = "victory, " .. t:lower()
-            elseif name == "Lose_Text" then outcome = "defeat, " .. t:lower()
+            elseif name == "Win_Text" then outcome = "victory, " .. require("tr").lower(t)
+            elseif name == "Lose_Text" then outcome = "defeat, " .. require("tr").lower(t)
             elseif name == "HullStatus_Percent" then hull = t
             elseif section and name ~= "CombatHeroSelectionHeader" and name ~= "TextBlock_103"
                 and name ~= "TextBlock_1" and name ~= "SplitRewards" then
@@ -1533,6 +1545,45 @@ function M.leave_sector_entry(e)
     return table.concat(out, ". ") .. "."
 end
 
+-- Up and Down in Leave Sector, done by the mod: with one sector offered the
+-- game's own Down never left it, so Stay for now (its Cancel) could not be
+-- reached, in 0.3.67 as well (Q Trial, VM, 2026-10-21; the 2026-10-18 fix
+-- covered three sectors). The sectors in their order, then Stay for now.
+-- True when the key was taken.
+function M.leave_sector_step(current, dir)
+    local win = current and current:match("^(.-WBP_LeaveSector_C_%d+)")
+    if not win then return false end
+    local entries, cancel = {}, nil
+    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+        local p = b:IsValid() and path_of(b)
+        if p and p:sub(1, #win + 1) == win .. "." and screen.shown(b) then
+            if p:find("WBP_LeaveSectorEntry_C_%d+$") then
+                local idx = 0
+                pcall(function() idx = b:GetParent():GetChildIndex(b) end)
+                entries[#entries + 1] = { b = b, p = p, idx = idx }
+            elseif p:find("%.CancelButton$") then
+                cancel = { b = b, p = p }
+            end
+        end
+    end
+    table.sort(entries, function(x, y) return x.idx < y.idx end)
+    if cancel then entries[#entries + 1] = cancel end
+    if #entries == 0 then return false end
+    -- Focus on something else in the window: Down goes to the first entry.
+    local at = 0
+    for i, e in ipairs(entries) do if e.p == current then at = i end end
+    local to = math.max(1, math.min(#entries, at + dir))
+    if to == at then
+        pcall(function() require("focus").reannounce() end)
+    else
+        pcall(function()
+            entries[to].b:SetIsFocusable(true)
+            entries[to].b:SetFocus()
+        end)
+    end
+    return true
+end
+
 -- Q Trials results at the end of a sector or a trial (WBP_SandboxSectorResult,
 -- first met after a defeat in the VM, 2026-10-14; only "Return to Main
 -- Menu" was read). Q's remark (QuipText) is voiced and left out.
@@ -1720,7 +1771,59 @@ function M.text_under(path)
     return table.concat(out, ". ")
 end
 
--- Watched widgets on screen now, outermost first, nested ones dropped.
+-- Which watched windows are open comes from the game's own events, not
+-- from a scan: the 300 ms scan over every watched class (and every text in
+-- the game for windows read again), the 3 s walk over every widget for
+-- subclasses and the 500 ms save scan held the game long enough to swallow
+-- keys (E on the Mess Hall, 14 of 56 lost with the mod's loops, 36 of 36
+-- without; firefly82, 2026-10-21). The window census of 2026-10-21
+-- (probes/2026-10-21/windowcensus.lua, 30 minutes of play) showed what each
+-- window calls:
+--   room window, event, pause menu: BP_OnActivated, BP_OnDeactivated
+--   event steps: OnOpened, OnChoiceResult, SetOutcomeText, DisplayResults,
+--     DisplayRewards
+--   build ring: OnOpenRadial, BPInitWithMenuData, OnCloseRadial
+--   detail view: OnShow, ShowDetailView, OnUpdateDisplayEvent, OnHideEvent,
+--     HideDetailView
+--   reports (construction, research, energy loss, emergency rations):
+--     ApplyInfo
+--   loading screen: SetLoadingScreenText; save notice: StartDisplay
+-- The scan read those reports 4 to 7 s after the game showed them (the
+-- construction report at 08:18:49 was read at 08:18:56).
+--
+-- Classes are found as the game makes their widgets (NotifyOnNewObject on
+-- UserWidget, one table lookup per widget); a watched class, or one built
+-- on a watched class, gets its events hooked the first time, on the class
+-- in its chain that defines each (ForEachFunction, no search). A widget
+-- made with no event of its own is looked at once on the next tick.
+
+-- Events that say the window is the game's current one: read even if a
+-- parent is still fading in (texts inside the window must be shown).
+local OPEN_EVENTS = { BP_OnActivated = true, OnOpened = true, OnOpenRadial = true, OnShow = true,
+    ShowDetailView = true, ApplyInfo = true, StartDisplay = true, SetLoadingScreenText = true,
+    SetDilemmaText = true, OnOverviewInfoActivated = true }
+-- Events that change what an open window shows: read again if on screen.
+local CHANGE_EVENTS = { OnChoiceResult = true, SetOutcomeText = true, DisplayResults = true,
+    DisplayRewards = true, BPInitWithMenuData = true, OnUpdateDisplayEvent = true,
+    OnTabChangedEvent = true, UpdateText = true, SetData = true, Construct = true }
+local CLOSE_EVENTS = { BP_OnDeactivated = true, OnCloseRadial = true, OnHideEvent = true,
+    HideDetailView = true, Hide = true, Destruct = true, CloseInfoWidget = true }
+-- Native classes whose Blueprint events never reach a hook on the native
+-- function itself (the census hooked them there and saw nothing).
+local BASE = { ["/Script/UMG.UserWidget"] = true, ["/Script/UMG.Widget"] = true,
+    ["/Script/CommonUI.CommonActivatableWidget"] = true, ["/Script/CommonUI.CommonUserWidget"] = true,
+    ["/Script/UMG.Visual"] = true, ["/Script/CoreUObject.Object"] = true }
+
+local open = {}         -- path -> class name, from an open event until a close event
+local result_token = 0  -- the newest event-result wait (its 10 s limit)
+local order_of = {}     -- class name -> its place in WATCH (reading order)
+local function rebuild_order()
+    for i, c in ipairs(WATCH) do order_of[c] = order_of[c] or i end
+end
+rebuild_order()
+
+-- The watched windows on screen now, outermost first, nested ones dropped,
+-- in WATCH order (a tutorial's title before its page).
 local function on_screen()
     local found, order = {}, {}
     -- The Q Trials setup stays alive and "shown" behind a started trial:
@@ -1731,16 +1834,14 @@ local function on_screen()
     -- still "shown" behind the map; it is not in front (rooms.lua).
     local okm, map = pcall(function() return require("system").active() end)
     local skip_room = okm and map
-    for i, cls in ipairs(WATCH) do
-        local skip = (in_game and cls == "WBP_Sandbox_Setup_C") or (skip_room and cls == "WBP_RoomManagementV2_C")
-        for _, w in ipairs((not skip) and FindAllOf(cls) or {}) do
-            if w:IsValid() then
-                local p = path_of(w)
-                if p and p:find("^/Engine/Transient%.") and screen.shown(w) then
-                    found[#found + 1] = p
-                    order[p] = i
-                end
-            end
+    for p, cls in pairs(open) do
+        local w = StaticFindObject(p)
+        if not (w and w:IsValid()) then
+            open[p] = nil
+        elseif not ((in_game and cls == "WBP_Sandbox_Setup_C") or (skip_room and cls == "WBP_RoomManagementV2_C"))
+            and screen.shown(w) then
+            found[#found + 1] = p
+            order[p] = order_of[cls] or 1e9
         end
     end
     table.sort(found, function(a, b) return #a < #b end)
@@ -1756,7 +1857,6 @@ local function on_screen()
         if nested and (p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true)) then nested = false end
         if not nested then outer[#outer + 1] = p end
     end
-    -- Speak in list order: a tutorial's title before its page.
     table.sort(outer, function(a, b) return order[a] < order[b] end)
     return outer
 end
@@ -1780,15 +1880,18 @@ end
 -- tutorial directly instead (focus.lua calls this first). Clicking Close
 -- this way is proven (it opened the next tutorial, 2026-10-10).
 function M.close_tutorial()
-    for _, w in ipairs(FindAllOf("WBP_TutorialInfoWidget_C") or {}) do
-        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
-            local close = w.CloseButton
-            if close and close:IsValid() then
-                print("[VoyagerAccess] tutorial: close\n")
-                close:HandleButtonPressed()
-                close:HandleButtonReleased()
-                close:HandleButtonClicked()
-                return true
+    for p, cls in pairs(open) do
+        if cls == "WBP_TutorialInfoWidget_C" then
+            local w = StaticFindObject(p)
+            if w and w:IsValid() and screen.shown(w) then
+                local close = w.CloseButton
+                if close and close:IsValid() then
+                    print("[VoyagerAccess] tutorial: close\n")
+                    close:HandleButtonPressed()
+                    close:HandleButtonReleased()
+                    close:HandleButtonClicked()
+                    return true
+                end
             end
         end
     end
@@ -1813,311 +1916,572 @@ local function load_announced()
     f:close()
 end
 
-local settle = {}      -- path -> { text, at }: a window read once it stops changing
+local settle = {}      -- kept for the close path below
 
-local function poll()
-    crumb.at("popups: scan")
-    local now, spoken = {}, {}
-    for _, p in ipairs(on_screen()) do
-        now[p] = true
-        -- Tutorials only explain; Casey asked for them to close by
-        -- themselves (2026-10-10). Close one poll after it was read, so its
-        -- page (a separate widget) has been read too. R repeats the text.
-        if announced[p] and p:find("WBP_TutorialInfoWidget_C", 1, true) then
-            M.close_tutorial()
+-- Reads one window. reread: the game says what it shows has changed.
+local function read_window(p, reread)
+    crumb.at("popups: read " .. p)
+    local text = M.text_under(p)
+    -- The start warning a slot's Enter raises is closed by focus.lua
+    -- at once; reading it first was only noise (2026-10-14).
+    local quiet = p:find("FewerHeroesConfirmWidget", 1, true)
+        and os.clock() < (require("focus").quiet_start_warning_until or 0)
+    -- Battle toasts name a ship's side as the screen draws it
+    -- ("Voyager Shield Down: Right"); L says bow, aft, port and
+    -- starboard, so the toasts do too (VM, 2026-10-14).
+    if p:find("Toast_Notification", 1, true) then
+        local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
+        text = text:gsub(":%s*(%a+)(%.?)$", function(w, dot)
+            return SIDES[w] and (": " .. require("tr").word(SIDES[w]) .. dot) or nil
+        end)
+        -- "Subsystem Destroyed: Weapons" did not say whose.
+        local sys = text:match("Subsystem Destroyed:%s*([%a ]-)%.?$")
+        local low = false
+        if not sys then
+            sys = text:match("Subsystem HP low:%s*([%a ]-)%.?$")
+            low = sys ~= nil
         end
-        -- An event window changes in place (options, then the result), so
-        -- it is read again whenever its text changes (2026-10-11).
-        -- The away mission summary fills in after it opens (only "Mission
-        -- complete" was read, 2026-10-14).
-        local reread = announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
-            or p:find("WBP_OverviewInfoWidget_C", 1, true) or p:find("WBP_AwayMissionOutcome", 1, true)
-            or p:find("WBP_Sandbox_Setup_C", 1, true) or rereading(p))
-        if not announced[p] or reread then
-            crumb.at("popups: read " .. p)
-            local text = M.text_under(p)
-            -- The start warning a slot's Enter raises is closed by focus.lua
-            -- at once; reading it first was only noise (2026-10-14).
-            local quiet = p:find("FewerHeroesConfirmWidget", 1, true)
-                and os.clock() < (require("focus").quiet_start_warning_until or 0)
-            -- The warning's buttons came first ("Continue. Return.
-            -- Warning..."); they are in the button list, so leave them out.
-            -- Battle toasts name a ship's side as the screen draws it
-            -- ("Voyager Shield Down: Right"); L says bow, aft, port and
-            -- starboard, so the toasts do too (VM, 2026-10-14).
-            if p:find("Toast_Notification", 1, true) then
-                local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
-                text = text:gsub(":%s*(%a+)(%.?)$", function(w, dot)
-                    return SIDES[w] and (": " .. require("tr").word(SIDES[w]) .. dot) or nil
+        local okw, owner = pcall(function() return sys and require("combat").destroyed_owner(sys, low) end)
+        if okw and owner then text = text:gsub(":%s*" .. sys, function() return ": " .. require("tr").fill("{s}'s {s}", owner, sys) end, 1) end
+    end
+    if p:find("FewerHeroesConfirmWidget", 1, true) then
+        -- The warning's buttons came first ("Continue. Return.
+        -- Warning..."); they are in the button list, so leave them out.
+        -- Also after the title: "Warning. Return. Continue. You
+        -- still have unassigned slots" (battle setup, VM, 2026-10-16).
+        text = text:gsub("Continue%. Return%. ", ""):gsub("Return%. Continue%. ", "")
+        -- Sometimes only one of them: "Warning. Continue. You still
+        -- have unassigned slots" (Q Trial, VM, 2026-10-16).
+        text = text:gsub("^(Warning%.) Continue%. ", "%1 "):gsub("^(Warning%.) Return%. ", "%1 ")
+        -- Or before the title: "Continue. Warning. You still..."
+        -- (campaign battle, VM, 2026-10-16).
+        text = text:gsub("^Continue%. (Warning%.)", "%1"):gsub("^Return%. (Warning%.)", "%1")
+    end
+    -- The away mission summary counts up as it fills in, and was read
+    -- three times over (2026-10-14). It is read when the mission window
+    -- says it has shown the consequences (dialogue.lua asks for it), and
+    -- after that only its changed sentences. OPEN POINT: the census did not
+    -- reach the end of an away mission, so which of the window's
+    -- consequence events comes last is not seen yet.
+    local outcome = p:find("WBP_AwayMissionOutcome", 1, true) ~= nil
+    local waiting = false
+    local spoken = nil
+    -- A window with no words, only a number, said just "1" when the
+    -- System Map opened (2026-10-11); it is skipped.
+    if quiet then
+        last_text[p] = text
+    elseif waiting then
+    elseif text:find("%a") and text ~= last_text[p] and not (reread and last_text[p] == nil and not outcome) then
+        print("[VoyagerAccess] popup: " .. text .. " (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
+        -- A new event: its first option took focus and was spoken
+        -- before the event's own text, so the option came first
+        -- (2026-10-14). Interrupt it, then say the option again.
+        -- Room windows too: "Repair" came before "Transporter Room".
+        local first_event = not announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
+            or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
+            or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
+            or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
+            or p:find("WBP_DeleteProfileWarning_C", 1, true) or p:find("WBP_GameOver_C", 1, true)
+            or p:find("WBP_NoWayBackWidget_C", 1, true) or p:find("WBP_CraftingResult_C", 1, true)
+            or p:find("WBP_ConfirmationWidget_C", 1, true) or p:find("WBP_HeroUnavailableWidget_C", 1, true)
+            or p:find("WBP_EngineeringOffice_Confirmation_C", 1, true) or p:find("WBP_CargoSwap_Confirmation_C", 1, true)
+            or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
+            or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
+            -- Inside the combat widget it is named CombatResultView.
+            or p:find("WBP_BattleResultLCARS_C", 1, true) or p:find("CombatResultView", 1, true) or p:find("AutoResolveWidget", 1, true)
+            or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true)
+            -- Held by focus.lua until read, so its button is said here
+            -- (sector 7 end, VM, 2026-10-18).
+            or p:find("WBP_MissionInfoWidget_C", 1, true) or p:find("WBP_SideMissionFinished_C", 1, true))
+        -- An event's result replaces its options in the same window:
+        -- "CONTINUE" came before "Trading Station. We accepted their
+        -- trade offer" (VM, 2026-10-14).
+            or (announced[p] and last_text[p] ~= nil and p:find("WBP_POIMultipleChoice_C", 1, true) ~= nil)
+        -- The summary changes again after it was read, when a rank
+        -- counts up: the whole summary came a second time with only
+        -- "rank 1" now "rank 2" (demo, VM, 2026-10-15). Only the
+        -- sentences that changed are said.
+        local say = text
+        if outcome and last_text[p] then
+            local old = {}
+            for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
+            local new = {}
+            for s in (text .. " "):gmatch("(.-%.)%s+") do
+                if not old[s] then new[#new + 1] = s end
+            end
+            if #new > 0 then say = table.concat(new, " ") end
+        end
+        -- Between an option and its result the event shows its
+        -- description alone (OnChoiceResult), and that was read again with
+        -- CONTINUE before the result (Icy Planetoid, VM, 2026-10-15). A
+        -- reread that only lost sentences says nothing.
+        local nothing_new = false
+        if reread and last_text[p] and p:find("WBP_POIMultipleChoice_C", 1, true) then
+            local old = {}
+            for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
+            nothing_new = true
+            for s in (text .. " "):gmatch("(.-%.)%s+") do
+                if not old[s] then nothing_new = false end
+            end
+        end
+        if nothing_new then
+            print("[VoyagerAccess] popup: only lost text, not read again (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
+            -- Focus moves to CONTINUE before the result is in, and
+            -- "CONTINUE" came first (Abandoned Vessel, VM, 2026-10-15): the
+            -- result is read with the button after it. Held until the game
+            -- shows the result (its DisplayResults), not for a set time.
+            -- Only while no options are left: a stage that keeps options
+            -- must let the focused one be said (review, 2026-10-15).
+            local options_left = false
+            for _, ob in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+                if ob:IsValid() and path_of(ob):find("^/Engine/Transient%.") and screen.shown(ob) then
+                    options_left = true
+                end
+            end
+            M.result_pending = not options_left
+            -- At most 10 s: if DisplayResults never comes, focus was held
+            -- for good and CONTINUE never said (the 0.3.67 limit, Icy
+            -- Planetoid, 2026-10-15; review of firefly82's patch,
+            -- 2026-10-21).
+            if M.result_pending then
+                result_token = result_token + 1
+                local mine = result_token
+                ExecuteInGameThreadWithDelay(10000, function()
+                    if result_token == mine and M.result_pending then
+                        M.result_pending = false
+                        print("[VoyagerAccess] popup: no event result in 10 s, focus speech released\n")
+                        pcall(function() require("focus").reannounce() end)
+                    end
                 end)
-                -- "Subsystem Destroyed: Weapons" did not say whose.
-                local sys = text:match("Subsystem Destroyed:%s*([%a ]-)%.?$")
-                local low = false
-                if not sys then
-                    sys = text:match("Subsystem HP low:%s*([%a ]-)%.?$")
-                    low = sys ~= nil
-                end
-                local okw, owner = pcall(function() return sys and require("combat").destroyed_owner(sys, low) end)
-                if okw and owner then text = text:gsub(":%s*" .. sys, function() return ": " .. require("tr").fill("{s}'s {s}", owner, sys) end, 1) end
             end
-            if p:find("FewerHeroesConfirmWidget", 1, true) then
-                -- Also after the title: "Warning. Return. Continue. You
-                -- still have unassigned slots" (battle setup, VM, 2026-10-16).
-                text = text:gsub("Continue%. Return%. ", ""):gsub("Return%. Continue%. ", "")
-                -- Sometimes only one of them: "Warning. Continue. You still
-                -- have unassigned slots" (Q Trial, VM, 2026-10-16).
-                text = text:gsub("^(Warning%.) Continue%. ", "%1 "):gsub("^(Warning%.) Return%. ", "%1 ")
-                -- Or before the title: "Continue. Warning. You still..."
-                -- (campaign battle, VM, 2026-10-16).
-                text = text:gsub("^Continue%. (Warning%.)", "%1"):gsub("^Return%. (Warning%.)", "%1")
-            end
-            -- The away mission summary counts up as it fills in, and was
-            -- read three times over (2026-10-14): it is read once its text
-            -- has stayed the same for two seconds.
-            local outcome = p:find("WBP_AwayMissionOutcome", 1, true) ~= nil
-            local waiting = false
-            if outcome then
-                local s = settle[p]
-                if not s or s.text ~= text then
-                    settle[p] = { text = text, at = os.time() }
-                    waiting = true
-                elseif os.time() - s.at < 2 then
-                    waiting = true
-                end
-            end
-            -- A window with no words, only a number, said just "1" when the
-            -- System Map opened (2026-10-11); it is skipped.
-            if quiet then
-                last_text[p] = text
-            elseif waiting then
-            elseif text:find("%a") and text ~= last_text[p] and not (reread and last_text[p] == nil and not outcome) then
-                print("[VoyagerAccess] popup: " .. text .. " (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
-                -- A new event: its first option took focus and was spoken
-                -- before the event's own text, so the option came first
-                -- (2026-10-14). Interrupt it, then say the option again.
-                -- Room windows too: "Repair" came before "Transporter Room".
-                local first_event = not announced[p] and (p:find("WBP_POIMultipleChoice_C", 1, true)
-                    or p:find("WBP_RoomManagementV2_C", 1, true) or p:find("WBP_ConstructionInfoWidget_C", 1, true)
-                    or p:find("WBP_RadialMenu_C", 1, true) or p:find("WBP_EnergyLossInfoWidget_C", 1, true)
-                    or p:find("WBP_MultipleChoiceWidget_C", 1, true) or p:find("WBP_PauseMenu_Confirms_C", 1, true)
-                    or p:find("WBP_DeleteProfileWarning_C", 1, true) or p:find("WBP_GameOver_C", 1, true)
-                    or p:find("WBP_NoWayBackWidget_C", 1, true) or p:find("WBP_CraftingResult_C", 1, true)
-                    or p:find("WBP_ConfirmationWidget_C", 1, true) or p:find("WBP_HeroUnavailableWidget_C", 1, true)
-                    or p:find("WBP_EngineeringOffice_Confirmation_C", 1, true) or p:find("WBP_CargoSwap_Confirmation_C", 1, true)
-                    or p:find("WBP_Sandbox_Setup_C", 1, true) or p:find("WBP_LeaveSector_C", 1, true)
-                    or p:find("WBP_SandboxSectorResult_C", 1, true) or is_save_warning(p)
-                    -- Inside the combat widget it is named CombatResultView.
-                    or p:find("WBP_BattleResultLCARS_C", 1, true) or p:find("CombatResultView", 1, true) or p:find("AutoResolveWidget", 1, true)
-                    or p:find("WBP_FirstPerformanceSelection_C", 1, true) or p:find("WBP_GammaCorrection_C", 1, true)
-                    -- Held by focus.lua until read, so its button is said here
-                    -- (sector 7 end, VM, 2026-10-18).
-                    or p:find("WBP_MissionInfoWidget_C", 1, true) or p:find("WBP_SideMissionFinished_C", 1, true))
-                -- An event's result replaces its options in the same window:
-                -- "CONTINUE" came before "Trading Station. We accepted their
-                -- trade offer" (VM, 2026-10-14).
-                    or (announced[p] and last_text[p] ~= nil and p:find("WBP_POIMultipleChoice_C", 1, true) ~= nil)
-                -- The summary changes again after it was read, when a rank
-                -- counts up: the whole summary came a second time with only
-                -- "rank 1" now "rank 2" (demo, VM, 2026-10-15). Only the
-                -- sentences that changed are said.
-                local say = text
-                if outcome and last_text[p] then
-                    local old = {}
-                    for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
-                    local new = {}
-                    for s in (text .. " "):gmatch("(.-%.)%s+") do
-                        if not old[s] then new[#new + 1] = s end
-                    end
-                    if #new > 0 then say = table.concat(new, " ") end
-                end
-                -- Between an option and its result the event shows its
-                -- description alone, and that was read again with CONTINUE
-                -- before the result (Icy Planetoid, VM, 2026-10-15). A
-                -- reread that only lost sentences says nothing.
-                local nothing_new = false
-                if reread and last_text[p] and p:find("WBP_POIMultipleChoice_C", 1, true) then
-                    local old = {}
-                    for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
-                    nothing_new = true
-                    for s in (text .. " "):gmatch("(.-%.)%s+") do
-                        if not old[s] then nothing_new = false end
-                    end
-                end
-                if nothing_new then
-                    print("[VoyagerAccess] popup: only lost text, not read again (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
-                    -- Focus moves to CONTINUE before the result is in, and
-                    -- "CONTINUE" came first (Abandoned Vessel, VM,
-                    -- 2026-10-15); the result is read with the button after it.
-                    -- Held until the result is read: focus moved about 3 s
-                    -- after the choice once (Icy Planetoid), so 10 s is only
-                    -- a safety limit.
-                    -- Only while no options are left: a stage that keeps
-                    -- options must let the focused one be said (review,
-                    -- 2026-10-15).
-                    local options_left = false
-                    for _, ob in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
-                        if ob:IsValid() and path_of(ob):find("^/Engine/Transient%.") and screen.shown(ob) then
-                            options_left = true
-                        end
-                    end
-                    M.result_pending_until = (not options_left) and (os.clock() + 10) or nil
-                else
-                M.result_pending_until = nil
-                -- Tutorials are not cut off by the next window (speech.lua).
-                -- The page is its own window (WBP_TUT_CenterView and the
-                -- like), and only the two-word title was protected, so the
-                -- next dialogue line cut the page off (firefly82, German
-                -- game, 2026-10-18).
-                if p:find("Tutorial", 1, true) or p:find("WBP_TUT_", 1, true) then
-                    speech.say_protected(say)
-                else
-                    speech.say_long(say, first_event and true or nil)
-                end
-                -- An offer that opened over the construction ring left focus
-                -- on the ring behind it, and its options could not be reached
-                -- (2026-10-14): focus its first option the player can take.
-                if first_event and p:find("WBP_MultipleChoiceWidget_C", 1, true) then
-                    pcall(function()
-                        local best, best_i = nil, 1e9
-                        for _, b in ipairs(FindAllOf("WBP_MultipleChoice_Button_C") or {}) do
-                            if b:IsValid() and path_of(b):find("^/Engine/Transient%.") and screen.shown(b)
-                                and b:GetIsEnabled() then
-                                local i = 0
-                                pcall(function() i = b:GetParent():GetChildIndex(b) end)
-                                if i < best_i then best, best_i = b, i end
-                            end
-                        end
-                        if best and not (best:HasKeyboardFocus() or best:HasFocusedDescendants()) then best:SetFocus() end
-                    end)
-                end
-                -- The pause confirmation's buttons are the window list's,
-                -- said by focus.lua once the window is read; asking here
-                -- named the pause menu behind it ("MAIN MENU", 2026-10-14).
-                -- A window read as the mod's own button list says its first
-                -- button itself: "CLOSE, 1 of 1" came twice after a
-                -- Construction Report (VM, 2026-10-15).
-                local own_list = false
-                pcall(function() own_list = require("focus").virtual_active() end)
-                if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true)
-                    and not p:find("WBP_DeleteProfileWarning_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true)
-                    and not is_save_warning(p) then
-                    local function say_label()
-                        local okl, label = pcall(function() return require("focus").current_label() end)
-                        if okl and label and label ~= "" then speech.say(label, false) end
-                    end
-                    -- An event's options: the game's own chances are read
-                    -- first (events.sweep), then the focused option is said.
-                    if p:find("WBP_POIMultipleChoice_C", 1, true) then
-                        local oks = pcall(require("events").sweep, say_label)
-                        if not oks then say_label() end
-                    else
-                        say_label()
-                    end
-                end
-                end
-                spoken[#spoken + 1] = text
-            end
-            if not waiting then last_text[p] = text end
+        else
+        M.result_pending = false
+        -- Tutorials are not cut off by the next window (speech.lua).
+        -- The page is its own window (WBP_TUT_CenterView and the
+        -- like), and only the two-word title was protected, so the
+        -- next dialogue line cut the page off (firefly82, German
+        -- game, 2026-10-18).
+        if p:find("Tutorial", 1, true) or p:find("WBP_TUT_", 1, true) then
+            speech.say_protected(say)
+        else
+            speech.say_long(say, first_event and true or nil)
         end
+        -- An offer that opened over the construction ring left focus
+        -- on the ring behind it, and its options could not be reached
+        -- (2026-10-14): focus its first option the player can take.
+        if first_event and p:find("WBP_MultipleChoiceWidget_C", 1, true) then
+            pcall(function()
+                local best, best_i = nil, 1e9
+                for _, b in ipairs(FindAllOf("WBP_MultipleChoice_Button_C") or {}) do
+                    if b:IsValid() and path_of(b):find("^/Engine/Transient%.") and screen.shown(b)
+                        and b:GetIsEnabled() then
+                        local i = 0
+                        pcall(function() i = b:GetParent():GetChildIndex(b) end)
+                        if i < best_i then best, best_i = b, i end
+                    end
+                end
+                if best and not (best:HasKeyboardFocus() or best:HasFocusedDescendants()) then best:SetFocus() end
+            end)
+        end
+        -- The pause confirmation's buttons are the window list's,
+        -- said by focus.lua once the window is read; asking here
+        -- named the pause menu behind it ("MAIN MENU", 2026-10-14).
+        -- A window read as the mod's own button list says its first
+        -- button itself: "CLOSE, 1 of 1" came twice after a
+        -- Construction Report (VM, 2026-10-15).
+        local own_list = false
+        pcall(function() own_list = require("focus").virtual_active() end)
+        if first_event and not own_list and not p:find("WBP_PauseMenu_Confirms_C", 1, true)
+            and not p:find("WBP_DeleteProfileWarning_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true)
+            and not is_save_warning(p) then
+            local function say_label()
+                local okl, label = pcall(function() return require("focus").current_label() end)
+                if okl and label and label ~= "" then speech.say(label, false) end
+            end
+            -- An event's options: the game's own chances are read
+            -- first (events.sweep), then the focused option is said.
+            if p:find("WBP_POIMultipleChoice_C", 1, true) then
+                local oks = pcall(require("events").sweep, say_label)
+                if not oks then say_label() end
+            else
+                say_label()
+            end
+        end
+        end
+        spoken = text
     end
-    local changed = false
-    for p in pairs(now) do if not announced[p] then changed = true end end
-    for p in pairs(announced) do if not now[p] then changed = true end end
-    announced = now
-    -- A window that closed is read afresh when it opens again: the battle
-    -- setup's "unassigned slots" warning, closed quietly after a slot's
-    -- Enter, kept its text and said only "Return" when it came up for real
-    -- (VM, 2026-10-14).
-    for p in pairs(last_text) do if not now[p] then last_text[p] = nil end end
-    if changed then save_announced() end
-    if #spoken > 0 then require("dialogue").remember(table.concat(spoken, ". ")) end
+    if not waiting then last_text[p] = text end
+    return spoken
 end
 
--- Windows built on a watched one: FindAllOf finds only the exact class, so
--- a subclass (WBP_Dialogue_Window_Intro, coverage report 2026-10-15) was
--- silent. Every few seconds the top-level widgets on screen are checked
--- once per class; one whose parent class is watched is watched too, with
--- its parent's layout (technique review, 2026-10-16).
-local watched_set, checked = nil, {}
-local function adopt_subclasses()
-    if not watched_set then
-        watched_set = {}
-        for _, c in ipairs(WATCH) do watched_set[c] = true end
+-- The save notice ("autosave", WBP_SavegameNotification; a manual save
+-- said nothing at all, VM, 2026-10-17): said on its StartDisplay, queued,
+-- so it never cuts off what is being read.
+local function say_save(p)
+    local text = nil
+    for _, part in ipairs(M.parts_under and M.parts_under(p) or {}) do
+        if not text and part.text ~= "" then text = part.text end
     end
-    local lib = StaticFindObject("/Script/UMG.Default__WidgetBlueprintLibrary")
-    local uw = StaticFindObject("/Script/UMG.UserWidget")
-    local pc = FindFirstOf("PlayerController")
-    if not (lib and uw and pc and pc:IsValid()) then return end
-    local found = {}
-    lib:GetAllWidgetsOfClass(pc, found, uw, true)
-    for _, e in pairs(found) do
-        local w = e:get()
-        if w and w:IsValid() then
-            local cls = w:GetClass()
-            local name = cls:GetFName():ToString()
-            if not checked[name] and not watched_set[name] then
-                checked[name] = true
-                local s, d = cls:GetSuperStruct(), 0
-                while s and s:IsValid() and d < 5 do
-                    local sn = s:GetFName():ToString()
-                    if watched_set[sn] then
-                        WATCH[#WATCH + 1] = name
-                        watched_set[name] = true
-                        if LAYOUTS[sn] and not LAYOUTS[name] then LAYOUTS[name] = LAYOUTS[sn] end
-                        print("[VoyagerAccess] popups: watching " .. name .. " as a kind of " .. sn .. "\n")
-                        break
-                    end
-                    s, d = s:GetSuperStruct(), d + 1
-                end
-            end
-        end
+    local say = text and (text:sub(1, 1):upper() .. text:sub(2)) or "Saving"
+    print("[VoyagerAccess] save: " .. say .. "\n")
+    speech.say(say, false)
+end
+
+-- A tutorial's page is its own widget with no event (WBP_TUT_*View,
+-- WBP_TutorialScreen*): read with its frame, then the tutorial closes by
+-- itself (Casey asked, 2026-10-10; R repeats it).
+local PAGE_CLASSES = {}
+for _, c in ipairs(WATCH) do
+    if c:find("^WBP_TUT_") or c:find("^WBP_TutorialScreen") then PAGE_CLASSES[#PAGE_CLASSES + 1] = c end
+end
+
+-- Other parts of the mod told when a window has been read or has closed
+-- (help.lua says where you are once a room or event closes), so they need
+-- no scan of their own.
+local read_listeners, close_listeners = {}, {}
+function M.on_read(fn) read_listeners[#read_listeners + 1] = fn end
+function M.on_close(fn) close_listeners[#close_listeners + 1] = fn end
+local function tell(list, ...)
+    for _, fn in ipairs(list) do
+        local ok, err = pcall(fn, ...)
+        if not ok then print("[VoyagerAccess] popups listener error: " .. tostring(err) .. "\n") end
     end
 end
 
--- The save notification ("autosave", WBP_SavegameNotification, seen unread
--- in the VM log, 2026-10-17): a manual save said nothing at all. Queued, so
--- it never cuts off what is being read.
-local save_shown = false
-local function save_poll()
-    local shown_now, text = false, nil
-    for _, w in ipairs(FindAllOf("WBP_SavegameNotification_C") or {}) do
-        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
-            shown_now = true
-            local prefix = path_of(w) .. "."
-            for _, cls in ipairs(TEXT_CLASSES) do
-                for _, t in ipairs(FindAllOf(cls) or {}) do
-                    local tp = t:IsValid() and path_of(t)
-                    if not text and tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
-                        local s = t:GetText():ToString():gsub("^%s+", ""):gsub("%s+$", "")
-                        if s ~= "" then text = s end
-                    end
-                end
+-- Other parts told when the game makes a widget of a class they name
+-- (view.lua: the navigation bar, help.lua: the main menu): fn(path) on the
+-- next tick. The same pass over new widgets as the windows', no scan.
+local widget_subs = {}
+function M.on_widget(class_name, fn)
+    widget_subs[class_name] = widget_subs[class_name] or {}
+    table.insert(widget_subs[class_name], fn)
+end
+
+local function after_change()
+    save_announced()
+    pcall(function() require("focus").request_settle() end)
+end
+
+local queued = {}   -- path -> { kind = "open" | "change" | "close", trust }
+-- New widgets of a watched class, or of a class not seen yet, from the
+-- moment the game makes them until their first look is queued: focus.lua
+-- said a side mission offer's option before the offer's text, because the
+-- offer's class was seen for the first time and its look was not queued
+-- yet when focus looked (WBP_MultipleChoiceWidget_C, 12:23:27, firefly82,
+-- 2026-10-21). path -> class name.
+local made = {}
+local fresh = {}    -- path -> true: a new watched widget not shown yet
+local reopen_wait = {}   -- path -> true while a shown-again window waits to be read
+local reopen_gen = {}    -- path -> count of closes, so a waiting read knows its showing ended
+
+-- One window event, handled on the next tick (a pre hook: the game fills
+-- the window inside the function).
+local function process(p, kind, trust)
+    local w = StaticFindObject(p)
+    if kind == "close" then
+        if open[p] or announced[p] then
+            print("[VoyagerAccess] popups: closed " .. (p:match("([%w_]+)$") or "?") .. "\n")
+        end
+        local was = open[p]
+        open[p], announced[p], last_text[p], settle[p] = nil, nil, nil, nil
+        -- A read waiting after a reopen is for a showing that is over.
+        reopen_wait[p] = nil
+        reopen_gen[p] = (reopen_gen[p] or 0) + 1
+        M.result_pending = false
+        after_change()
+        tell(close_listeners, p, was)
+        return
+    end
+    if not (w and w:IsValid() and p:find("^/Engine/Transient%.")) then return end
+    local cls = w:GetClass():GetFName():ToString()
+    -- A window the game shows again (it keeps the widget: a room window, a
+    -- toast, the same energy-loss report two cycles running) kept its
+    -- "read" mark and last text, and the same text again was silent (review
+    -- of firefly82's patch, 2026-10-21; 0.3.67 reset both when a window left
+    -- the screen). It also gets its open event before it fills in the new
+    -- content: a room window opened a second time was read as "Room." (demo,
+    -- VM, 2026-10-21). So its marks are cleared now, focus waits for it, and
+    -- it is read a moment later.
+    if kind == "open" and trust and (announced[p] or last_text[p]) then
+        announced[p], last_text[p] = nil, nil
+        open[p] = open[p] or cls
+        if not reopen_wait[p] then
+            reopen_wait[p] = true
+            local gen = reopen_gen[p] or 0
+            -- 400 ms: at 200 the room description was still missing once,
+            -- after a conversation (demo, VM, 2026-10-21).
+            ExecuteInGameThreadWithDelay(400, function()
+                -- Closed in the meantime: nothing to read (GPT review,
+                -- 2026-10-21: the trusted read brought a closed window back).
+                if (reopen_gen[p] or 0) ~= gen or not reopen_wait[p] then return end
+                reopen_wait[p] = nil
+                local ok, err = pcall(process, p, "change", true)
+                if not ok then print("[VoyagerAccess] popups reopen error: " .. tostring(err) .. "\n") end
+            end)
+        end
+        return
+    end
+    local shown = screen.shown(w)
+    if not trust and not shown then
+        -- A new widget of a watched kind, not on screen yet: the first one
+        -- of its class can be shown before its class's events are hooked
+        -- (the census missed the first side mission offer that way), so it
+        -- is looked at again on the next input or window event
+        -- (M.recheck_fresh), until it is shown or gone.
+        if kind == "change" and not announced[p] then fresh[p] = true end
+        return
+    end
+    fresh[p] = nil
+    open[p] = open[p] or cls
+    if cls == "WBP_SavegameNotification_C" then
+        if kind == "open" then say_save(p) end
+        return
+    end
+    -- Inside another open window: read with it, not alone.
+    for _, o in ipairs(on_screen()) do
+        if o ~= p and p:sub(1, #o + 1) == o .. "." then
+            if not (p:find("WBP_AM_ConfirmStart_C", 1, true) or p:find("FewerHeroesConfirmWidget", 1, true)) then
+                return process(o, "change", true)
             end
         end
     end
-    if shown_now and not save_shown then
-        local say = text and (text:sub(1, 1):upper() .. text:sub(2)) or "Saving"
-        print("[VoyagerAccess] save: " .. say .. "\n")
-        speech.say(say, false)
+    local reread = announced[p] == true
+    -- Activated but a parent still fading in: the census saw a room window's
+    -- BP_OnActivated with the window not yet shown. Its texts count as shown
+    -- if they are shown inside the window (screen.shown with the window as
+    -- the stop).
+    read_stop = (not shown) and w or nil
+    local okr, spoken = pcall(read_window, p, reread)
+    read_stop = nil
+    if not okr then print("[VoyagerAccess] popups read error: " .. tostring(spoken) .. "\n"); spoken = nil end
+    -- Read only once something was said or it is really on screen: a window
+    -- with nothing to say yet stays unread, so its next event reads it.
+    if spoken or shown then announced[p] = true end
+    local said = { spoken }
+    -- A tutorial's frame: its page too, then close it.
+    if cls == "WBP_TutorialInfoWidget_C" then
+        for _, pc in ipairs(PAGE_CLASSES) do
+            for _, pw in ipairs(FindAllOf(pc) or {}) do
+                local pp = pw:IsValid() and path_of(pw)
+                if pp and pp:find("^/Engine/Transient%.") and not announced[pp] and screen.shown(pw) then
+                    open[pp] = pc
+                    said[#said + 1] = read_window(pp, false)
+                    announced[pp] = true
+                end
+            end
+        end
+        ExecuteInGameThread(function() pcall(M.close_tutorial) end)
     end
-    save_shown = shown_now
+    local texts = {}
+    for _, s in ipairs(said) do if s then texts[#texts + 1] = s end end
+    if #texts > 0 then require("dialogue").remember(table.concat(texts, ". ")) end
+    after_change()
+    if spoken then tell(read_listeners, p, cls) end
 end
+
+local function queue(p, kind, trust)
+    if not p then return end
+    local q = queued[p]
+    if q then
+        -- Within one tick an open or close outranks a change.
+        if kind ~= "change" then q.kind = kind end
+        q.trust = q.trust or trust
+        return
+    end
+    queued[p] = { kind = kind, trust = trust }
+    ExecuteInGameThread(function()
+        local e = queued[p]
+        queued[p] = nil
+        local ok, err = pcall(process, p, e.kind, e.trust)
+        if not ok then print("[VoyagerAccess] popups error: " .. tostring(err) .. "\n") end
+    end)
+end
+
+-- The windows of one watched class read again, when another part of the
+-- game says their content is final (dialogue.lua: the away mission window
+-- has shown its consequences, for WBP_AwayMissionOutcome_C).
+function M.reread_class(cls)
+    for _, w in ipairs(FindAllOf(cls) or {}) do
+        local p = w:IsValid() and path_of(w)
+        if p and p:find("^/Engine/Transient%.") then queue(p, "change", false) end
+    end
+end
+
+-- The new watched widgets not shown yet, looked at once more (focus.lua
+-- calls this on each look it takes; nothing runs on a timer).
+function M.recheck_fresh()
+    for p in pairs(fresh) do
+        local w = StaticFindObject(p)
+        if not (w and w:IsValid()) then
+            fresh[p] = nil
+        elseif screen.shown(w) then
+            fresh[p] = nil
+            queue(p, "change", false)
+        end
+    end
+end
+
+-- An open window not read yet holds focus speech only while it is shown,
+-- or for 2 s while it may still be fading in: one opened by a trusted event
+-- but never shown, whose read said nothing, held focus speech for good
+-- (review of firefly82's patch, 2026-10-21).
+local unread_since = {}   -- path -> os.clock() of the first look that found it unread
+local function holds(p)
+    if announced[p] then unread_since[p] = nil return false end
+    local w = StaticFindObject(p)
+    if not (w and w:IsValid()) then return false end
+    if screen.shown(w) then return true end
+    if not unread_since[p] then
+        unread_since[p] = os.clock()
+        -- When the grace runs out, the button it held is said.
+        ExecuteInGameThreadWithDelay(2100, function()
+            if unread_since[p] and not announced[p] then
+                pcall(function() require("focus").reannounce() end)
+            end
+        end)
+    end
+    return os.clock() - unread_since[p] < 2
+end
+
+-- True while a window of one of the classes in set (name -> true) is open
+-- or waiting to be read, and not read yet.
+function M.unread_of(set)
+    for _, cls in pairs(made) do
+        if set[cls] then return true end
+    end
+    for p, cls in pairs(open) do
+        if set[cls] and holds(p) then return true end
+    end
+    for p in pairs(queued) do
+        local cls = p:match("([%w_]+_C)_%d+$")
+        if cls and set[cls] and not announced[p] then return true end
+    end
+    return false
+end
+
+-- True while a window event waits to be read: focus.lua holds the focused
+-- button until the window's own text has been said (it used to look for any
+-- unread window by scanning 11 classes).
+function M.read_pending()
+    if next(queued) ~= nil then return true end
+    for p in pairs(open) do
+        if holds(p) then return true end
+    end
+    return M.result_pending == true
+end
+
+-- Hooks ---------------------------------------------------------------------
+
+local watched_set = {}
+for _, c in ipairs(WATCH) do watched_set[c] = true end
+local class_seen = {}    -- class name -> true (hooked) or false (not watched)
+local hooked_fn = {}     -- function path -> true
+
+local function on_event(name, kind, trust)
+    return function(ctx)
+        local okp, p = pcall(function() return path_of(ctx:get()) end)
+        if okp and p then queue(p, kind, trust) end
+    end
+end
+
+-- The watched class cls stands for (itself, or the watched class it is
+-- built on: WBP_Dialogue_Window_Intro and the like), or nil.
+local function watched_base(cls)
+    local k, d = cls, 0
+    while k and k:IsValid() and d < 8 do
+        local n = k:GetFName():ToString()
+        if watched_set[n] then return n end
+        k, d = k:GetSuperStruct(), d + 1
+    end
+    return nil
+end
+
+local function hook_class(cls)
+    local name = cls:GetFName():ToString()
+    if class_seen[name] ~= nil then return class_seen[name] end
+    local base = watched_base(cls)
+    class_seen[name] = base ~= nil
+    if not base then return false end
+    if base ~= name then
+        WATCH[#WATCH + 1] = name
+        watched_set[name] = true
+        rebuild_order()
+        order_of[name] = order_of[base]
+        if LAYOUTS[base] and not LAYOUTS[name] then LAYOUTS[name] = LAYOUTS[base] end
+        print("[VoyagerAccess] popups: watching " .. name .. " as a kind of " .. base .. "\n")
+    end
+    local got, taken = {}, {}
+    local k = cls
+    while k and k:IsValid() do
+        local kpath = path_of(k)
+        if not kpath or BASE[kpath] then break end
+        k:ForEachFunction(function(f)
+            local fname = f:GetFName():ToString()
+            local kind = (OPEN_EVENTS[fname] and "open") or (CHANGE_EVENTS[fname] and "change")
+                or (CLOSE_EVENTS[fname] and "close") or nil
+            -- The nearest definition only: an override is what runs.
+            if kind and not taken[fname] then
+                taken[fname] = true
+                local fpath = kpath .. ":" .. fname
+                if not hooked_fn[fpath] then
+                    local ok = pcall(RegisterHook, fpath, on_event(fname, kind, OPEN_EVENTS[fname] == true))
+                    hooked_fn[fpath] = ok
+                end
+                got[#got + 1] = fname
+            end
+        end)
+        k = k:GetSuperStruct()
+    end
+    if name == "WBP_BattleResultLCARS_C" then pcall(M.ensure_damage_hook) end
+    print("[VoyagerAccess] popups: " .. name .. " events: " .. (#got > 0 and table.concat(got, ", ") or "none") .. "\n")
+    return true
+end
+
+M.parts_under = parts_under
 
 function M.install()
     load_announced()
-    LoopInGameThreadWithDelay(500, function()
-        local ok, err = pcall(save_poll)
-        if not ok then print("[VoyagerAccess] save poll error: " .. tostring(err) .. "\n") end
+    -- Every widget the game makes passes here: one name lookup, and for a
+    -- class not seen before one check on the next tick.
+    local okn, err = pcall(NotifyOnNewObject, "/Script/UMG.UserWidget", function(o)
+        local okc, cls = pcall(function() return o:GetClass() end)
+        if not (okc and cls) then return end
+        local name = cls:GetFName():ToString()
+        local subs = widget_subs[name]
+        if subs then
+            local okq, q = pcall(function() return path_of(o) end)
+            if okq and q then
+                ExecuteInGameThread(function() tell(subs, q) end)
+            end
+        end
+        if class_seen[name] == false then return end
+        local okp, p = pcall(function() return path_of(o) end)
+        if okp and p then made[p] = name end
+        ExecuteInGameThread(function()
+            pcall(function()
+                local is_watched = class_seen[name]
+                if is_watched == nil then is_watched = hook_class(cls) end
+                -- A new widget of a watched kind: looked at once (made
+                -- with no event of its own, or before its class was hooked).
+                if is_watched and okp and p then queue(p, "change", false) end
+            end)
+            if okp and p then made[p] = nil end
+        end)
     end)
-    LoopInGameThreadWithDelay(3000, function()
-        pcall(M.ensure_damage_hook)
-        local ok, err = pcall(adopt_subclasses)
-        if not ok then print("[VoyagerAccess] popups adopt error: " .. tostring(err) .. "\n") end
-    end)
-    LoopInGameThreadWithDelay(INTERVAL_MS, function()
-        local ok2, err = pcall(poll)
-        if not ok2 then print("[VoyagerAccess] popups error: " .. tostring(err) .. "\n") end
-    end)
+    print("[VoyagerAccess] popups: new widgets " .. (okn and "watched" or ("not watched: " .. tostring(err))) .. "\n")
+    -- Windows that exist already (the main menu, a reload): once.
+    for _, c in ipairs(WATCH) do
+        for _, w in ipairs(FindAllOf(c) or {}) do
+            local p = w:IsValid() and path_of(w)
+            if p and p:find("^/Engine/Transient%.") then
+                pcall(hook_class, w:GetClass())
+                if screen.shown(w) then
+                    open[p] = c
+                    queue(p, "change", false)
+                end
+            end
+        end
+    end
 end
 
 return M

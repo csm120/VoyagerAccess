@@ -147,6 +147,26 @@ end
         # A thousands separator inside the number stays part of it.
         self.assertEqual(tr.apply("Offensive combat power 1,200."), "Offensive Kampfkraft 1,200.")
 
+    def test_real_german_tall_room_line(self):
+        # The real table on the ship view's line for a damaged tall room,
+        # whose dark decks ship.lua fills in already translated: as line
+        # templates "on decks {s}" lost to "Damaged, no life support" or took
+        # ", decks 4 to 6" into its slot (2026-10-20).
+        lua = lupa.LuaRuntime()
+        scripts = str(TR.parent).replace("\\", "/")
+        lua.execute('package.path = "%s/?.lua;" .. package.path' % scripts)
+        lua.execute('''
+function StaticFindObject()
+    return { GetCurrentCulture = function() return { ToString = function() return "de" end } end }
+end
+print = function() end
+''')
+        tr = lua.execute(TR.read_text(encoding="utf-8"))
+        part = tr.fill("no life support on decks {s}", "4, 5" + tr.word(" and ") + "6")
+        line = "Deck 5, Holodeck, Damaged, " + part + ", decks 4 to 6, 3 of 9"
+        self.assertEqual(tr.apply(line),
+                         "Deck 5, Holodeck, Beschädigt, keine Lebenserhaltung auf den Decks 4, 5 und 6, Decks 4 bis 6, 3 von 9")
+
     def test_missing_table_is_english(self):
         tr = self.load("ja")
         self.assertEqual(tr.apply("5 of 10"), "5 of 10")

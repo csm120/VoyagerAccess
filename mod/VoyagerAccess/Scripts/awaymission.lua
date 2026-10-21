@@ -73,13 +73,13 @@ local function plaque_text(plaque)
         local st = plaque.HeroRoomText
         if st and st:IsValid() and screen.shown(st) then
             local s = plain(text_of(st))
-            if s ~= "" and s:sub(1, 1) ~= "#" then head = head .. ", " .. s:lower() end
+            if s ~= "" and s:sub(1, 1) ~= "#" then head = head .. ", " .. require("tr").lower(s) end
         end
     end)
     local sheet = plaque.HeroStatSheet
     if sheet and sheet:IsValid() then
         local rank = plain(text_of(sheet.HeroRank and sheet.HeroRank.RankText))
-        if rank ~= "" then head = head .. ", " .. rank:lower() end
+        if rank ~= "" then head = head .. ", " .. require("tr").lower(rank) end
         local trait = plain(text_of(sheet.HeroTraits and sheet.HeroTraits.TraitText))
         if trait ~= "" then head = head .. ", " .. trait end
     end
@@ -1050,11 +1050,35 @@ function M.mission_enter()
     end
 end
 
-function M.install()
-    LoopInGameThreadWithDelay(300, function()
+-- The mission window is looked at when something can have changed in it,
+-- not every 300 ms (the mod's loops held the game long enough to swallow
+-- keys; firefly82, 2026-10-21): the player's input (keys.lua), the mission
+-- window's own events (ShowDialogue, FinishShowChoices, OnTriggerNextNode,
+-- FinishShowingDialogueRow, seen in the window census of 2026-10-21;
+-- dialogue.lua passes them on), a challenge result's text being typed
+-- (PlayLine, story.lua) and a reward widget being made (popups.on_widget).
+-- One look per game tick however many ask. The combat setup's text
+-- (combat_prep_poll) is looked at by combat.lua's own look.
+local poll_queued = false
+function M.request_poll()
+    if poll_queued then return end
+    poll_queued = true
+    ExecuteInGameThread(function()
+        poll_queued = false
         local ok, err = pcall(M.mission_poll)
         if not ok then print("[VoyagerAccess] mission error: " .. tostring(err) .. "\n") end
     end)
+end
+
+M.combat_prep_poll = function() pcall(combat_prep_poll) end
+
+function M.install()
+    require("keys").on_any(M.request_poll)
+    local popups = require("popups")
+    for _, cls in ipairs({ "WBP_ResourceReward_AwayMissionChallengeResult_C", "WBP_ItemReward_AwayMissionChallengeResult_C",
+        "WBP_AwayMission_ChallengeResult_C" }) do
+        popups.on_widget(cls, function() M.request_poll() end)
+    end
 end
 
 -- A challenge's result (WBP_AwayMission_ChallengeResult inside the mission
@@ -1229,7 +1253,6 @@ local HINT = "To choose: Down to a hero and press Enter, then Down to Confirm an
 -- When a new set of choices comes up, read the first one.
 function M.mission_poll()
     result_poll()
-    pcall(combat_prep_poll)
     if not M.mission_active() then
         mission_sig = nil
         return

@@ -97,6 +97,9 @@ end
 -- hooks that function and, when an event opens, sweeps the mouse down the
 -- option list once; whichever option IsHovered gets the weights.
 local captured = {}   -- key_of(button) -> { {outcome, weight}, ... }
+-- option key -> { name, at }: the hero picked by Left and Right while the
+-- game's selection is dropped; cleared with each new event reading.
+local picked = {}
 local hooked = false
 -- The button and its wording: a button object reused for another option
 -- must not keep the old numbers.
@@ -124,27 +127,27 @@ end
 -- The game's own move of an option's hero selection (native
 -- NavigateHeroes, which sets CurrentSelectedHero): the hero is read when it
 -- has happened, not after a fixed 150 ms (firefly82's review, 2026-10-20).
+-- The hook itself says the hero, whatever moved it: the game acts on Left
+-- and Right before or after the mod reads the same key from keys.txt, and
+-- pairing the two by a 0.3 s window was a guess (firefly82's review,
+-- 2026-10-21). A native function, so it is hooked when the mod starts.
 local NAV_HOOK = "/Script/STVoyager.STVPOIEventSelectableOptionButton:NavigateHeroes"
 local nav_hooked = false
-local nav_pending = nil   -- { path, fn }
--- The game can act on the key before the mod reads it from keys.txt, so
--- the last call is kept too: { path, at }.
-local nav_last = nil
+local nav_at = -100   -- os.clock() of the game's last NavigateHeroes
+local say_hero   -- below
 local function ensure_nav_hook()
     if nav_hooked or not StaticFindObject(NAV_HOOK) then return end
     nav_hooked = pcall(RegisterHook, NAV_HOOK, function(ctx)
+        nav_at = os.clock()
         local okp, p = pcall(function() return path_of(ctx:get()) end)
         if not okp then return end
-        ExecuteInGameThread(function()
-            nav_last = { path = p, at = os.clock() }
-            local np = nav_pending
-            if np and np.fn and np.path == p then
-                local fn = np.fn; np.fn = nil; pcall(fn)
-            end
-        end)
+        -- A pre callback: CurrentSelectedHero is read on the next tick.
+        ExecuteInGameThread(function() pcall(say_hero, p) end)
     end)
     print("[VoyagerAccess] events: hero hook " .. (nav_hooked and "installed" or "not installed") .. "\n")
 end
+
+function M.install() pcall(ensure_nav_hook) end
 
 -- Options shown and not locked that have no captured weights yet.
 local function uncaptured()
@@ -167,7 +170,7 @@ function M.sweeping_now() return sweeping end
 function M.sweep(done)
     -- Fresh for each reading: a station met again after a room was built
     -- would keep the old odds under the same button and wording.
-    if not sweeping then captured = {} end
+    if not sweeping then captured, picked = {}, {} end
     pcall(ensure_nav_hook)
     local ok = pcall(ensure_hook)
     if not (ok and hooked) or uncaptured() == 0 or sweeping then
@@ -204,8 +207,12 @@ function M.sweep(done)
             end)
             if done then pcall(done) end
         end
-        if orig_y and okv0 then
-            pcall(speech.ring_mouse, (0.83 * ww - ww / 2) / rr, (orig_y - hh / 2) / rr)
+        -- The mouse goes to the window's left side, away from the options:
+        -- resting over the first option, it pulled focus back there about
+        -- 0.7 s after every Down (TheRev's "keystroke delay in the choices
+        -- screens", forum; VM, 2026-10-20). Focus is set directly.
+        if okv0 then
+            pcall(speech.ring_mouse, (0.1 * ww - ww / 2) / rr, 0)
             ExecuteInGameThreadWithDelay(300, function() pcall(after) end)
         else
             after()
@@ -217,6 +224,25 @@ function M.sweep(done)
         return size.X, size.Y
     end)
     if not (okv and w and h and h > 0) then return finish() end
+    -- A key during the sweep ends it where the player is: the sweep took
+    -- about 5 s, the options were silent meanwhile, and at its end focus
+    -- went back to the first option, so Down then Enter chose option 1
+    -- (TheRev's "keystroke delay in the choices screens", forum, reproduced
+    -- in the VM, 2026-10-20). Options not reached keep the mod's own
+    -- chances. Focus stays where the game put it and focus.lua says it (the
+    -- options are not under the event window's path, so its hold during the
+    -- sweep does not apply). Focusing "the player's option" again from here
+    -- took the one focus.lua had before it saw the Down, and undid the key
+    -- (VM, 2026-10-20).
+    local keys = require("keys")
+    local key_start = keys.key_count
+    local function stop_for_key()
+        if finished then return end
+        finished = true
+        sweeping = false
+        pcall(speech.ring_mouse, (0.1 * ww - ww / 2) / rr, 0)
+        print("[VoyagerAccess] events: sweep stopped by a key, " .. uncaptured() .. " option(s) without\n")
+    end
     sweeping = true
     local r = 350 / 1080 * h   -- the helper's ring radius
     okv0, rr, ww, hh = true, r, w, h
@@ -225,6 +251,7 @@ function M.sweep(done)
     for y = 0.40 * h, 0.96 * h, 0.025 * h do ys[#ys + 1] = y end
     local i = 0
     local function step()
+        if keys.key_count ~= key_start then return stop_for_key() end
         if orig_key and not orig_y and i > 0 and captured[orig_key] then orig_y = ys[i] end
         i = i + 1
         if i > #ys or uncaptured() == 0 then return finish() end
@@ -518,7 +545,9 @@ end
 -- it. It starts on the available hero with the highest skill, the one
 -- whose chances the option's bar shows. A mod count of its own drifted
 -- from the game's after seven Lefts and the wrong hero went; clicking a
--- portrait from script changed nothing (VM, 2026-10-19). Index into
+-- portrait from script changed nothing (VM, 2026-10-19; superseded
+-- 2026-10-21: HandleButtonClicked on a portrait sends the team with that
+-- hero, used by M.enter after a dropped selection). Index into
 -- heroes_of(b), or nil.
 local function selected(b, list)
     local ok, s = pcall(function() return b.CurrentSelectedHero end)
@@ -540,42 +569,83 @@ end
 -- and the mod says the hero it moved to with that hero's chances, the bar a
 -- sighted player sees with the mouse on that portrait (20% good with No
 -- hero, 30% with Chakotay; VM, 2026-10-19). True when it handled the key.
+-- The hero now selected on the option at path, said when the game has
+-- moved it (NavigateHeroes, hooked above). Only for the option that has
+-- focus, so a selection the game sets up by itself while building the
+-- event is not read over the option's own reading.
+say_hero = function(path)
+    local b = StaticFindObject(path)
+    if not (b and b:IsValid() and b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C") then return end
+    local cur = require("focus").current_path()
+    if not (cur and (cur == path or cur:sub(1, #path + 1) == path .. ".")) then return end
+    chosen[key_of(b)] = true
+    local now = heroes_of(b)
+    local i = selected(b, now)
+    -- No portrait selected (-1): the game dropped a fatigued hero by
+    -- itself and Left and Right then moved nothing; the key was
+    -- silent (Q Trial, VM, 2026-10-20). The screen shows no hero.
+    if not i then
+        -- With free heroes, Left and Right read them (hero_step); "No hero"
+        -- came first every time (Looted Wreckage, VM, 2026-10-21).
+        for _, h in ipairs(now) do
+            if not h.none and h.usable and not h.tired then return end
+        end
+        return speech.say("No hero", true)
+    end
+    local o = option_for(b, text_of(b.ChoiceButton_Text))
+    local text = hero_text(now[i], o and attribute_of(o))
+    local c = o and chances(o, b, hero_skills(now, i))
+    if c then text = text .. ". " .. c end
+    speech.say(text .. ". " .. i .. " of " .. #now, true)
+end
+
+-- Left and Right on an option with heroes: the game moves its selection
+-- itself and the hook above says it; the key is only taken here, so it
+-- does not also move focus. True when it handled the key.
 function M.hero_step(path, dir)
     local b = path and StaticFindObject(path)
     if not (b and b:IsValid() and b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C") then return false end
     local list = heroes_of(b)
     if #list < 2 then return false end
     chosen[key_of(b)] = true
+    -- The game dropped its selection (-1, after taking away a fatigued
+    -- hero) and Left and Right then move nothing, while a sighted player can
+    -- still click a free hero's portrait, which sends the team with that hero
+    -- (Edible Flora, Q Trial, VM, 2026-10-21: Tom Paris and the Doctor
+    -- fatigued, Kes free, only "No hero" was heard). Here Left and Right go
+    -- through the heroes who can go, and Enter presses that portrait.
+    if not selected(b, list) then
+        local free = {}
+        for i, h in ipairs(list) do
+            if not h.none and h.usable and not h.tired then free[#free + 1] = i end
+        end
+        if #free == 0 then speech.say("No hero", true) return true end
+        local k = key_of(b)
+        local at = 0
+        local was = picked[k]
+        for n, i in ipairs(free) do
+            if was and list[i].name == was.name then at = n end
+        end
+        at = at + dir
+        if at < 1 then at = 1 elseif at > #free then at = #free end
+        -- By name and with the time: an index or an old pick could name
+        -- another hero in a later event (GPT review, 2026-10-21).
+        picked[k] = { name = list[free[at]].name, at = os.clock() }
+        local o = option_for(b, text_of(b.ChoiceButton_Text))
+        speech.say(hero_text(list[free[at]], o and attribute_of(o)) .. ". " .. at .. " of " .. #free, true)
+        return true
+    end
     pcall(ensure_nav_hook)
-    local function say_hero()
-        pcall(function()
-            b = StaticFindObject(path)
-            if not (b and b:IsValid()) then return end
-            local now = heroes_of(b)
-            local i = selected(b, now)
-            -- No portrait selected (-1): the game dropped a fatigued hero by
-            -- itself and Left and Right then moved nothing; the key was
-            -- silent (Q Trial, VM, 2026-10-20). The screen shows no hero.
-            if not i then return speech.say("No hero", true) end
-            local o = option_for(b, text_of(b.ChoiceButton_Text))
-            local text = hero_text(now[i], o and attribute_of(o))
-            local c = o and chances(o, b, hero_skills(now, i))
-            if c then text = text .. ". " .. c end
-            speech.say(text .. ". " .. i .. " of " .. #now, true)
-        end)
-    end
-    local np = { path = path_of(b), fn = say_hero }
-    if nav_last and nav_last.path == np.path and os.clock() - nav_last.at < 0.3 then
-        nav_last = nil
-        return ExecuteInGameThread(function() say_hero() end) or true
-    end
-    nav_pending = np
-    -- Without the hook, or if the game did not move (an end of the row),
-    -- read what there is.
-    ExecuteInGameThreadWithDelay(nav_hooked and 600 or 150, function()
-        if np.fn then
-            if nav_hooked then print("[VoyagerAccess] events: no hero move in time\n") end
-            local fn = np.fn; np.fn = nil; fn()
+    -- When the game reports no move around this key (the hook missing, or
+    -- no NavigateHeroes at the end of the hero row), the hero is read here
+    -- once, as 0.3.67 did: Left and Right said nothing at all otherwise
+    -- (review of firefly82's patch, 2026-10-21). The game may act on the
+    -- key before keys.lua reads it, so a move up to 0.7 s around the key
+    -- counts.
+    ExecuteInGameThreadWithDelay(400, function()
+        if os.clock() - nav_at > 0.7 then
+            if not nav_hooked then print("[VoyagerAccess] events: hero hook missing, read after the key\n") end
+            pcall(say_hero, path)
         end
     end)
     return true
@@ -588,6 +658,24 @@ function M.enter(b, path)
     local list = heroes_of(b)
     if #list < 2 then return false end
     local i = selected(b, list)
+    -- A hero picked by Left and Right while the game's selection was
+    -- dropped: pressing the portrait sends the team with that hero, as a
+    -- click does (hero_step).
+    local k = key_of(b)
+    local pk = not i and picked[k]
+    if pk and os.clock() - pk.at < 120 then
+        for _, h in ipairs(list) do
+            if h.name == pk.name and not h.none and h.usable and not h.tired then
+                picked[k] = nil
+                print("[VoyagerAccess] events: sending " .. h.name .. " by the portrait\n")
+                local ok = pcall(function() h.button:HandleButtonClicked() end)
+                if ok then return true end
+                print("[VoyagerAccess] events: the portrait press failed\n")
+                return false
+            end
+        end
+    end
+    picked[k] = nil
     local h = i and list[i]
     if h and not h.none and not h.usable then
         speech.say(h.name .. " is not available for this", true)

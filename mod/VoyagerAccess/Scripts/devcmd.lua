@@ -85,14 +85,18 @@ end
 -- contents); the installer never creates it.
 local FLAG = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\dev"
 
+-- The command is run when tools\cmd.sh writes "cmd:run" into keys.txt
+-- after placing command.lua, the channel the mod reads anyway (keys.lua),
+-- not by looking for the file every 500 ms (the mod's loops held the game
+-- long enough to swallow keys, firefly82, 2026-10-21).
 return function()
     local f = io.open(FLAG, "r")
     if not f then return end
     f:close()
     print("[VoyagerAccess] development commands enabled\n")
     pcall(function() require("unread").install() end)
-    LoopInGameThreadWithDelay(500, function()
+    require("keys").on("cmd:run", function()
         local ok, err = pcall(run)
-        if not ok then print("[VoyagerAccess] cmd loop error: " .. tostring(err) .. "\n") end
+        if not ok then print("[VoyagerAccess] cmd error: " .. tostring(err) .. "\n") end
     end)
 end

@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from voyager.helper import (  # noqa: E402
-    VK, VK_CAPITAL, VK_CONTROL, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, enable_dpi_awareness, is_center_mouse, is_game_exe,
+    VK, VK_CAPITAL, VK_CONTROL, VK_F11, VK_INSERT, VK_MENU, VK_SHIFT, KeyWatcher, Tailer, enable_dpi_awareness, is_center_mouse, is_game_exe,
     parse_click, parse_line, parse_ring)
 
 
@@ -168,6 +168,16 @@ class KeyWatcherTests(unittest.TestCase):
         self.kb.state[VK["r"]] = TAPPED
         self.assertEqual(self.w.poll(), ["r"])
 
+    def test_ctrl_f11_switches_the_input_log_and_f11_alone_does_nothing(self):
+        # The mod's keys always come from the watcher, so it must see F11.
+        self.kb.state[VK_F11] = DOWN
+        self.assertEqual(self.w.poll(), [])
+        self.kb.state[VK_F11] = 0
+        self.w.poll()
+        self.kb.state[VK_CONTROL] = DOWN
+        self.kb.state[VK_F11] = DOWN
+        self.assertEqual(self.w.poll(), ["ctrl+f11"])
+
     def test_shift_enter_is_its_own_key(self):
         self.kb.state[VK["enter"]] = DOWN
         self.kb.state[VK_SHIFT] = DOWN
@@ -221,6 +231,109 @@ class KeyWatcherTests(unittest.TestCase):
         # the arrow keys (2026-10-14): the mod has to hear it to close lists.
         self.kb.state[VK["escape"]] = DOWN
         self.assertEqual(self.w.poll(), ["escape"])
+
+
+class KeyEventsTests(unittest.TestCase):
+    """The input log and the mod's keys from Windows' own key events
+    (firefly82, 2026-10-21: an E that did nothing could not be told from
+    one never pressed)."""
+
+    def setUp(self):
+        from voyager.helper import KeyEvents
+        self.front = True
+        self.ev = KeyEvents(lambda: self.front, now=lambda: "T")
+
+    def test_game_key_is_logged_with_hold_but_is_no_mod_key(self):
+        self.assertEqual(self.ev.key(0x45, True, 1000, False), ([], "T E down"))
+        self.assertEqual(self.ev.key(0x45, False, 1080, False), ([], "T E up after 80 ms"))
+
+    def test_typed_letters_are_not_written_to_the_log(self):
+        # Profile and save names, or the Steam overlay over the game, would
+        # otherwise go letter by letter into UE4SS.log, which players paste
+        # into public bug reports. E, F and T (the game's quick actions) and
+        # the mod's own keys are still named.
+        self.assertEqual(self.ev.key(0x4B, True, 0, False), ([], "T a character key down"))       # K
+        self.assertEqual(self.ev.key(0x4B, False, 50, False), ([], "T a character key up after 50 ms"))
+        self.assertEqual(self.ev.key(0x37, True, 60, False)[1], "T a character key down")        # 7
+        self.assertEqual(self.ev.key(0xBE, True, 70, False)[1], "T a character key down")        # period
+        self.assertEqual(self.ev.key(0x46, True, 80, False)[1], "T F down")
+        self.assertEqual(self.ev.key(VK["j"], True, 90, False)[1], "T J down (mod key: j)")
+
+    def test_release_after_leaving_the_game_is_not_logged(self):
+        # Held while switching to another window: the release happened
+        # outside the game, so it is not written (GPT review, 2026-10-21).
+        self.ev.key(0x45, True, 0, False)
+        self.front = False
+        self.assertEqual(self.ev.key(0x45, False, 300, False), ([], None))
+        self.front = True
+        self.assertEqual(self.ev.mouse(0x201, 5, 5, 0, False), "T mouse left down at 5,5, by the player")
+        self.front = False
+        self.assertIsNone(self.ev.mouse(0x202, 900, 10, 40, False))
+
+    def test_mod_key_is_named_and_logged(self):
+        names, line = self.ev.key(VK["enter"], True, 0, False)
+        self.assertEqual(names, ["enter"])
+        self.assertEqual(line, "T Enter down (mod key: enter)")
+
+    def test_auto_repeat_is_counted_not_repeated(self):
+        self.ev.key(VK["up"], True, 0, False)
+        for t in (500, 533, 566):
+            self.assertEqual(self.ev.key(VK["up"], True, t, False), ([], None))
+        self.assertEqual(self.ev.key(VK["up"], False, 600, False)[1], "T Up up after 600 ms, 3 repeats")
+
+    def test_shift_enter_and_sided_modifiers(self):
+        self.ev.key(0xA0, True, 0, False)        # Left Shift
+        names, line = self.ev.key(VK["enter"], True, 10, False)
+        self.assertEqual(names, ["shift+enter"])
+        self.assertEqual(line, "T Enter down with Shift (mod key: shift+enter)")
+
+    def test_screen_reader_chord_is_logged_but_not_a_mod_key(self):
+        self.ev.key(VK_INSERT, True, 0, False)
+        names, line = self.ev.key(VK["r"], True, 10, False)
+        self.assertEqual(names, [])
+        self.assertEqual(line, "T R down with Insert")
+
+    def test_ctrl_f12_still_reaches_the_mod(self):
+        self.ev.key(0xA2, True, 0, False)        # Left Ctrl
+        self.assertEqual(self.ev.key(VK["f12"], True, 5, False)[0], ["ctrl+f12"])
+
+    def test_nothing_logged_while_game_not_in_front(self):
+        self.front = False
+        self.assertEqual(self.ev.key(0x45, True, 0, False), ([], None))
+        # Released after the game came back: no line, it was never logged.
+        self.front = True
+        self.assertEqual(self.ev.key(0x45, False, 50, False), ([], None))
+        # Held down when the game comes back: not a new press.
+        self.front = False
+        self.ev.key(VK["up"], True, 0, False)
+        self.front = True
+        self.assertEqual(self.ev.key(VK["up"], True, 40, False), ([], None))
+
+    def test_ctrl_f11_switches_the_log(self):
+        # firefly82, 2026-10-21: the input log can be turned off.
+        self.ev.key(0xA2, True, 0, False)        # Left Ctrl
+        self.assertEqual(self.ev.key(0x7A, True, 5, False)[0], ["ctrl+f11"])
+        self.ev.key(0x7A, False, 50, False)
+        self.ev.key(0xA2, False, 60, False)
+        # F11 alone is the game's, not the mod's.
+        self.assertEqual(self.ev.key(0x7A, True, 100, False)[0], [])
+
+    def test_injected_key_is_marked(self):
+        self.assertEqual(self.ev.key(0x45, True, 0, True)[1], "T E down, injected")
+
+    def test_mouse_buttons_and_wheel(self):
+        self.assertIsNone(self.ev.mouse(0x200, 5, 5, 0, False))            # moves are not logged
+        self.assertEqual(self.ev.mouse(0x201, 931, 311, 100, True), "T mouse left down at 931,311, by the mod")
+        self.assertEqual(self.ev.mouse(0x202, 931, 311, 130, True),
+                         "T mouse left up after 30 ms at 931,311, by the mod")
+        self.assertEqual(self.ev.mouse(0x20A, 10, 20, 0, False, wheel=-120),
+                         "T mouse wheel -120 at 10,20, by the player")
+
+    def test_key_names_do_not_depend_on_the_layout(self):
+        from voyager.helper import key_name
+        self.assertEqual([key_name(v) for v in (0x45, 0x20, 0x70, 0x7B, 0x31, 0x61, 0xA3)],
+                         ["E", "Space", "F1", "F12", "1", "Numpad 1", "Right Ctrl"])
+        self.assertEqual(key_name(0xFF), "key 0xFF")
 
 
 class GameExeTests(unittest.TestCase):

@@ -252,6 +252,7 @@ VK = {"enter": 0x0D, "backspace": 0x08, "escape": 0x1B, "up": 0x26, "down": 0x28
       "pageup": 0x21, "pagedown": 0x22, "home": 0x24, "end": 0x23, "c": 0x43, "v": 0x56, "j": 0x4A,
       "f12": 0x7B}   # F12 is the helper's own: check for an update, or restart to finish one
 VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL = 0x10, 0x11, 0x12, 0x2D, 0x14
+VK_F11 = 0x7A   # with Ctrl only: the input log on or off (mod_keys)
 # Insert and Caps Lock are NVDA and JAWS modifiers: NVDA+R never reaches the
 # game, but the R key still shows as down here.
 CHORD_KEYS = (VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL)
@@ -277,7 +278,9 @@ class KeyWatcher:
         self.held = set()
 
     def poll(self):
-        states = {vk: self.key_state(vk) for vk in VK.values()}
+        # F11 too, for Ctrl+F11 (the input log switch), now that the mod's
+        # keys always come from here.
+        states = {vk: self.key_state(vk) for vk in list(VK.values()) + [VK_F11]}
         down = {vk for vk, s in states.items() if s & 0x8000}
         if not self.game_in_front():
             self.held = down
@@ -288,21 +291,291 @@ class KeyWatcher:
         if not new:
             return []
         held = {m for m in CHORD_KEYS if self.key_state(m) & 0x8000}
-        # Ctrl+F12 opens What's new (Casey, 2026-10-11); every other chord
-        # stays ignored, so screen reader keys and Ctrl shortcuts never act.
-        if held == {VK_CONTROL} and VK["f12"] in new:
-            return ["ctrl+f12"]
-        # Ctrl+F1 opens the list of every key (Casey, 2026-10-14).
-        if held == {VK_CONTROL} and VK["f1"] in new:
-            return ["ctrl+f1"]
-        if held:
-            return []
-        shift = bool(self.key_state(VK_SHIFT) & 0x8000)
-        names = []
-        for name, vk in VK.items():
-            if vk in new:
-                names.append("shift+enter" if name == "enter" and shift else name)
-        return names
+        return mod_keys(set(new), held, bool(self.key_state(VK_SHIFT) & 0x8000))
+
+
+def mod_keys(new, held_modifiers, shift):
+    """The mod's key names for the VK codes just pressed (new), given the
+    chord modifiers held (VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL) and
+    whether Shift is down. Shared by KeyWatcher and KeyEvents."""
+    held = set(held_modifiers)
+    # Ctrl+F12 opens What's new (Casey, 2026-10-11); every other chord
+    # stays ignored, so screen reader keys and Ctrl shortcuts never act.
+    if held == {VK_CONTROL} and VK["f12"] in new:
+        return ["ctrl+f12"]
+    # Ctrl+F1 opens the list of every key (Casey, 2026-10-14).
+    if held == {VK_CONTROL} and VK["f1"] in new:
+        return ["ctrl+f1"]
+    # Ctrl+F11 switches the input log on and off (the helper's own, see
+    # serve; firefly82, 2026-10-21: whoever has trouble with it can turn it
+    # off).
+    if held == {VK_CONTROL} and VK_F11 in new:
+        return ["ctrl+f11"]
+    if held:
+        return []
+    names = []
+    for name, vk in VK.items():
+        if vk in new:
+            names.append("shift+enter" if name == "enter" and shift else name)
+    return names
+
+
+# Windows reports left and right modifier keys apart in its keyboard events.
+SIDED = {0xA0: VK_SHIFT, 0xA1: VK_SHIFT, 0xA2: VK_CONTROL, 0xA3: VK_CONTROL,
+         0xA4: VK_MENU, 0xA5: VK_MENU}
+
+KEY_NAMES = {0x08: "Backspace", 0x09: "Tab", 0x0D: "Enter", 0x10: "Shift", 0x11: "Ctrl", 0x12: "Alt",
+             0x13: "Pause", 0x14: "Caps Lock", 0x1B: "Escape", 0x20: "Space", 0x21: "Page Up",
+             0x22: "Page Down", 0x23: "End", 0x24: "Home", 0x25: "Left", 0x26: "Up", 0x27: "Right",
+             0x28: "Down", 0x2C: "Print Screen", 0x2D: "Insert", 0x2E: "Delete", 0x5B: "Left Windows",
+             0x5C: "Right Windows", 0x5D: "Menu", 0x6A: "Numpad *", 0x6B: "Numpad +", 0x6D: "Numpad -",
+             0x6E: "Numpad .", 0x6F: "Numpad /", 0x90: "Num Lock", 0x91: "Scroll Lock",
+             0xA0: "Left Shift", 0xA1: "Right Shift", 0xA2: "Left Ctrl", 0xA3: "Right Ctrl",
+             0xA4: "Left Alt", 0xA5: "Right Alt", 0xBA: "OEM 1", 0xBB: "Plus", 0xBC: "Comma",
+             0xBD: "Minus", 0xBE: "Period", 0xBF: "OEM 2", 0xC0: "Grave", 0xDB: "OEM 4",
+             0xDC: "OEM 5", 0xDD: "OEM 6", 0xDE: "OEM 7", 0xE2: "OEM 102"}
+
+
+def key_name(vk):
+    """A key's name for the log, the same on every keyboard layout."""
+    if 0x30 <= vk <= 0x39 or 0x41 <= vk <= 0x5A:
+        return chr(vk)
+    if 0x60 <= vk <= 0x69:
+        return "Numpad " + str(vk - 0x60)
+    if 0x70 <= vk <= 0x87:
+        return "F" + str(vk - 0x6F)
+    return KEY_NAMES.get(vk, "key 0x%02X" % vk)
+
+
+# Keys named in the input log although they type a character: E, F and T
+# (the game's quick actions, the presses firefly82 measured) and the mod's
+# own letters, which UE4SS.log has had since 0.3.x ("key: j").
+NAMED_CHARACTER_KEYS = {0x45, 0x46, 0x54} | {vk for vk in VK.values() if 0x41 <= vk <= 0x5A}
+
+
+def log_name(vk):
+    """key_name for the input log, except that any other key that types a
+    character is only "a character key": profile and save names, or the
+    Steam overlay over the game, went letter by letter into UE4SS.log, which
+    players paste into public bug reports (review of firefly82's patch,
+    2026-10-21)."""
+    typing = (0x30 <= vk <= 0x39 or 0x41 <= vk <= 0x5A or 0x60 <= vk <= 0x6F
+              or 0xBA <= vk <= 0xC0 or 0xDB <= vk <= 0xDF or vk == 0xE2)
+    if typing and vk not in NAMED_CHARACTER_KEYS:
+        return "a character key"
+    return key_name(vk)
+
+
+MOUSE_BUTTONS = {0x201: ("left", True), 0x202: ("left", False), 0x204: ("right", True),
+                 0x205: ("right", False), 0x207: ("middle", True), 0x208: ("middle", False),
+                 0x20B: ("side", True), 0x20C: ("side", False)}
+WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_MOUSEHWHEEL = 0x200, 0x20A, 0x20E
+
+
+class KeyEvents:
+    """Turns the keyboard and mouse events Windows reports into the mod's
+    key names and into log lines, while the game is in front.
+
+    Every key the player presses is logged, not only the mod's: E, F and T
+    are the game's keys, and an E that did nothing could not be told from
+    one never pressed (firefly82, 2026-10-21; rule: the log shows what the
+    player did). Down and up are logged with how long the key was held,
+    since some of the game's actions need a hold. Auto-repeat is counted
+    and reported with the release, not logged line by line. Mouse buttons
+    and the wheel are logged with the pointer's place; moves are not.
+    Events Windows marks as injected came from software (the helper's own
+    clicks for the mod, or a test tool), and the log says so.
+
+    Nothing here decides what reaches the game: every event is passed on.
+    """
+
+    def __init__(self, game_in_front, now=None):
+        self.game_in_front = game_in_front
+        self.now = now or (lambda: time.strftime("%H:%M:%S") + ".%03d" % (int(time.time() * 1000) % 1000))
+        self.down = {}      # vk -> [event time ms, logged, repeats]
+        self.buttons = {}   # button -> event time ms
+
+    def _held(self):
+        held = {SIDED.get(vk, vk) for vk in self.down}
+        return {m for m in CHORD_KEYS if m in held}, VK_SHIFT in held
+
+    def _modifier_words(self, vk):
+        words = []
+        for v in sorted(self.down):
+            base = SIDED.get(v, v)
+            if v != vk and base in (VK_SHIFT, VK_CONTROL, VK_MENU, VK_INSERT, VK_CAPITAL):
+                name = KEY_NAMES[base]
+                if name not in words:
+                    words.append(name)
+        return words
+
+    def key(self, vk, is_down, ms, injected):
+        """One keyboard event. Returns (mod key names, log line or None)."""
+        front = self.game_in_front()
+        tag = ", injected" if injected else ""
+        if is_down:
+            if vk in self.down:
+                self.down[vk][2] += 1
+                return [], None
+            mods = self._modifier_words(vk)
+            self.down[vk] = [ms, front, 0]
+            if not front:
+                return [], None
+            held, shift = self._held()
+            base = SIDED.get(vk, vk)
+            names = mod_keys({base}, held - {base}, shift) if (base in VK.values() or base == VK_F11) else []
+            line = "%s %s down%s%s" % (self.now(), log_name(vk),
+                                       (" with " + "+".join(mods)) if mods else "", tag)
+            if names:
+                line += " (mod key: %s)" % ",".join(names)
+            return names, line
+        was = self.down.pop(vk, None)
+        # A key held while switching away is let go outside the game: not
+        # logged (GPT review, 2026-10-21).
+        if not (was and was[1]) or not front:
+            return [], None
+        line = "%s %s up after %d ms%s%s" % (self.now(), log_name(vk), max(ms - was[0], 0),
+                                            (", %d repeats" % was[2]) if was[2] else "", tag)
+        return [], line
+
+    def mouse(self, msg, x, y, ms, injected, wheel=0):
+        """One mouse event. Returns a log line or None."""
+        if msg == WM_MOUSEMOVE:
+            return None
+        who = "by the mod" if injected else "by the player"
+        if msg in (WM_MOUSEWHEEL, WM_MOUSEHWHEEL):
+            if not self.game_in_front():
+                return None
+            return "%s mouse %s %+d at %d,%d, %s" % (
+                self.now(), "wheel" if msg == WM_MOUSEWHEEL else "tilt", wheel, x, y, who)
+        button = MOUSE_BUTTONS.get(msg)
+        if not button:
+            return None
+        name, is_down = button
+        if is_down:
+            if not self.game_in_front():
+                return None
+            self.buttons[name] = ms
+            return "%s mouse %s down at %d,%d, %s" % (self.now(), name, x, y, who)
+        was = self.buttons.pop(name, None)
+        if was is None or not self.game_in_front():
+            return None
+        return "%s mouse %s up after %d ms at %d,%d, %s" % (self.now(), name, max(ms - was, 0), x, y, who)
+
+
+class InputHooks:
+    """Windows' own keyboard and mouse events (low-level hooks), read on a
+    thread of their own, instead of asking for 21 keys every 10 ms.
+
+    The callbacks only note the event and always pass it on
+    (CallNextHookEx), so no key is ever kept from the game or the screen
+    reader. Results wait in a queue for the helper's loop: (names, line,
+    ms Windows took to call the hook, perf_counter when it was called).
+    """
+
+    def __init__(self, events):
+        import queue
+        import threading
+        self.events = events
+        self.queue = queue.Queue()
+        self.ready = threading.Event()
+        self.ok = False
+        self._thread = threading.Thread(target=self._run, name="input hooks", daemon=True)
+
+    def start(self, wait=2.0):
+        """Installs the hooks; True when both are in."""
+        self._thread.start()
+        self.ready.wait(wait)
+        return self.ok
+
+    def drain(self):
+        out = []
+        while True:
+            try:
+                out.append(self.queue.get_nowait())
+            except Exception:
+                return out
+
+    def _run(self):
+        from ctypes import wintypes
+        user32, kernel32 = ctypes.windll.user32, ctypes.windll.kernel32
+        LRESULT = ctypes.c_ssize_t
+        PROC = ctypes.WINFUNCTYPE(LRESULT, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+        user32.SetWindowsHookExW.argtypes = [ctypes.c_int, PROC, wintypes.HINSTANCE, wintypes.DWORD]
+        user32.SetWindowsHookExW.restype = wintypes.HHOOK
+        user32.CallNextHookEx.argtypes = [wintypes.HHOOK, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM]
+        user32.CallNextHookEx.restype = LRESULT
+        kernel32.GetModuleHandleW.restype = wintypes.HMODULE
+
+        class KBD(ctypes.Structure):
+            _fields_ = [("vkCode", wintypes.DWORD), ("scanCode", wintypes.DWORD), ("flags", wintypes.DWORD),
+                        ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+        class MSLL(ctypes.Structure):
+            _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long), ("mouseData", wintypes.DWORD),
+                        ("flags", wintypes.DWORD), ("time", wintypes.DWORD), ("dwExtraInfo", ctypes.c_size_t)]
+
+        kernel32.GetTickCount.restype = wintypes.DWORD
+
+        # How long Windows took to hand the event to this hook: its own
+        # time stamp against the clock now (both in ms since start-up). E
+        # pressed in the game was sometimes lost, and those presses reached
+        # the mod 210 to 370 ms late, down and up together (firefly82,
+        # 2026-10-21): this tells where the time goes.
+        def since(event_ms):
+            return (kernel32.GetTickCount() - event_ms) & 0xFFFFFFFF
+
+        def on_key(code, wparam, lparam):
+            if code >= 0:
+                try:
+                    k = ctypes.cast(lparam, ctypes.POINTER(KBD)).contents
+                    is_down = wparam in (0x100, 0x104)       # WM_KEYDOWN, WM_SYSKEYDOWN
+                    names, line = self.events.key(k.vkCode, is_down, k.time, bool(k.flags & 0x10))
+                    if names or line:
+                        self.queue.put((names, line, since(k.time), time.perf_counter()))
+                except Exception:   # the hook must never fail the key
+                    pass
+            return user32.CallNextHookEx(None, code, wparam, lparam)
+
+        def on_mouse(code, wparam, lparam):
+            if code >= 0 and wparam != WM_MOUSEMOVE:
+                try:
+                    m = ctypes.cast(lparam, ctypes.POINTER(MSLL)).contents
+                    wheel = ctypes.c_short(m.mouseData >> 16).value
+                    line = self.events.mouse(wparam, m.x, m.y, m.time, bool(m.flags & 0x01), wheel)
+                    if line:
+                        self.queue.put(([], line, since(m.time), time.perf_counter()))
+                except Exception:
+                    pass
+            return user32.CallNextHookEx(None, code, wparam, lparam)
+
+        self._procs = (PROC(on_key), PROC(on_mouse))   # kept alive for the hooks
+        module = kernel32.GetModuleHandleW(None)
+        kb = user32.SetWindowsHookExW(13, self._procs[0], module, 0)    # WH_KEYBOARD_LL
+        ms = user32.SetWindowsHookExW(14, self._procs[1], module, 0)    # WH_MOUSE_LL
+        self.ok = bool(kb and ms)
+        log.info("input hooks: keyboard %s, mouse %s", "in" if kb else "failed", "in" if ms else "failed")
+        self.ready.set()
+        if not self.ok:
+            return
+        msg = wintypes.MSG()
+        while user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            user32.TranslateMessage(ctypes.byref(msg))
+            user32.DispatchMessageW(ctypes.byref(msg))
+
+
+class FrontWindow:
+    """game_in_front, asked again only when the foreground window changes:
+    the input hooks ask on every key and mouse button."""
+
+    def __init__(self):
+        self.hwnd, self.front = None, False
+
+    def __call__(self):
+        hwnd = ctypes.windll.user32.GetForegroundWindow()
+        if hwnd != self.hwnd:
+            self.hwnd, self.front = hwnd, game_in_front()
+        return self.front
 
 
 def game_in_front():
@@ -361,6 +634,19 @@ def main(argv=None):
     return 0
 
 
+_hooks = None
+
+
+def _input_hooks():
+    """The input hooks, installed once per helper process (serve can run
+    more than once), or None when Windows would not take them."""
+    global _hooks
+    if _hooks is None:
+        h = InputHooks(KeyEvents(FrontWindow()))
+        _hooks = h if h.start() else False
+    return _hooks or None
+
+
 def serve(tolk, speech_file, keep_going, on_keys=None):
     """Speaks the mod's lines and hands it keys until keep_going() is false.
 
@@ -373,21 +659,94 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
     tailer = Tailer(speech_file)
     keys_file = speech_file.parent / DEFAULT_KEYS.name
     keys_file.write_text("")
+    # The mod's keys always come from the 10 ms check (KeyWatcher; its
+    # GetAsyncKeyState bit 0 also catches a tap shorter than the check).
+    # Windows' own events (InputHooks) only write the input log: Windows
+    # removes a low-level hook without telling anyone when its callback is
+    # slow, and with the mod's keys on the hooks every key would then stop
+    # mid-game (Casey's review of firefly82's patch, 2026-10-21).
+    hooks = _input_hooks()
+    if hooks:
+        hooks.drain()   # events from before this game session
+    else:
+        log.info("input hooks not installed: no input log")
     user32 = ctypes.windll.user32
     user32.GetAsyncKeyState.restype = ctypes.c_ushort
     watcher = KeyWatcher(user32.GetAsyncKeyState, game_in_front)
+    # The input log is OFF unless switched on with Ctrl+F11 (firefly82's
+    # idea, 2026-10-21), kept across runs in a file: it names keys pressed in
+    # the game, and players paste UE4SS.log into public bug reports, so it
+    # is for a troubleshooting session, not every game (GPT review of the
+    # patch, 2026-10-21). The mod's keys go to the mod either way.
+    log_on_file = speech_file.parent / "input-log-on"
+    log_on = [log_on_file.exists()]
+
+    def note(text):
+        """A line for UE4SS.log through the mod (with the hooks only)."""
+        if hooks and log_on[0]:
+            with open(keys_file, "a", encoding="utf-8") as f:
+                f.write("log:%s %s\n" % (hooks.events.now(), text))
+
+    def timed(what, fn, *a):
+        """Runs one of the loop's own jobs and logs how long it held the
+        loop: while it runs, no key reaches keys.txt (a lost E reached the
+        mod 210 to 370 ms late, firefly82, 2026-10-21)."""
+        t = time.perf_counter()
+        fn(*a)
+        note("helper: %s took %d ms" % (what, (time.perf_counter() - t) * 1000))
+
     last_speech = last_check = 0.0
     while True:
+        out = []
+        if hooks:
+            written = time.perf_counter()
+            seen = False
+            for _names, line, lag, at in hooks.drain():
+                # Every event as a "log:" line, which the mod writes to
+                # UE4SS.log between the game's own lines and otherwise
+                # ignores. Each says how long Windows took to report it and
+                # how long it waited here before being written.
+                if line and log_on[0]:
+                    out.append("log:%s [Windows to helper %d ms, helper to file %d ms]"
+                               % (line, lag, (written - at) * 1000))
+                seen = seen or bool(line)
+            # With the log off, a key or mouse button in the game still
+            # tells the mod that input happened (a bare "seen", no key
+            # name): Tab or a mouse click can move focus with no window
+            # event, and the mod looks only after input (GPT review,
+            # 2026-10-21).
+            if seen and not log_on[0]:
+                out.append("seen")
         pressed = watcher.poll()
-        if pressed:
-            with open(keys_file, "a") as f:
-                f.write("".join(name + "\n" for name in pressed))
-            if on_keys:
-                on_keys(pressed)
+        out += pressed
+        if "ctrl+f11" in pressed:
+            log_on[0] = not log_on[0]
+            try:
+                if log_on[0]:
+                    log_on_file.write_text("on\n")
+                else:
+                    log_on_file.unlink(missing_ok=True)
+            except OSError:
+                pass
+            # The mod says it (keys.lua reads the file), in the game's
+            # language like its other words.
+            log.info("input log %s", "on" if log_on[0] else "off")
+        if out:
+            with open(keys_file, "a", encoding="utf-8") as f:
+                f.write("".join(s + "\n" for s in out))
+        if pressed and on_keys:
+            on_keys(pressed)
         now = time.monotonic()
         if now - last_check >= 1.0:
             last_check = now
-            if not keep_going():
+            t = time.perf_counter()
+            going = keep_going()
+            took = (time.perf_counter() - t) * 1000
+            # Logged only when it held the loop for a whole tick or more:
+            # once a second, it would bury the other lines.
+            if took >= 10:
+                note("helper: session check took %d ms" % took)
+            if not going:
                 return
         if now - last_speech < 0.03:
             time.sleep(0.01)
@@ -396,22 +755,23 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
         for line in tailer.read_lines():
             parsed = parse_line(line)
             if parsed:
-                tolk.say(parsed[1], parsed[0])
+                timed("speech (%s, %d characters)" % ("interrupting" if parsed[0] else "queued", len(parsed[1])),
+                      tolk.say, parsed[1], parsed[0])
                 continue
             point = parse_click(line)
             if point:
-                click(*point)
+                timed("click", click, *point)
                 continue
             if is_center_mouse(line) and game_in_front():
-                center_mouse()
+                timed("mouse to centre", center_mouse)
                 continue
             ring = parse_ring(line)
             if ring and game_in_front():
-                ring_mouse(*ring)
+                timed("mouse move", ring_mouse, *ring)
                 continue
             ring = parse_ring_click(line)
             if ring and game_in_front():
-                ring_mouse(*ring, then_click=True)
+                timed("mouse move and click", ring_mouse, *ring, True)
 
 
 if __name__ == "__main__":

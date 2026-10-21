@@ -1,5 +1,28 @@
 # New in Voyager Access
 
+## Wednesday October 21st 2026
+
+Version 0.3.68
+
+- Fixed: quick key presses, like a fast E on a room, no longer get lost. The mod used to check the game on a timer, and those checks held the game up just long enough to swallow a short tap. It now listens to the game's own events instead, so the game stays responsive and you hear things sooner. Moving around the System Map is quicker too.
+- Fixed: in an event, Down no longer jumps back to the first option while the chances are being worked out. Thanks to TheRev for reporting it.
+- New: the room view now tells you what E does on a room and what it costs, like "E: Repair, 6 Duranium, 3 Tritanium".
+- New: the C list now includes your torpedoes and how many cycles have passed, and the morale line says how many crew are sick, injured, hungry or homeless, as the screen shows beside the morale bar.
+- New: a room or the Ship button on the navigation bar now says when a mission marker is showing on it, like "side mission 10" on the Bridge.
+- New: O now says how many cycles a mission has left, like "Deuterium running low, 15 cycles left".
+- New: an event option where the game has dropped its hero (a tired hero was taken off) now lets you pick from the heroes who can still go with Left and Right, and Enter sends the team with the one you chose, just like clicking their portrait.
+- New: Ctrl+F11 turns on an input log for troubleshooting. It writes the keys you press in the game into the mod's log so we can tell a lost key from one that never got pressed. It's off unless you turn it on, and apart from E, F, T and the mod's own keys, the letters you type are only logged as "a character key".
+- Fixed: in Q Trials, Leave Sector now lets you reach Stay for now with Down when only one sector is offered.
+- Fixed: after loading a save, or moving to the next sector in Q Trials, your objectives are read as a whole list again. Before, you could hear "Missions ended" for the old sector's goals, or nothing at all.
+- Fixed: a room window you open a second time now reads the room's name and details instead of just "Room".
+- Fixed: a conversation line that comes back later, like the Doctor's warning in Medical Ethics, is spoken again instead of waiting silently for Enter. The "This line does not move on with Enter" hint also stopped coming up when you'd picked a choice or another window was open.
+- Fixed: a dialogue choice with several requirements now reads all of them, so you hear the one you're missing.
+- Fixed: a tall room without life support on several decks now says "on decks 4, 5 and 6", in your language.
+- Fixed: the System Map no longer says an event "did not open because another window was up" when nothing was open.
+- Fixed: the game's own words keep their capital letters in other languages, so German nouns stay capitalized. System numbers in other languages now use the right word for the decimal point.
+
+A big thank you to firefly82, who measured why keys were getting lost and rebuilt much of the mod around the game's own events.
+
 ## Tuesday October 20th 2026
 
 Version 0.3.67

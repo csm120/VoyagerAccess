@@ -8,13 +8,22 @@ local screen = require("screen")
 
 local M = {}
 
+-- The navigation bar (WBP_NavigationBar_01_C in the HUD), set when the
+-- game makes it (hook_bar below). Its buttons are its own fields
+-- (ShowShipButton, ResearchButton, ...): read there, not by searching about
+-- 490 buttons for their path (rule 42, header dump 2026-10-18).
+local bar_path = nil
+local function nav_bar()
+    local b = bar_path and StaticFindObject(bar_path)
+    if b and b:IsValid() then return b end
+    return nil
+end
+
 local function find(name)
-    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-        local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
-        if p and p:find("WBP_NavigationBar", 1, true) and p:find("%." .. name .. "$") and screen.shown(b) then
-            return b
-        end
-    end
+    local bar = nav_bar()
+    local b = nil
+    pcall(function() b = bar[name] end)
+    if b and b:IsValid() and screen.shown(b) then return b end
     return nil
 end
 
@@ -37,8 +46,8 @@ function M.toggle()
     -- Said at once: the full line waits for the view to settle, about 1.6 s
     -- after the key (VM log, 2026-10-17), and a player found the keys
     -- sluggish (forum, TheRev, 2026-10-17). help.lua then says only what is
-    -- selected.
-    M.toggled_at = os.clock()
+    -- selected: the next view it announces is this one (no time window).
+    M.toggled = to_map and "system" or "ship"
     speech.say(to_map and "System map" or "Ship view", true)
 end
 
@@ -69,18 +78,33 @@ function M.nav_open()
     return nav_items ~= nil
 end
 
+local nav_text   -- below; nav_where needs it (it was nil here, so I said nothing, 2026-10-21)
+
 -- For I (where am I) while N is open: it described the map behind the
 -- list (VM, 2026-10-14).
 function M.nav_where()
     if not M.nav_open() then return nil end
     local it = nav_items[nav_index]
     if not it then return "Navigation list" end
-    return string.format("Navigation list. %s, %d of %d", it[1], nav_index, #nav_items)
+    return string.format("Navigation list. %s, %d of %d", nav_text(it), nav_index, #nav_items)
+end
+
+-- The Ship button carries the game's count of rooms waiting with a prompt
+-- (RoomPromptIndicator, a side mission icon and "1" on the Sector Map; the
+-- mod never said it, map parity audit, 2026-10-21).
+function nav_text(it)
+    local text = it[1]
+    if it[2] == "ShowShipButton" then
+        local bar = nav_bar()
+        local okp, s = pcall(function() return require("ship").prompt_words(bar.RoomPromptIndicator) end)
+        if okp and s then text = text .. ", " .. s end
+    end
+    return text
 end
 
 local function say_nav()
     local it = nav_items[nav_index]
-    speech.say(string.format("%s, %d of %d", it[1], nav_index, #nav_items), true)
+    speech.say(string.format("%s, %d of %d", nav_text(it), nav_index, #nav_items), true)
 end
 
 function M.nav_toggle()
@@ -384,10 +408,14 @@ end
 -- answer the array's hail in the first mission (2026-10-15). Said once when
 -- the button appears, while the bar is up (ship view or System Map).
 local call_waiting = false
-local function poll_calls()
-    if not find("ShowShipButton") and not find("ShowSystemButton") then return end   -- bar not up
-    local b = find("IncomingCallsButton")
-    local waiting = b ~= nil
+-- Read from the bar's own IncomingCallsButton when the bar updates it
+-- (UpdateIncomingCallButton), not by searching every button each second
+-- (three searches over about 490 buttons a second; the mod's loops held the
+-- game long enough to swallow keys, firefly82, 2026-10-21).
+local function check_calls(bar)
+    if not (bar and bar:IsValid() and screen.shown(bar)) then return end   -- bar not up
+    local b = bar.IncomingCallsButton
+    local waiting = b ~= nil and b:IsValid() and screen.shown(b)
     if waiting then
         local ok, en = pcall(function() return b:GetIsEnabled() end)
         waiting = not (ok and en == false)
@@ -399,13 +427,56 @@ local function poll_calls()
     call_waiting = waiting
 end
 
+-- The navigation bar's own events (WBP_NavigationBar_01_C): OnViewChanged
+-- from the game's event bus (proven 2026-10-16: "view 5 to 9" on V) and
+-- UpdateIncomingCallButton. Hooked when the game makes the bar.
+local bar_hooked = {}
+local function hook_bar(path)
+    local bar = StaticFindObject(path)
+    if not (bar and bar:IsValid()) then return end
+    if path:find("^/Engine/Transient%.") then bar_path = path end
+    local cpath = bar:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    if not cpath or bar_hooked[cpath] then return end
+    bar_hooked[cpath] = true
+    local function after(fn)
+        return function(ctx, payload)
+            local okp, p = pcall(function() return ctx:get():GetFullName():match("^%S+%s+(.+)$") end)
+            if not (okp and p) then return end
+            -- The view the game is changing to, from the event itself
+            -- (STVViewChangePayload:GetTarget, ESTVGameViewType: 5
+            -- ConstructionSideview, 9 SystemOverview; "view 5 to 9" in the
+            -- probe of 2026-10-16). At the event the ship view's input is not
+            -- applied yet, so asking whether it is active said "no" and the
+            -- arrival was not announced (firefly82's test, 2026-10-21).
+            local target = nil
+            pcall(function() target = payload:get():GetTarget() end)
+            -- Pre hooks: the bar has applied the change on the next tick.
+            ExecuteInGameThread(function()
+                pcall(function()
+                    local b = StaticFindObject(p)
+                    if b and b:IsValid() then fn(b, target) end
+                end)
+            end)
+        end
+    end
+    local ok1 = pcall(RegisterHook, cpath .. ":UpdateIncomingCallButton", after(check_calls))
+    local ok2 = pcall(RegisterHook, cpath .. ":OnViewChanged", after(function(b, target)
+        check_calls(b)
+        local VIEWS = { [5] = "ship", [9] = "system" }
+        require("help").view_check(type(target) == "number" and (VIEWS[target] or "other") or nil)
+    end))
+    print("[VoyagerAccess] view: navigation bar events " .. ((ok1 and ok2) and "hooked" or "not all hooked") .. "\n")
+    check_calls(bar)
+end
+
 function M.install()
     require("keys").on("v", M.toggle)
     require("keys").on("n", M.nav_toggle)
-    LoopInGameThreadWithDelay(1000, function()
-        local ok, err = pcall(poll_calls)
-        if not ok then print("[VoyagerAccess] view calls error: " .. tostring(err) .. "\n") end
-    end)
+    require("popups").on_widget("WBP_NavigationBar_01_C", hook_bar)
+    for _, b in ipairs(FindAllOf("WBP_NavigationBar_01_C") or {}) do
+        local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
+        if p and p:find("^/Engine/Transient%.") then pcall(hook_bar, p) end
+    end
 end
 
 return M

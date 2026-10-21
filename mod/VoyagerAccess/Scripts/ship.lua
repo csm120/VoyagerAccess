@@ -183,7 +183,7 @@ local function room_state(h, raw)
             if raw == "None" and (kind == 5 or st:lower():find("^remov")) then return "just cleared" end
             -- Enter on the room finishes it (VM, 2026-10-19); the screen
             -- shows "Ready", which says as much to a sighted player.
-            return require("tr").fill("{s} done", st:lower()) .. require("hints").text("done_enter", ", Enter finishes it")
+            return require("tr").fill("{s} done", require("tr").lower(st)) .. require("hints").text("done_enter", ", Enter finishes it")
         end
         -- Paused work keeps its text ("removing, 3 cycles") but has no
         -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).
@@ -199,7 +199,7 @@ local function room_state(h, raw)
                 paused = #d.AssignedWorkTeams == 0
             end)
         end
-        return st:lower() .. (paused and ", paused" or "") .. (cy ~= "" and (", " .. cy:lower()) or "")
+        return require("tr").lower(st) .. (paused and ", paused" or "") .. (cy ~= "" and (", " .. require("tr").lower(cy)) or "")
     end)
     if ok and busy then return busy end
     for _, part in ipairs(STATE_PARTS) do
@@ -245,6 +245,65 @@ local function decks_tall(r)
     return math.max(z, 1)
 end
 
+-- A prompt marker the game shows on a room, or on the navigation bar's
+-- Ship button for all of them (WBP_RoomPrompt: an icon and CounterDisplay;
+-- FSTVRoomPromptData.Counter). The Bridge showed a side mission icon with
+-- "10" and the mod said only "Deck 1, Bridge, on" (room prompt probe,
+-- 2026-10-21). Said as the screen shows it: the icon's kind and the
+-- number, which the game does not label. An icon not known yet is logged,
+-- not guessed.
+local IMG_CLASS, PANEL_CLASS = nil, nil
+local function prompt_icon(p)
+    IMG_CLASS = IMG_CLASS or StaticFindObject("/Script/UMG.Image")
+    PANEL_CLASS = PANEL_CLASS or StaticFindObject("/Script/UMG.PanelWidget")
+    local found = nil
+    local function walk(x, d)
+        if found or d > 10 or not (x and x:IsValid() and x:IsVisible()) then return end
+        if x:IsA(IMG_CLASS) then
+            local ok, r = pcall(function()
+                local ro = x.Brush.ResourceObject
+                return ro and ro:IsValid() and ro:GetFName():ToString() or nil
+            end)
+            if ok and r and (r:find("Mission", 1, true) or not r:find("Gradient", 1, true)) then found = r end
+        elseif x:IsA(PANEL_CLASS) then
+            for i = 0, x:GetChildrenCount() - 1 do walk(x:GetChildAt(i), d + 1) end
+        end
+    end
+    pcall(function() walk(p.WidgetTree.RootWidget, 0) end)
+    return found
+end
+
+function M.prompt_words(p, stop)
+    if not (p and p:IsValid() and require("screen").shown(p, stop)) then return nil end
+    local icon = prompt_icon(p)
+    local kind = icon and (icon:find("MainMission", 1, true) and "main mission"
+        or icon:find("SideMission", 1, true) and "side mission") or nil
+    if not kind then
+        print("[VoyagerAccess] ship: prompt marker with icon " .. tostring(icon) .. ", not said\n")
+        return nil
+    end
+    local n = ""
+    pcall(function()
+        local c = p.CounterDisplay
+        if c and c:IsValid() and c:IsVisible() then n = c:GetText():ToString() end
+    end)
+    return kind .. (n:match("^%d+$") and (" " .. n) or "")
+end
+
+-- The markers on one room's button (its PromptVisArray), shown ones only.
+local function room_prompts(h)
+    local out = {}
+    pcall(function()
+        local w = h.RoomHullWidget
+        local arr = w.PromptVisArray
+        for i = 1, #arr do
+            local s = M.prompt_words(arr[i], w)
+            if s then out[#out + 1] = s end
+        end
+    end)
+    return out
+end
+
 local function describe(r, with_deck)
     local t = r.hull:GetRoomType()
     local text = room_name(t)
@@ -257,14 +316,26 @@ local function describe(r, with_deck)
         for d = low - tall + 1, low do
             if not deck_has_life(d) then dark[#dark + 1] = tostring(d) end
         end
-        if #dark > 0 then
-            state = state:gsub("no life support", "no life support on deck " .. table.concat(dark, require("tr").word(" and ")), 1)
+        -- Three decks read "on deck 4 and 5 and 6" (VM, 2026-10-20): a list
+        -- reads "on decks 4, 5 and 6".
+        -- Translated here (tr.fill): as a line-pass template its {s} took
+        -- the rest of the line, ", decks 4 to 6" included, and that stayed
+        -- English (German table under lupa, 2026-10-20).
+        local tr = require("tr")
+        local said = nil
+        if #dark == 1 then
+            said = tr.fill("no life support on deck {s}", dark[1])
+        elseif #dark > 1 then
+            local list = table.concat(dark, ", ", 1, #dark - 1) .. tr.word(" and ") .. dark[#dark]
+            said = tr.fill("no life support on decks {s}", list)
         end
+        if said then state = state:gsub("no life support", (said:gsub("%%", "%%%%")), 1) end
     end
     -- A lone state word in the game's language (tr.lua); longer states are
     -- phrases the line pass translates.
     -- tr.word: on | off
     if state ~= "" then text = text .. ", " .. require("tr").word(state) end
+    for _, s in ipairs(room_prompts(r.hull)) do text = text .. ", " .. s end
     if with_deck then
         -- A tall room says the deck the player is on first: moving down a
         -- turbo lift said "Decks 2 to 9, Turbo lift" four times over decks
@@ -344,9 +415,16 @@ end
 -- SetHoverInfo(HoverSlot, ...) for the hovered room and emptied by
 -- RemoveInfo (hooked below).
 local hover_slot = nil     -- the slot the game's info panel shows, or nil
+local hover_action = nil   -- what E does there, from the same call: { desc, costs = { {id, n} } }
 local hover_waiters = {}   -- slot -> functions to run once it is hovered
 local hover_hooked = false
-local chase_id = 0
+-- The slot the pointer is being brought to, until the game says it is
+-- hovered. The pointer is moved again on each hover change the game reports
+-- while the camera travels (SetHoverInfo for another room, RemoveInfo), not
+-- every 100 ms: the census of 2026-10-21 showed ForceCameraOnRoom moving the
+-- camera with no event of its own (OnCameraChanged never came), but every
+-- room passing under the pointer reported (firefly82, 2026-10-21).
+local target_slot = nil
 
 -- Moves the pointer onto the hull: "on", or "off" when it is off screen.
 local function aim(hull)
@@ -375,53 +453,95 @@ end
 local function point_at(hull)
     pcall(function()
         local slot = hull:BP_GetSlotIndex()
-        chase_id = chase_id + 1
-        local id = chase_id
+        target_slot = slot
+        if hover_slot == slot then target_slot = nil return end
         if aim(hull) == "off" then
             print("[VoyagerAccess] ship: room off screen, camera to slot " .. slot .. "\n")
             FindFirstOf("STVConstructionPawn"):ForceCameraOnRoom(slot)
         end
-        -- Without the hook, the old fixed wait.
-        if not hover_hooked then
-            ExecuteInGameThreadWithDelay(600, function()
-                pcall(function() local h = hull_at(slot); if h then aim(h) end end)
-            end)
-            return
-        end
-        local n = 0
-        local function follow()
-            ExecuteInGameThreadWithDelay(100, function()
-                if id ~= chase_id then return end
-                if hover_slot == slot then
-                    print("[VoyagerAccess] ship: pointer on slot " .. slot .. " after " .. n .. " steps\n")
-                    return
-                end
-                n = n + 1
-                if n > 30 then
-                    print("[VoyagerAccess] ship: pointer never confirmed on slot " .. slot .. "\n")
-                    return
-                end
-                pcall(function() local h = hull_at(slot); if h then aim(h) end end)
-                follow()
-            end)
-        end
-        follow()
     end)
 end
 
--- Runs fn once the game's info panel shows slot, or timeout_fn after 3 s.
-local function when_hovered(slot, fn, timeout_fn)
-    if hover_hooked and hover_slot == slot then return fn() end
-    if not hover_hooked then
-        return ExecuteInGameThreadWithDelay(1000, function() pcall(fn) end)
+-- The camera has finished moving: ForceCameraOnRoom runs the construction
+-- pawn's zoom move, and the pawn's Blueprint gets AudioPassSetZoomLevelEnd
+-- when it ends (probe 2026-10-21: ZoomStart at the call, ZoomEnd about
+-- 0.47 s later, for both jumps). Only then is the room where the camera put
+-- it, so the pointer is set on it once now (its screen position from the
+-- game); the game's hover then confirms it. Before, nothing moved the
+-- pointer after the camera had arrived, and the room was never said.
+local function camera_arrived()
+    if not target_slot then return end
+    local h = hull_at(target_slot)
+    if h then
+        print("[VoyagerAccess] ship: camera arrived, pointer to slot " .. target_slot .. "\n")
+        aim(h)
     end
-    local done = false
-    local list = hover_waiters[slot] or {}
-    hover_waiters[slot] = list
-    list[#list + 1] = function() if not done then done = true; fn() end end
-    ExecuteInGameThreadWithDelay(3000, function()
-        if not done then done = true; pcall(timeout_fn) end
+end
+
+-- A hover change the game reported (on the next tick of SetHoverInfo or
+-- RemoveInfo): the pointer goes after the room again if it is not there.
+local function hover_changed()
+    if not target_slot then return end
+    if hover_slot == target_slot then
+        print("[VoyagerAccess] ship: pointer on slot " .. target_slot .. "\n")
+        target_slot = nil
+        return
+    end
+    local h = hull_at(target_slot)
+    if h then aim(h) end
+end
+
+-- Runs fn once the game's info panel shows slot. Only the newest wish per
+-- purpose counts (moving on to the next room drops the last one's). A room
+-- the pointer never reaches (another ship's pawn, the pointer over a panel,
+-- another screen size) would say nothing at all, so after HOVER_FALLBACK_MS
+-- fn runs anyway: the room is said without the E text, and the details say
+-- "No details shown" (review of firefly82's patch, 2026-10-21; 0.3.67 spoke
+-- after 3 s). The camera's move takes about 0.47 s.
+local HOVER_FALLBACK_MS = 2000
+local function when_hovered(slot, fn, purpose)
+    purpose = purpose or "say"
+    for s, list in pairs(hover_waiters) do
+        if list[purpose] then
+            print("[VoyagerAccess] ship: slot " .. s .. " never hovered for " .. purpose .. "\n")
+            list[purpose] = nil
+        end
+    end
+    if not hover_hooked then
+        -- The panel's class is not loaded yet: at once, as nothing else can
+        -- tell when the pointer is there.
+        print("[VoyagerAccess] ship: hover hook missing, " .. purpose .. " at once\n")
+        return fn()
+    end
+    if hover_slot == slot then return fn() end
+    hover_waiters[slot] = hover_waiters[slot] or {}
+    hover_waiters[slot][purpose] = fn
+    ExecuteInGameThreadWithDelay(HOVER_FALLBACK_MS, function()
+        local list = hover_waiters[slot]
+        if not (list and list[purpose] == fn) then return end
+        list[purpose] = nil
+        -- The pointer stops going after it too: later hover changes pulled
+        -- the pointer back to this room for good (GPT review, 2026-10-21).
+        if target_slot == slot then target_slot = nil end
+        print("[VoyagerAccess] ship: slot " .. slot .. " not hovered in " .. HOVER_FALLBACK_MS .. " ms, " .. purpose .. " anyway\n")
+        pcall(fn)
     end)
+end
+
+-- What E does on the hovered room, in the game's words and with its costs
+-- or returns, as the info panel shows it ("E: Reparieren, 40 Duranium"),
+-- from SetHoverInfo's QuickAction and QuickActionCostOrReturn (probe,
+-- 2026-10-21: "Energie umschalten", "Reparieren", "Raum bauen"). nil when
+-- the room has none (a ruined room on a deck without life support).
+local function quick_action_text()
+    local a = hover_action
+    if not (a and a.desc and a.desc ~= "") then return nil end
+    local costs = {}
+    for _, c in ipairs(a.costs or {}) do
+        local name = require("text").game_resource_name(c.id) or c.id
+        costs[#costs + 1] = c.n .. " " .. name
+    end
+    return "E: " .. a.desc .. (#costs > 0 and (", " .. table.concat(costs, ", ")) or "")
 end
 
 -- At either end of a deck Left and Right repeat the room, with no extra
@@ -443,8 +563,32 @@ local function select(r, with_deck, prefix)
     end
     if count > 1 and n > 0 then text = string.format("%s, %d of %d", text, n, count) end
     if prefix then text = prefix .. ": " .. text end
-    print("[VoyagerAccess] ship: " .. text .. "\n")
-    speech.say(text, true)
+    -- Said once the game says the pointer rests on the room, so the room
+    -- heard is the one E acts on (agreed with firefly82, 2026-10-21: while
+    -- the camera travels, E hit rooms passing under the pointer), with what
+    -- E does there.
+    local slot = r.hull:BP_GetSlotIndex()
+    -- A room the game marks as not interactable (bIsInteractable false: the
+    -- turbolift, room types 21 and 22) gets no hover at all, no info panel and
+    -- no quick action (probe 2026-10-21: the pointer on slot 227 brought no
+    -- OnHoveredRoom and no SetHoverInfo), so waiting for one left it silent
+    -- (firefly82, 2026-10-21). It is said at once.
+    local interactable = true
+    pcall(function() interactable = r.hull.bIsInteractable ~= false end)
+    if not interactable then
+        target_slot = nil
+        -- The last room's wish to be said is over too.
+        for _, list in pairs(hover_waiters) do list.say = nil end
+        print("[VoyagerAccess] ship: " .. text .. "\n")
+        speech.say(text, true)
+        return
+    end
+    when_hovered(slot, function()
+        local qa = (hover_slot == slot) and quick_action_text() or nil
+        local said = qa and (text .. ". " .. qa) or text
+        print("[VoyagerAccess] ship: " .. said .. "\n")
+        speech.say(said, true)
+    end, "say")
 end
 
 -- The ship view is a grid, so it uses all four arrows (Casey, 2026-10-11:
@@ -540,6 +684,8 @@ function M.list_toggle()
             if it.deck == selected.deck and math.abs(it.y - selected.y) < 1 then index = i end
         end
     end
+    -- One of the mod's lists at a time (see resources.say).
+    require("resources").dismiss()
     jump = { items = items, index = index }
     require("focus").park_focus()
     say_jump()
@@ -553,6 +699,11 @@ end
 function M.list_edge(last)
     jump.index = last and #jump.items or 1
     say_jump()
+end
+
+-- Closed without a word when another of the mod's lists opens over it.
+function M.list_dismiss()
+    jump = nil
 end
 
 function M.list_close()
@@ -614,14 +765,15 @@ function M.details()
     when_hovered(slot, function()
         pcall(function()
             local tip = require("tooltip")
-            local panel = tip.room_panel()
+            -- After the fallback the panel may show another room.
+            local panel = (hover_slot == slot) and tip.room_panel() or nil
             if not panel then
                 speech.say("No details shown for this room", true)
                 return
             end
             require("resources").show_details(title, tip.lines(panel))
         end)
-    end, function() speech.say("No details shown for this room", true) end)
+    end, "details")
 end
 
 -- The selected room's own state word ("on", "off", "Damaged"), for its
@@ -694,72 +846,140 @@ end
 -- 2026-10-20). A room is said only when its reading differs from the last
 -- one seen, so loading a save says nothing and Enter on finished work is
 -- said once. Said only in the ship view.
-local HOOK = "/Game/STVoyager/ConstructionSideview/UI/Widgets/WBP_Button_RoomSelection.WBP_Button_RoomSelection_C:OnSetState"
-local last_text = {}   -- slot -> the room's last reading
-local hooked = false
+-- The room button tells its own slot (RoomSlot) and passes the new state in
+-- the call (OnSetState(State, bPlayAnimation, bIsPaused, EquippedHeroes);
+-- probe 2026-10-21: one call per E, State and PrevState in it). A room is
+-- said when its state, life support or pause differs from the last call
+-- seen for it, so a save loading (one or two calls per room, the first
+-- ones) says nothing, and a call that only moves the cycles left on says
+-- nothing either (it used to compare the whole reading, cycles and all).
+local last_state = {}   -- slot -> "state|life support|paused"
+local state_hooked = false
 
-local function on_set_state(wname)
+local function on_set_state(slot, key)
     pcall(function()
+        local before = last_state[slot]
+        last_state[slot] = key
+        if not before or before == key or not M.active() then return end
         for _, r in ipairs(rooms()) do
-            local hw = r.hull.RoomHullWidget
-            if not r.upper and hw and hw:IsValid() and hw:GetFullName() == wname then
-                local slot = r.hull:BP_GetSlotIndex()
+            if not r.upper and r.hull:BP_GetSlotIndex() == slot then
                 local text = describe(r, false)
-                local before = last_text[slot]
-                last_text[slot] = text
-                if before and before ~= text and M.active() then
-                    print("[VoyagerAccess] ship: changed: " .. text .. "\n")
-                    speech.say(text, false)
-                end
+                print("[VoyagerAccess] ship: changed: " .. text .. "\n")
+                speech.say(text, false)
                 return
             end
         end
     end)
 end
 
--- The class loads with the ship view, after the mod starts: try every 3 s
--- until the hook takes. UE4SS unregisters a mod's hooks itself when the mod
--- is reloaded.
+-- The room button's class (WBP_Button_RoomSelection_C, loaded at the main
+-- menu already: probe 2026-10-21) and the info panel's
+-- (WBP_Sideview_InfoPanel_C, loaded with the ship view) are hooked when
+-- the game makes their first widget (popups.on_widget), not by trying every
+-- 3 s. UE4SS unregisters a mod's hooks itself when the mod is reloaded.
+local function install_state(path)
+    if state_hooked then return end
+    local w = path and StaticFindObject(path)
+    if not (w and w:IsValid()) then return end
+    local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    -- UE4SS calls only the first (pre) callback for this Blueprint function
+    -- (VM, 2026-10-20): the values come from the call itself.
+    state_hooked = pcall(RegisterHook, cpath .. ":OnSetState", function(ctx, state, _, paused)
+        local slot, key = nil, nil
+        pcall(function() slot = ctx:get().RoomSlot end)
+        pcall(function()
+            local s = state:get()
+            key = tostring(s.State) .. "|" .. tostring(s.bLifeSupportEnabled) .. "|" .. tostring(paused:get())
+        end)
+        if type(slot) == "number" and key then
+            -- The button applies the state inside the call: read it next tick.
+            ExecuteInGameThread(function() on_set_state(slot, key) end)
+        end
+    end)
+    print("[VoyagerAccess] ship: state hook " .. (state_hooked and "installed" or "not installed") .. "\n")
+end
+
 -- The info panel's own calls: pre callbacks, so the panel is filled on the
 -- next tick, where the slot is recorded and its waiters run.
-local INFO = "/Game/STVoyager/ConstructionSideview/UI/Widgets/InfoPanel/WBP_Sideview_InfoPanel.WBP_Sideview_InfoPanel_C:"
-
-local function install_hover()
-    if hover_hooked or not StaticFindObject(INFO .. "SetHoverInfo") then return end
-    local ok = pcall(RegisterHook, INFO .. "SetHoverInfo", function(_, slot)
+local function install_hover(path)
+    if hover_hooked then return end
+    local w = path and StaticFindObject(path)
+    if not (w and w:IsValid()) then return end
+    local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    local ok = pcall(RegisterHook, cpath .. ":SetHoverInfo", function(_, slot, _, _, qa, costs)
         local oks, s = pcall(function() return slot:get() end)
         if not oks then return end
+        local action = { costs = {} }
+        pcall(function()
+            local a = qa:get()
+            if a and a:IsValid() then action.desc = a.ActionDescription:ToString() end
+        end)
+        pcall(function()
+            costs:get():ForEach(function(_, e)
+                local r = e:get()
+                action.costs[#action.costs + 1] = { id = r.ResourceName:ToString(), n = r.ResourceAmount }
+            end)
+        end)
         ExecuteInGameThread(function()
             hover_slot = s
+            hover_action = action
             local list = hover_waiters[s]
             hover_waiters[s] = nil
-            for _, fn in ipairs(list or {}) do pcall(fn) end
+            for _, fn in pairs(list or {}) do pcall(fn) end
+            pcall(hover_changed)
         end)
     end)
     if ok then
-        pcall(RegisterHook, INFO .. "RemoveInfo", function()
-            ExecuteInGameThread(function() hover_slot = nil end)
+        pcall(RegisterHook, cpath .. ":RemoveInfo", function()
+            ExecuteInGameThread(function()
+                hover_slot = nil
+                hover_action = nil
+                pcall(hover_changed)
+            end)
         end)
     end
     hover_hooked = ok
     print("[VoyagerAccess] ship: hover hook " .. (ok and "installed" or "not installed") .. "\n")
 end
 
-function M.install()
-    LoopInGameThreadWithDelay(3000, function()
-        install_hover()
-        if hooked then return end
-        if not StaticFindObject(HOOK) then return end
-        -- UE4SS calls only the first (pre) callback for this Blueprint
-        -- function (VM, 2026-10-20), so the room is read on the next game
-        -- tick, once the function has applied the change.
-        local ok = pcall(RegisterHook, HOOK, function(ctx)
-            local okw, wname = pcall(function() return ctx:get():GetFullName() end)
-            if okw and wname then ExecuteInGameThread(function() on_set_state(wname) end) end
-        end)
-        hooked = ok
-        print("[VoyagerAccess] ship: state hook " .. (ok and "installed" or "not installed") .. "\n")
+-- The construction pawn's zoom end (camera_arrived), hooked on its
+-- Blueprint class when the game makes the pawn, or now if it exists.
+local camera_hooked = false
+local function install_camera(pawn)
+    if camera_hooked or not (pawn and pawn:IsValid()) then return end
+    local cpath = pawn:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    -- The Blueprint's own event (BP_ConstructionPawn_C implements it); the
+    -- native one on STVConstructionPawn is never what runs.
+    if not (cpath and cpath:find("^/Game/") and StaticFindObject(cpath .. ":AudioPassSetZoomLevelEnd")) then return end
+    camera_hooked = pcall(RegisterHook, cpath .. ":AudioPassSetZoomLevelEnd", function()
+        -- A pre hook: the move has ended; the room is read on the next tick.
+        ExecuteInGameThread(function() pcall(camera_arrived) end)
     end)
+    print("[VoyagerAccess] ship: camera end hook " .. (camera_hooked and "installed" or "not installed") .. "\n")
+end
+
+function M.install()
+    local popups = require("popups")
+    pcall(NotifyOnNewObject, "/Script/STVoyager.STVConstructionPawn", function(o)
+        local okp, p = pcall(function() return path_of(o) end)
+        if okp and p then
+            ExecuteInGameThread(function()
+                pcall(function() install_camera(StaticFindObject(p)) end)
+            end)
+        end
+    end)
+    for _, pw in ipairs(FindAllOf("STVConstructionPawn") or {}) do
+        if pw:IsValid() then pcall(install_camera, pw) break end
+    end
+    popups.on_widget("WBP_Button_RoomSelection_C", install_state)
+    popups.on_widget("WBP_Sideview_InfoPanel_C", install_hover)
+    -- Already made (the main menu has room buttons; a reload in the ship view).
+    for cls, fn in pairs({ WBP_Button_RoomSelection_C = install_state, WBP_Sideview_InfoPanel_C = install_hover }) do
+        for _, w in ipairs(FindAllOf(cls) or {}) do
+            local p = w:IsValid() and path_of(w)
+            if p and p:find("^/Engine/Transient%.") then pcall(fn, p) break end
+        end
+    end
 end
 
 return M

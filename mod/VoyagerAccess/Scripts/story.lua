@@ -4,34 +4,31 @@
 -- Janeway breezes into my cozy penal colony..."), and it was silent while
 -- the mod announced the System Map behind it (2026-10-14, VM).
 --
--- Each line is taken whole from the typewriter's TargetText, as
--- dialogue.lua does, for R to repeat; the lines are voiced, so not spoken.
-local speech = require("speech")
-local screen = require("screen")
-
+-- Each line is taken whole as the overlay's typewriter is given it, for R
+-- to repeat; the lines are voiced, so not spoken.
+--
+-- From the typewriter's own PlayLine(InLine, ...) (STVTypewriterRichTextBlock,
+-- native, hooked once), not from a 150 ms scan of every typewriter widget:
+-- the mod's loops held the game long enough to swallow keys (firefly82,
+-- 2026-10-21). OPEN POINT: the window census of 2026-10-21 saw PlayLine
+-- called for away mission texts but met no story overlay; a call from C++
+-- would not reach the hook, so this is to be checked with a new campaign's
+-- opening.
 local M = {}
 
-local INTERVAL_MS = 150
+local HOOK = "/Script/STVoyager.STVTypewriterRichTextBlock:PlayLine"
 local last_line = nil
+local hooked = false
+local overlay_path = nil   -- the overlay whose typewriter last played a line
 
-local function path_of(obj)
-    return obj:GetFullName():match("^%S+%s+(.+)$")
-end
-
--- The overlay on screen now, or nil.
-local function overlay()
-    for _, w in ipairs(FindAllOf("WBP_SequentialStoryOverlay_C") or {}) do
-        if w:IsValid() then
-            local p = path_of(w)
-            if p and p:find("^/Engine/Transient%.") and screen.shown(w) then return w, p end
-        end
-    end
-    return nil
-end
-
+-- True while that overlay is on screen (help.lua, quest.lua).
 function M.active()
-    local ok, w = pcall(overlay)
-    return ok and w ~= nil
+    if not overlay_path then return false end
+    local ok, shown = pcall(function()
+        local w = StaticFindObject(overlay_path)
+        return w ~= nil and w:IsValid() and require("screen").shown(w)
+    end)
+    return ok and shown == true
 end
 
 local function clean(s)
@@ -40,37 +37,31 @@ local function clean(s)
     return (s:gsub("%s+", " "):match("^%s*(.-)%s*$"))
 end
 
-local function poll()
-    local w, p = overlay()
-    if not w then
-        last_line = nil
-        return
-    end
-    local prefix = p .. "."
-    for _, t in ipairs(FindAllOf("WBP_TypeWriterRichTextBlock_C") or {}) do
-        if t:IsValid() then
-            local tp = path_of(t)
-            if tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
-                local ok, s = pcall(function() return t.TargetText:ToString() end)
-                s = ok and type(s) == "string" and clean(s) or ""
-                if s ~= "" and s ~= last_line then
-                    last_line = s
-                    print("[VoyagerAccess] story: " .. s .. "\n")
-                    -- Not spoken: the overlay's lines are voiced (Q's opening,
-                    -- Casey, 2026-10-14: "we hear the dialog so we don't need
-                    -- the audio to be spoken via NVDA"). R still repeats one.
-                    require("dialogue").remember(s)
-                end
-            end
-        end
-    end
-end
-
 function M.install()
-    LoopInGameThreadWithDelay(INTERVAL_MS, function()
-        local ok, err = pcall(poll)
-        if not ok then print("[VoyagerAccess] story error: " .. tostring(err) .. "\n") end
+    if hooked then return end
+    hooked = pcall(RegisterHook, HOOK, function(ctx, line)
+        local okp, p = pcall(function() return ctx:get():GetFullName() end)
+        if not okp or not p then return end
+        -- A challenge result's story being typed (away missions): the
+        -- mission reader looks at its window (awaymission.lua).
+        if p:find("WBP_AwayMission_ChallengeResult", 1, true) then
+            ExecuteInGameThread(function() pcall(function() require("awaymission").request_poll() end) end)
+            return
+        end
+        if not p:find("WBP_SequentialStoryOverlay_C", 1, true) then return end
+        overlay_path = p:match("^%S+%s+(.-WBP_SequentialStoryOverlay_C_%d+)")
+        local okl, s = pcall(function() return line:get():ToString() end)
+        s = okl and type(s) == "string" and clean(s) or ""
+        if s ~= "" and s ~= last_line then
+            last_line = s
+            print("[VoyagerAccess] story: " .. s .. "\n")
+            -- Not spoken: the overlay's lines are voiced (Q's opening,
+            -- Casey, 2026-10-14: "we hear the dialog so we don't need
+            -- the audio to be spoken via NVDA"). R still repeats one.
+            require("dialogue").remember(s)
+        end
     end)
+    print("[VoyagerAccess] story: line hook " .. (hooked and "installed" or "not installed") .. "\n")
 end
 
 return M

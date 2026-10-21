@@ -22,6 +22,7 @@ local GROUPS = {
         "Backtick, the key left of 1: copy a troubleshooting report to the clipboard",
         "F12: check for a Voyager Access update, or restart the game to install one",
         "Control F12: what's new in Voyager Access",
+        "Control F11: switch the input log on or off. It writes every key you press in the game to the log, for troubleshooting",
         "Escape: the game's back and pause menu. It also closes the mod's lists",
     } },
     { "Menus, lists and windows", {
@@ -44,7 +45,7 @@ local GROUPS = {
         "I twice: the room's details as a list, as the game shows them when pointing at the room: level, energy, crew, and what E does and costs. Backspace or Escape closes it",
         "In a room window: Up and Down move between buttons, Left and Right switch tabs, Escape closes it",
         "In a ring of actions: Up and Down move, Enter picks, Escape closes it",
-        "E, the game's key: the room's quick action, such as power on or off, repair, clear debris, or pause work. It acts on the room you last moved to",
+        "E, the game's key: the room's quick action, such as power on or off, repair, clear debris, or pause work. It acts on the room you last heard: a room is said once the game has the pointer on it, with what E does there",
         "F, the game's key: upgrade that room. T, the game's key: demolish that room",
     } },
     { "System Map and Sector Map", {

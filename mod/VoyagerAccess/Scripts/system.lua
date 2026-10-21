@@ -43,6 +43,72 @@ end
 -- widget per system (WBP_SolarSystemWorldSpaceWidget, TargetActor) shows
 -- Voyager's icon over the current system and the main mission's badge
 -- over the quest's (read 2026-10-14). Those are what tell them apart.
+-- The map's markers, as the game makes them (popups.on_widget, the same
+-- pass over new widgets as the windows'): paths of the live
+-- WBP_PoiEventWidget and WBP_SolarSystemWorldSpaceWidget widgets. Each says
+-- its point in its own TargetActor field.
+local map_widgets = {}
+local function add_map_widget(p)
+    if p:find("^/Engine/Transient%.") then map_widgets[#map_widgets + 1] = p end
+end
+
+function M.install()
+    local popups = require("popups")
+    popups.on_widget("WBP_PoiEventWidget_C", add_map_widget)
+    popups.on_widget("WBP_SolarSystemWorldSpaceWidget_C", add_map_widget)
+end
+
+-- The markers of one point, gone ones dropped.
+local function widgets_of(apath)
+    local out, keep = {}, {}
+    for _, p in ipairs(map_widgets) do
+        local w = StaticFindObject(p)
+        if w and w:IsValid() then
+            keep[#keep + 1] = p
+            local ok, same = pcall(function() return w.TargetActor:IsValid() and w.TargetActor:GetFullName() == apath end)
+            if ok and same then out[#out + 1] = w end
+        end
+    end
+    map_widgets = keep
+    return out
+end
+
+-- The images inside one marker, from its own widget tree. It used to look
+-- at every Image in the game (10080 on a System Map) and keep those under
+-- the marker: 55 ms on each arrow key, held by the game (map audit,
+-- 2026-10-21). The same images, found from the marker down.
+local function images_in(root)
+    local IMG = StaticFindObject("/Script/UMG.Image")
+    local PANEL = StaticFindObject("/Script/UMG.PanelWidget")
+    local UW = StaticFindObject("/Script/UMG.UserWidget")
+    local out = {}
+    local function walk(w, depth)
+        if depth > 30 or not (w and w:IsValid()) then return end
+        -- Hidden branches are not walked: walking a hidden panel's children
+        -- crashed the game (screen.texts_in, probe 2026-10-20), and only
+        -- shown images are used (review of firefly82's patch, 2026-10-21).
+        if not w:IsVisible() then return end
+        if w:IsA(IMG) then
+            out[#out + 1] = w
+        elseif w:IsA(UW) then
+            local tree = w.WidgetTree
+            if tree and tree:IsValid() and tree.RootWidget then walk(tree.RootWidget, depth + 1) end
+        elseif w:IsA(PANEL) then
+            for i = 0, w:GetChildrenCount() - 1 do walk(w:GetChildAt(i), depth + 1) end
+        end
+    end
+    walk(root, 0)
+    return out
+end
+
+local POI_CLASS = nil
+local function poi_of(actor)
+    POI_CLASS = POI_CLASS or StaticFindObject("/Script/STVoyager.STVPointOfInterestBase")
+    local ok, c = pcall(function() return actor:GetComponentByClass(POI_CLASS) end)
+    if ok and c and c:IsValid() then return c end
+    return nil
+end
+
 local function system_marks(actor)
     local marks = {}
     pcall(function()
@@ -50,13 +116,8 @@ local function system_marks(actor)
         -- Points in a system have the same kind of widget
         -- (WBP_PoiEventWidget): Ocampa's shows the main mission icon as a
         -- dynamic material, MID_MI_UI_MainMission_... (2026-10-14).
-        local widgets = {}
-        for _, cls in ipairs({ "WBP_SolarSystemWorldSpaceWidget_C", "WBP_PoiEventWidget_C" }) do
-            for _, w in ipairs(FindAllOf(cls) or {}) do widgets[#widgets + 1] = w end
-        end
-        for _, w in ipairs(widgets) do
-            if w:IsValid() and w.TargetActor:IsValid() and w.TargetActor:GetFullName() == apath then
-                local wp = path_of(w) .. "."
+        for _, w in ipairs(widgets_of(apath)) do
+            do
                 -- The countdown a point shows under its marker while a hero
                 -- is stationed there or it is locked down
                 -- (HarvestTimeRemaining_TXT; firefly82's parity check,
@@ -68,9 +129,8 @@ local function system_marks(actor)
                         if n then marks[#marks + 1] = n .. (n == 1 and " cycle left" or " cycles left") end
                     end
                 end)
-                for _, x in ipairs(FindAllOf("Image") or {}) do
-                    local xp = x:IsValid() and path_of(x)
-                    if xp and xp:sub(1, #wp) == wp and require("screen").shown(x) then
+                for _, x in ipairs(images_in(w)) do
+                    if require("screen").shown(x) then
                         -- Checked valid before it is read: an unchecked
                         -- brush read crashed the game (2026-10-11, and a
                         -- probe stopped the mod again on 2026-10-14).
@@ -99,14 +159,9 @@ local function system_marks(actor)
         for _, m in ipairs(marks) do have[m] = true end
         local es = FindFirstOf("STVEventSubsystem")
         local E = StaticFindObject("/Script/STVoyager.ESTVEventState")
-        local poi = nil
-        local apath = actor:GetFullName()
-        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
-            if c:IsValid() then
-                local o = c:GetOwner()
-                if o and o:IsValid() and o:GetFullName() == apath then poi = c end
-            end
-        end
+        -- The point's own component (the map audit found it the same as
+        -- the one a search of every point gave).
+        local poi = poi_of(actor)
         if not (poi and es and E) then return end
         poi.EventIds:ForEach(function(_, v)
             local id = v:get()
@@ -140,9 +195,12 @@ function M.spoken_number(raw)
     if not num then num, dec = numtxt, "" end
     num = num:gsub("[%.,]", "")
     if num == "" then return raw end
-    -- "oh" and "point" are English words (Casey's choice for English,
-    -- 2026-10-11); in another language the digit 0 and the game's own
-    -- decimal mark are read by the synthesizer in that language.
+    -- "oh" is an English word (Casey's choice for English, 2026-10-11); in
+    -- another language the digit 0 is read by the synthesizer. The decimal
+    -- is the mod's word in the game's language (the tables' "point":
+    -- "Komma", "virgule"): the game's own mark with a space after it read
+    -- as the end of a sentence, "System 3 9 6 8. 1" (German, firefly82,
+    -- 2026-10-21).
     local okl, english = pcall(function() return require("language").english() end)
     english = not okl or english ~= false
     local function digits(s)
@@ -152,7 +210,7 @@ function M.spoken_number(raw)
     end
     local out = digits(num)
     if dec ~= "" and tonumber(dec) ~= 0 then
-        out = out .. (english and " point " or (numtxt:match("([%.,])%d$") .. " ")) .. digits(dec)
+        out = out .. " " .. (english and "point" or require("tr").word("point")) .. " " .. digits(dec)
     end
     if rest ~= "" then out = out .. ", " .. rest end
     return out
@@ -258,12 +316,28 @@ end
 -- scanned: the IDs exist before the scan and would give the game away.
 local function resources(poi)
     local found, seen = {}, {}
+    local es = nil
     pcall(function()
         poi.EventIds:ForEach(function(_, e)
-            local id = e:get():ToString()
+            local name = e:get()
+            local id = name:ToString()
             -- The number can be negative: "ResourceEvent_Generated_Duranium_-18"
             -- was said as just "scanned" (German game, 2026-10-18).
             local res = id:match("^ResourceEvent_Generated_(%a+)_%-?%d+$")
+            -- Two resources in one event ("CombinedResourceEvent_
+            -- ResourceEvent_Generated_Duranium_388_ResourceEvent_Generated_
+            -- Tritanium_318") were said as just "scanned". The map marker
+            -- shows one icon for it, the event's own (GetEventIconById,
+            -- MI_UI_Duranium_White), and the selection shows no other: that
+            -- one is said (map audit, Klasse-Y-Planet, 2026-10-21).
+            if not res and id:find("^CombinedResourceEvent_") then
+                es = es or FindFirstOf("STVEventSubsystem")
+                local oki, icon = pcall(function()
+                    local m = es:GetEventIconById(name)
+                    return m and m:IsValid() and m:GetFName():ToString() or nil
+                end)
+                res = oki and icon and icon:match("^MI_UI_(%a+)_White") or nil
+            end
             if res and not seen[res] then
                 seen[res] = true
                 found[#found + 1] = (res:gsub("(%l)(%u)", "%1 %2"))
@@ -648,6 +722,18 @@ local function watch_arrival(name, target, start_d)
                 -- Station, and nothing was said (Q Trial, VM, 2026-10-18).
                 local tries = 0
                 local my_watch = watch_id
+                local function busy_now()
+                    for _, w in ipairs(require("popups").open_windows()) do
+                        if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then return true end
+                    end
+                    return require("dialogue").active() and true or false
+                end
+                -- Only a window that was really up counts: Friendship One's
+                -- Class O planet keeps a waiting event that its scan starts,
+                -- and with nothing open the hint blamed "another window" and
+                -- sent the player away (VM, 2026-10-21).
+                local was_busy = false
+                pcall(function() was_busy = busy_now() end)
                 local function check()
                     tries = tries + 1
                     -- Not once a new course has been set.
@@ -655,14 +741,12 @@ local function watch_arrival(name, target, start_d)
                     pcall(function()
                         local a = StaticFindObject(target)
                         if not (a and a:IsValid()) then return end
-                        local busy = false
-                        for _, w in ipairs(require("popups").open_windows()) do
-                            if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then busy = true end
-                        end
-                        if busy or require("dialogue").active() then
+                        if busy_now() then
+                            was_busy = true
                             if tries < 60 then ExecuteInGameThreadWithDelay(2000, check) end
                             return
                         end
+                        if not was_busy then return end
                         local es = FindFirstOf("STVEventSubsystem")
                         local waiting = false
                         for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do

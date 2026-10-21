@@ -95,7 +95,9 @@ function M.install()
     f:close()
     M.on = true
     print("[VoyagerAccess] unread window log on\n")
-    LoopInGameThreadWithDelay(2000, function()
+    -- After each window the game opens and popups.lua reads, not every 2 s
+    -- (no loop of the mod's runs on a timer, firefly82, 2026-10-21).
+    require("popups").on_read(function()
         local ok, err = pcall(poll)
         if not ok then print("[VoyagerAccess] unread error: " .. tostring(err) .. "\n") end
     end)

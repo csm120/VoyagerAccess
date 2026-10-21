@@ -76,7 +76,8 @@ class PlaySessionTests(unittest.TestCase):
         self.assertEqual(self.applied, [FOUND])
 
     def test_main_menu_state_file(self):
-        import os, time
+        # Written by the mod on change only (no once-a-second rewrite since
+        # 2026-10-21), and cleared when the game starts.
         with tempfile.TemporaryDirectory() as d:
             saved = app.GAME_STATE
             app.GAME_STATE = Path(d) / "game-state.txt"
@@ -84,10 +85,10 @@ class PlaySessionTests(unittest.TestCase):
                 self.assertFalse(app.at_main_menu())          # no file yet
                 app.GAME_STATE.write_text("menu\n", encoding="utf-8")
                 self.assertTrue(app.at_main_menu())
-                old = time.time() - 60
-                os.utime(app.GAME_STATE, (old, old))
-                self.assertFalse(app.at_main_menu())          # the mod stopped writing
                 app.GAME_STATE.write_text("game\n", encoding="utf-8")
+                self.assertFalse(app.at_main_menu())
+                app.GAME_STATE.write_text("menu\n", encoding="utf-8")
+                app.clear_game_state()                        # a new run of the game
                 self.assertFalse(app.at_main_menu())
             finally:
                 app.GAME_STATE = saved

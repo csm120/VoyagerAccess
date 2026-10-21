@@ -196,6 +196,15 @@ function M.word(english)
     return (type(w) == "string" and w ~= "") and w or english
 end
 
+-- The game's own text in lower case, but only in English: the mod's
+-- sentences put game words mid-line ("Warp core tier 2"), and lowering
+-- them in German broke nouns ("Warpkern stufe 2", firefly82's review,
+-- 2026-10-20). Other languages keep the game's casing.
+function M.lower(s)
+    if type(s) ~= "string" or current() then return s end
+    return s:lower()
+end
+
 -- The exact lookup for a short template the line pass leaves alone
 -- ("{s} tab"), with its slots filled in order: M.fill("{s} tab", "Crew").
 -- English, or a template the table lacks, fills the English one.

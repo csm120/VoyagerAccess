@@ -10,12 +10,15 @@ local M = {}
 
 local items, index, shown_path = nil, nil, nil
 
+-- The credits widget the game has activated (its own BP_OnActivated and
+-- BP_OnDeactivated, WBP_Credits_C in the CXX dump), not one found by a
+-- 300 ms scan: the mod's loops held the game long enough to swallow keys
+-- (firefly82, 2026-10-21).
+local credits_path = nil
+
 local function credits_widget()
-    for _, w in ipairs(FindAllOf("WBP_Credits_C") or {}) do
-        if w:IsValid() and w:GetFullName():find("/Engine/Transient.", 1, true) and w:IsInViewport() then
-            return w
-        end
-    end
+    local w = credits_path and StaticFindObject(credits_path)
+    if w and w:IsValid() then return w end
     return nil
 end
 
@@ -79,21 +82,29 @@ function M.repeat_item()
     say_item(true)
 end
 
-local function poll()
-    local w = credits_widget()
-    if not w then
-        if items then items, index, shown_path = nil, nil, nil end
+-- The credits text is the scroll box's own rich text (CreditsScrollBox in
+-- the CXX dump), read from that widget, not by searching every rich text in
+-- the game.
+local function credits_text(w)
+    local box = w.CreditsScrollBox
+    if not (box and box:IsValid()) then return nil end
+    local RT = StaticFindObject("/Script/UMG.RichTextBlock")
+    for i = 0, box:GetChildrenCount() - 1 do
+        local c = box:GetChildAt(i)
+        if c and c:IsValid() and RT and c:IsA(RT) then return c:GetText():ToString() end
+    end
+    return nil
+end
+
+local function opened(path)
+    local w = StaticFindObject(path)
+    if not (w and w:IsValid()) then return end
+    credits_path = path
+    local text = credits_text(w)
+    if not text then
+        print("[VoyagerAccess] credits: no text in the scroll box\n")
         return
     end
-    local path = w:GetFullName()
-    if items and shown_path == path then return end
-    local text = nil
-    for _, t in ipairs(FindAllOf("RichTextBlock") or {}) do
-        if t:IsValid() and t:GetFullName():find("WBP_Credits_C_", 1, true) then
-            text = t:GetText():ToString()
-        end
-    end
-    if not text then return end
     local list = parse(text)
     if #list == 0 then return end
     items, index, shown_path = list, 1, path
@@ -103,13 +114,45 @@ local function poll()
     say_item(false)
 end
 
+local function closed(path)
+    if path == credits_path then
+        credits_path = nil
+        items, index, shown_path = nil, nil, nil
+    end
+end
+
+local hooked = false
+local function hook_class(path)
+    if hooked then return end
+    local w = StaticFindObject(path)
+    if not (w and w:IsValid()) then return end
+    local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    local function after(fn)
+        return function(ctx)
+            local okp, p = pcall(function() return ctx:get():GetFullName():match("^%S+%s+(.+)$") end)
+            if okp and p then ExecuteInGameThread(function() pcall(fn, p) end) end
+        end
+    end
+    local ok1 = pcall(RegisterHook, cpath .. ":BP_OnActivated", after(opened))
+    local ok2 = pcall(RegisterHook, cpath .. ":BP_OnDeactivated", after(closed))
+    hooked = ok1 and ok2
+    print("[VoyagerAccess] credits: events " .. (hooked and "hooked" or "not all hooked") .. "\n")
+    -- The first credits may have been activated before their class was
+    -- hooked (it is hooked on the tick after the game makes the widget).
+    if w:IsInViewport() then opened(path) end
+end
 M.parse = parse
 
 function M.install()
-    LoopInGameThreadWithDelay(300, function()
-        local ok, err = pcall(poll)
-        if not ok then print("[VoyagerAccess] credits error: " .. tostring(err) .. "\n") end
-    end)
+    require("popups").on_widget("WBP_Credits_C", hook_class)
+    for _, w in ipairs(FindAllOf("WBP_Credits_C") or {}) do
+        local p = w:IsValid() and w:GetFullName():match("^%S+%s+(.+)$")
+        if p and p:find("^/Engine/Transient%.") then
+            pcall(hook_class, p)
+            if w:IsInViewport() then pcall(opened, p) end
+            break
+        end
+    end
 end
 
 return M

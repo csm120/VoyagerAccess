@@ -85,7 +85,7 @@ local function lines()
                 -- VM, 2026-10-17), so you know what to fix.
                 if offline > 0 then
                     local st = require("ship").state_of("MainDeflector")
-                    if st and st ~= "on" then t = t .. ". Main deflector " .. st:lower() end
+                    if st and st ~= "on" then t = t .. ". Main deflector " .. require("tr").lower(st) end
                 end
             end)
             return t
@@ -101,6 +101,14 @@ local function lines()
         if ok and type(max) == "number" and max > 0 then
             parts[#parts + 1] = "Sector threat " .. cur .. " of " .. max; ids[#parts] = "ThreatLevel"
         end
+    end
+    -- Torpedoes, in the header beside the threat bar
+    -- (WBP_TorpedoDisplay.TorpedoCount_TextBox, "38"): shown on every map
+    -- and C did not say them (map parity audit, 2026-10-21).
+    local torp = shown_widgets("WBP_TorpedoDisplay_C")[1]
+    if torp then
+        local n = text_of(torp.TorpedoCount_TextBox)
+        if n:match("^%d+$") then parts[#parts + 1] = "Torpedoes " .. tonumber(n) end
     end
     -- Storage limits: events said "storage full" and C never said how much
     -- fits (State of Flux, VM, 2026-10-15). Science points (9999) have none
@@ -127,13 +135,30 @@ local function lines()
         end
     end
     team("WBP_Crew_Resource_C", require("tr").word("Crew"), "Crew")
-    team("WBP_WorkTeams_Resource_C", "Work teams")
+    -- The label in the game's language here: inside "{s} {s} of {s}
+    -- available" the line pass split it, and "Work teams" stayed English
+    -- (German game, 2026-10-21).
+    team("WBP_WorkTeams_Resource_C", require("tr").word("Work teams"))
     local cycles = by.Cycles
     -- Not cycles passed: it went 16, then 14 as Deuterium went 396, then 348
     -- at 24 a cycle, so it is how many cycles the fuel lasts.
     if cycles then
         local n = text_of(cycles.CyclesAmount)
         parts[#parts + 1] = "Fuel lasts " .. n .. (n == "1" and " cycle" or " cycles"); ids[#parts] = "Cycles"
+    end
+    -- The cycles passed, under the header (WBP_HUD.WBP_PassedCycles:
+    -- PassedCycle_TextBox "33" and its own label, "vergangene Zyklen" in the
+    -- German game): shown on every map and C did not say it (map parity
+    -- audit, 2026-10-21). The label is the game's own text, read from the
+    -- widget's own tree; the zero padding (FillDigit_Text) is left out.
+    local passed = shown_widgets("WBP_PassedCycles_C")[1]
+    if passed then
+        local n = text_of(passed.PassedCycle_TextBox)
+        local label = nil
+        for _, t in ipairs(screen.texts_in(passed)) do
+            if not label and t:find("%a") then label = t end
+        end
+        if n:match("^%d+$") and label then parts[#parts + 1] = label .. " " .. tonumber(n) end
     end
     -- The rest of the strip (2026-10-11): energy (WBP_AggregateEnergy_Energy:
     -- CurrentResourceAmountText the output, UpkeepAmountText what rooms
@@ -158,16 +183,43 @@ local function lines()
     end
     local morale = first("WBP_Morale_03_C")
     if morale then
-        -- ChangeTextBlock is not a property of the widget; find it by path.
+        -- The change per cycle is ChangeTextBlock of the bar's own
+        -- HappinessWidget (USTVMoraleWidget, header dump): read there, not
+        -- by searching every TextBlock in the game for its path (rule 42;
+        -- the map audit found the same kind of search over every Image
+        -- holding the game 55 ms, 2026-10-21).
         local change = ""
-        local mp = morale:GetFullName():match("^%S+%s+(.+)$") .. "."
-        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-            local p = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
-            if p and p:sub(1, #mp) == mp and p:find("%.ChangeTextBlock$") and screen.shown(t) then change = text_of(t) end
-        end
+        pcall(function()
+            local t = morale.HappinessWidget.ChangeTextBlock
+            if t and t:IsValid() and screen.shown(t) then change = text_of(t) end
+        end)
         local text = "Morale " .. text_of(morale.MoraleNumber)
         if change:match("^[%+%-]%d") then
             text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
+        end
+        -- The crew's conditions beside the bar, each a number by an icon
+        -- (USTVMoraleWidget: SickOrInjuredWidget, HungryWidget,
+        -- HomelessWidget and the others, each with MildConditionTextBlock
+        -- and SevereConditionTextBlock): "3, 96, 36" on screen and C said
+        -- none of them (map parity audit, 2026-10-21). Only those shown.
+        local CONDITIONS = {
+            { "SickOrInjuredWidget", "{n} sick or injured" }, { "SickWidget", "{n} sick" },
+            { "InjuredWidget", "{n} injured" }, { "HungryWidget", "{n} hungry" },
+            { "HomelessWidget", "{n} homeless" }, { "HomelessWidgetExBorg", "{n} homeless" },
+        }
+        for _, c in ipairs(CONDITIONS) do
+            pcall(function()
+                local w = morale[c[1]]
+                if not (w and w:IsValid() and screen.shown(w)) then return end
+                local mild = w.MildConditionTextBlock
+                local n = (mild and mild:IsValid() and screen.shown(mild)) and text_of(mild) or ""
+                if not n:match("^%d+$") then return end
+                local said = ", " .. c[2]:gsub("{n}", tostring(tonumber(n)))
+                local severe = w.SevereConditionTextBlock
+                local m = (severe and severe:IsValid() and screen.shown(severe)) and text_of(severe) or ""
+                if m:match("^%d+$") and tonumber(m) > 0 then said = said .. " (" .. tonumber(m) .. " severe)" end
+                text = text .. said
+            end)
         end
         parts[#parts + 1] = text; ids[#parts] = "Morale"
     end
@@ -219,6 +271,9 @@ function M.say()
         speech.say("Resources are not shown here", true)
         return
     end
+    -- One of the mod's lists at a time: C over the open J list left the
+    -- arrows moving the room list under it (firefly82, 2026-10-21).
+    require("ship").list_dismiss()
     items, index = parts, 1
     item_ids = ids
     require("focus").park_focus()
@@ -248,6 +303,11 @@ end
 function M.edge(last)
     index = last and #items or 1
     say_item()
+end
+
+-- Closed without a word when another of the mod's lists opens over it.
+function M.dismiss()
+    items, back, in_details = nil, nil, false
 end
 
 function M.close()

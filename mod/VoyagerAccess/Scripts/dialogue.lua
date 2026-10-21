@@ -9,18 +9,18 @@ local screen = require("screen")
 
 local M = {}
 
-local INTERVAL_MS = 150
 -- The window's PATH, not the window: a UObject kept across ticks went stale
 -- when the dialogue ended and crashed UE4SS (2026-10-10 21:55, symbolized).
 local window_path = nil
 local last_line = nil       -- last line spoken
-local typing = nil          -- line seen on the previous poll
-local speaker_wait = {}     -- { line, polls } while waiting for a speaker name
 local last_speaker = nil    -- the name said with the last line
+local gone_since = nil      -- os.time() when the window closed
+local stuck = { line = nil, count = 0 }   -- Enters on one finished line (M.continue)
 local last_spoken = nil     -- "Speaker: line", kept after the window closes, for R
 local continue_action = nil
--- Declared here because poll() uses them; declared below it, poll() saw
--- empty globals and the second half of a one-Enter continue never ran.
+-- Declared here because the window events use them; declared below them,
+-- they saw empty globals and the second half of a one-Enter continue never
+-- ran.
 local continue_pending = false
 local inject_continue
 
@@ -39,21 +39,40 @@ end
 local WINDOW_CLASSES = { "WBP_Dialogue_Window_C", "WBP_Dialogue_Window_SideView_C", "WBP_Dialogue_Window_Sector_C",
     "WBP_Dialogue_Window_Intro_C", "WBP_Dialogue_Window_AwayMission_C" }
 
+-- The open dialogue window comes from the game's own events, not from a
+-- 150 ms scan of five classes (the mod's loops held the game long enough to
+-- swallow keys; firefly82, 2026-10-21). The window census of 2026-10-21
+-- showed every dialogue window calling ShowDialogue(CharacterRowName,
+-- CharacterRow, DialogueLine) for each line, FinishShowingDialogueRow when
+-- the line has been typed out, FinishShowChoices when its choices are up
+-- and OnTriggerNextNode when it moves on; BP_OnActivated and
+-- BP_OnDeactivated when it opens and closes. Every dialogue window class is
+-- built on the native STVDialogueWindow, so new ones are found as the game
+-- makes them (NotifyOnNewObject) and hooked on the class that defines each
+-- event (ForEachFunction).
+local NATIVE_WINDOW = "/Script/STVoyager.STVDialogueWindow"
+local WINDOW_EVENTS = { ShowDialogue = "line", FinishShowingDialogueRow = "typed", FinishShowChoices = "choices",
+    OnTriggerNextNode = "next", BP_OnActivated = "open", BP_OnDeactivated = "close", Destruct = "close",
+    OnShowConsequences = "consequences", OnFinishedShowingConsequences = "consequences",
+    OnFinishedShowConsequencesAnim = "consequences" }
+-- The story card inside a window (WBP_Dialogue_Popup).
+local POPUP_EVENTS = { BP_OnActivated = "card", SetContent = "card" }
+local BASE = { ["/Script/UMG.UserWidget"] = true, ["/Script/UMG.Widget"] = true,
+    ["/Script/CommonUI.CommonActivatableWidget"] = true, ["/Script/CommonUI.CommonUserWidget"] = true,
+    ["/Script/UMG.Visual"] = true, ["/Script/CoreUObject.Object"] = true }
+
+local function path_of(o)
+    return o:GetFullName():match("^%S+%s+(.+)$")
+end
+
+-- The game shows "Character Name" before the real speaker loads; Casey heard
+-- "Character Name: Gentlemen, welcome to Voyager."
+local PLACEHOLDER_SPEAKER = "Character Name"
+
 local function find_window()
-    if window_path then
-        local w = StaticFindObject(window_path)
-        -- A hidden window must not hide the other kind behind it.
-        if w and w:IsValid() and screen.shown(w) then return w end
-        window_path = nil
-    end
-    for _, class in ipairs(WINDOW_CLASSES) do
-        for _, w in ipairs(FindAllOf(class) or {}) do
-            if w:IsValid() and live(w) and screen.shown(w) then
-                window_path = w:GetFullName():match("^%S+%s+(.+)$")
-                return w
-            end
-        end
-    end
+    if not window_path then return nil end
+    local w = StaticFindObject(window_path)
+    if w and w:IsValid() and screen.shown(w) then return w end
     return nil
 end
 
@@ -66,27 +85,13 @@ end
 
 -- The open dialogue window, or nil. Use it within the current tick only.
 function M.active()
-    local w = find_window()
-    if w and screen.shown(w) then return w end
-    return nil
+    return find_window()
 end
 
 -- True when the widget path is inside the dialogue window (a choice button).
 function M.contains(path)
-    local w = find_window()
-    if not (w and path) then return false end
-    local wpath = w:GetFullName():match("^%S+%s+(.+)$")
-    return wpath ~= nil and path:sub(1, #wpath + 1) == wpath .. "."
+    return window_path ~= nil and path ~= nil and path:sub(1, #window_path + 1) == window_path .. "."
 end
-
--- The line types out a few letters at a time; speaking every change made
--- Casey hear "Gentle", "Gentlemen, we", ... The typewriter widget keeps the
--- whole line in TargetText, so speak that at once. If it is ever empty, fall
--- back to the shown text once it is the same on two polls in a row (that
--- made Casey wait about 3 s per line).
--- The game shows "Character Name" before the real speaker loads; Casey heard
--- "Character Name: Gentlemen, welcome to Voyager." Wait for the real name.
-local PLACEHOLDER_SPEAKER = "Character Name"
 
 -- What R can go back through: the last messages, newest last. Pressing R
 -- again within a few seconds goes one further back, so a tutorial cut off
@@ -113,7 +118,7 @@ end
 -- Story cards ("Into the Badlands") are a popup inside the dialogue window,
 -- with a title and a paragraph and their own Continue button.
 local last_popup = nil
-local function poll_popup(w)
+local function read_popup(w)
     local ok, popup = pcall(function() return w.WBP_Dialogue_Popup end)
     if not (ok and popup and popup:IsValid() and screen.shown(popup)) then
         last_popup = nil
@@ -134,57 +139,166 @@ end
 
 local crumb = require("crumb")
 
-local function poll()
-    if continue_pending then
-        crumb.at("dialogue: inject continue")
-        continue_pending = false
-        inject_continue()
-    end
-    crumb.at("dialogue: find window")
-    local w = M.active()
-    -- last_line is kept while the window is hidden: resetting it re-spoke
-    -- the same line whenever the window came back (twice on 2026-10-10).
-    if not w then
-        typing = nil
-        return
-    end
-    crumb.at("dialogue: popup")
-    poll_popup(w)
-    crumb.at("dialogue: line")
+-- One line, as ShowDialogue gives it: the speaker is the row's own name,
+-- said only when the window shows a speaker (the away mission window keeps
+-- its speaker field hidden, so a sighted player sees no name there;
+-- 2026-10-11). The event's data replaces the old wait of up to about a
+-- second for the name field ("Character Name" first, or the last line's
+-- speaker for a moment; 2026-10-14 and 2026-10-15).
+local function say_line(w, speaker, line)
+    line = plain(line or "")
+    if line == "" or line == last_line then return end
+    local sp = w.DialogueSpeakerText
+    local shows_speaker = sp and sp:IsValid() and screen.shown(sp)
+    -- The call's row could not be read: the field the window shows.
+    if speaker == nil and shows_speaker then speaker = sp:GetText():ToString() end
+    speaker = shows_speaker and plain(speaker or "") or ""
+    if speaker == PLACEHOLDER_SPEAKER then speaker = "" end
+    last_speaker = speaker ~= "" and speaker or last_speaker
+    last_line = line
+    speak_story(speaker ~= "" and (speaker .. ": " .. line) or line)
+end
+
+-- The window's line as it shows it, for a window met already open (the mod
+-- started, or its class was hooked just after it opened).
+local function say_shown_line(w)
     local text = w.DialogueText
     if not (text and text:IsValid()) then return end
     local ok, target = pcall(function() return text.TargetText:ToString() end)
-    local line, settled
-    if ok and target and target ~= "" then
-        line, settled = plain(target), true
-    else
-        line = plain(text:GetText():ToString())
-        settled = line == typing
-    end
-    typing = line
-    if line == "" or line == last_line or not settled then return end
+    local line = (ok and target and target ~= "") and target or text:GetText():ToString()
     local sp = w.DialogueSpeakerText
-    -- The away mission window keeps the placeholder in a hidden speaker
-    -- field, so its lines were never read (2026-10-11): a hidden speaker
-    -- counts as none.
-    local speaker = (sp and sp:IsValid() and screen.shown(sp)) and plain(sp:GetText():ToString()) or ""
-    if speaker == PLACEHOLDER_SPEAKER then return end
-    -- The first line after a cutscene settled before its speaker was shown,
-    -- so "Kathryn Janeway" was left off (2026-10-14, twice). Give the name
-    -- up to about a second; a window that never shows one (away missions)
-    -- is read after that.
-    if speaker_wait.line ~= line then speaker_wait = { line = line, polls = 0 } end
-    speaker_wait.polls = speaker_wait.polls + 1
-    if speaker == "" and sp and sp:IsValid() and speaker_wait.polls <= 7 then return end
-    -- The first line of the next dialogue table shows the old name for a
-    -- moment: "Kathryn Janeway: Captain, the source appears to be a...
-    -- Federation beacon" is Tuvok's (DT_DR_Main_02_Maneuvers_Part_01a,
-    -- after her choice; Casey's machine, 2026-10-15). The same name as the
-    -- last line waits up to two polls (0.3 s) for a new one.
-    if speaker ~= "" and speaker == last_speaker and speaker_wait.polls <= 2 then return end
-    last_speaker = speaker
-    last_line = line
-    speak_story(speaker ~= "" and (speaker .. ": " .. line) or line)
+    local speaker = (sp and sp:IsValid()) and sp:GetText():ToString() or ""
+    say_line(w, speaker, line)
+end
+
+local function on_window(kind)
+    return function(ctx, row_name, row, line)
+        local okp, p = pcall(function() return path_of(ctx:get()) end)
+        if not (okp and p) then return end
+        -- The line's own text and speaker, from the call itself.
+        local speaker, text = nil, nil
+        if kind == "line" then
+            pcall(function() speaker = row:get().CharacterName:ToString() end)
+            pcall(function() text = line:get():ToString() end)
+        end
+        -- Pre hooks: the window has applied the call on the next tick.
+        ExecuteInGameThread(function()
+            pcall(function()
+                if kind == "close" then
+                    if window_path == p then window_path = nil end
+                    gone_since = os.time()
+                    -- A Continue asked for during typing belongs to that line
+                    -- only (GPT review, 2026-10-21: it could advance a later
+                    -- line).
+                    continue_pending = false
+                    pcall(function() require("focus").request_check() end)
+                    -- The ship view or map behind it is in front again.
+                    pcall(function() require("help").view_check() end)
+                    return
+                end
+                local w = StaticFindObject(p)
+                if not (w and w:IsValid()) then return end
+                window_path = p
+                -- last_line is kept across a short close (a window on top),
+                -- but not for long: a recurring conversation with the same
+                -- line (the Doctor's "the infection rate is increasing!" in
+                -- Medical Ethics) came back minutes later and was silent,
+                -- waiting for Enter (VM, 2026-10-20). Gone 3 s or more, it
+                -- is a new conversation, and the Enter count starts again.
+                if gone_since and os.time() - gone_since >= 3 then
+                    last_line, last_speaker = nil, nil
+                    stuck.line, stuck.count = nil, 0
+                end
+                gone_since = nil
+                crumb.at("dialogue: " .. kind)
+                if kind == "line" then
+                    continue_pending = false
+                    if text then say_line(w, speaker, text) else say_shown_line(w) end
+                elseif kind == "typed" or kind == "choices" or kind == "open" then
+                    -- A line whose ShowDialogue came before the class was
+                    -- hooked (the first window of its kind) is said now; a
+                    -- line said already is not said again.
+                    pcall(say_shown_line, w)
+                    -- Enter during typing finished the line first; the
+                    -- continue it asked for goes now that the line is done.
+                    if kind == "typed" and continue_pending then
+                        continue_pending = false
+                        inject_continue()
+                    end
+                elseif kind == "consequences" then
+                    -- The away mission summary is final now (popups.lua).
+                    pcall(function() require("popups").reread_class("WBP_AwayMissionOutcome_C") end)
+                end
+                read_popup(w)
+                -- Choices up, gone or moved on: focus looks once, and the
+                -- away mission's own reading of the window (awaymission.lua).
+                pcall(function() require("focus").request_settle() end)
+                pcall(function() require("awaymission").request_poll() end)
+            end)
+        end)
+    end
+end
+
+local function on_popup(ctx)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local w = find_window()
+            if w then read_popup(w) end
+            require("focus").request_check()
+        end)
+    end)
+end
+
+local hooked_fn, class_done = {}, {}
+
+-- Hooks the events in table events on the class in cls's chain that
+-- defines each.
+local function hook_events(cls, events, make)
+    local taken, got = {}, {}
+    local k = cls
+    while k and k:IsValid() do
+        local kpath = path_of(k)
+        if not kpath or BASE[kpath] then break end
+        k:ForEachFunction(function(f)
+            local fname = f:GetFName():ToString()
+            local kind = events[fname]
+            if kind and not taken[fname] then
+                taken[fname] = true
+                local fpath = kpath .. ":" .. fname
+                if not hooked_fn[fpath] then hooked_fn[fpath] = pcall(RegisterHook, fpath, make(kind)) end
+                got[#got + 1] = fname
+            end
+        end)
+        k = k:GetSuperStruct()
+    end
+    return got
+end
+
+local function hook_window(w)
+    local cls = w:GetClass()
+    local name = cls:GetFName():ToString()
+    if not class_done[name] then
+        class_done[name] = true
+        local got = hook_events(cls, WINDOW_EVENTS, on_window)
+        print("[VoyagerAccess] dialogue: " .. name .. " events: " .. table.concat(got, ", ") .. "\n")
+    end
+    pcall(function()
+        local popup = w.WBP_Dialogue_Popup
+        if popup and popup:IsValid() then
+            local pname = popup:GetClass():GetFName():ToString()
+            if not class_done[pname] then
+                class_done[pname] = true
+                hook_events(popup:GetClass(), POPUP_EVENTS, function() return on_popup end)
+            end
+        end
+    end)
+    -- Met already open: its line now.
+    local p = path_of(w)
+    if p and p:find("^/Engine/Transient%.") and screen.shown(w) then
+        window_path = p
+        pcall(say_shown_line, w)
+        pcall(read_popup, w)
+    end
 end
 
 -- R repeats the last dialogue line or story card. Not Space: the game uses Space for away
@@ -382,32 +496,52 @@ function M.choice_label(path)
     wording = wording:gsub("([^%s%.])%s*%[([^%]{}]+)%]%s*$", "%1. %2")
     if wording ~= "" then parts[#parts + 1] = wording end
     -- The requirement widget is not a named member, so find its text by path.
-    local req = ""
+    -- A choice can have several: "Enough resources to keep his people
+    -- alive" needs Deuterium 1,200 and Food 1,200 (both unmet) and Dilithium
+    -- 15, and only the last found, the met one, was read, so the reason it
+    -- could not be taken was never heard (The Omega Directive, VM,
+    -- 2026-10-20). Each one is read, in the order they are laid out.
+    local reqs, seen = {}, {}
     local want = cpath .. "."
     for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
         for _, t in ipairs(FindAllOf(cls) or {}) do
             local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
-            if tp and tp:sub(1, #want) == want and tp:find("WBP_Dialogue_Requirement", 1, true)
+            -- One widget is found under two of these classes (each
+            -- requirement was read twice, VM, 2026-10-20).
+            if tp and not seen[tp] and tp:sub(1, #want) == want and tp:find("WBP_Dialogue_Requirement", 1, true)
                 and screen.shown(t) then
-                req = text_of(t)
+                seen[tp] = true
+                -- The boxes have no parent widget to ask for a position, so
+                -- they go in the order they were made: object numbers count
+                -- down (Deuterium _C_..495, Food ..492, Dilithium ..489, the
+                -- order of the game's own requirement list).
+                local idx = -(tonumber(tp:match("WBP_Dialogue_Requirement[%w_]-_C_(%d+)")) or 0)
+                reqs[#reqs + 1] = { text = text_of(t), idx = idx, path = tp }
             end
         end
     end
-    if req ~= "" and not req:find("^##") then
-        local unmet = req:find("ColorNegative", 1, true) ~= nil
-        -- "Phaser Control Room Level 1- Chance: 50% + 35%" has no space
-        -- before the dash (Mirror, Mirror, VM, 2026-10-15).
-        -- The game's own word for chance is kept, so this works in every
-        -- language ("Erfolgschance: 70%" was read raw in German; firefly82's
-        -- review, 2026-10-19): "Room Level 1 - Chance: 50%" becomes "Room
-        -- Level 1, Chance 50%", and "Success Chance: 70%" (no room or hero
-        -- needed; black hole, sector 7, 2026-10-18) "Success Chance 70%".
-        req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub("%s*%-%s*([^%d%-:]+):%s*(%d)", ", %1 %2")
-        req = (req:gsub("^([^%d:]+):%s*(%d+%%)", "%1 %2"))
-        -- The second number is the hero's bonus, shown highlighted: "chance
-        -- 40% + 45%" read as a sum to work out (Jetrel, 2026-10-15).
-        req = (req:gsub("(%d+%%) %+ (%d+%%)", "%1, plus %2 bonus"))
-        parts[#parts + 1] = (unmet and "Needs " or "") .. req
+    table.sort(reqs, function(a, b)
+        if a.idx ~= b.idx then return a.idx < b.idx end
+        return a.path < b.path
+    end)
+    for _, r in ipairs(reqs) do
+        local req = r.text
+        if req ~= "" and not req:find("^##") then
+            local unmet = req:find("ColorNegative", 1, true) ~= nil
+            -- "Phaser Control Room Level 1- Chance: 50% + 35%" has no space
+            -- before the dash (Mirror, Mirror, VM, 2026-10-15).
+            -- The game's own word for chance is kept, so this works in every
+            -- language ("Erfolgschance: 70%" was read raw in German; firefly82's
+            -- review, 2026-10-19): "Room Level 1 - Chance: 50%" becomes "Room
+            -- Level 1, Chance 50%", and "Success Chance: 70%" (no room or hero
+            -- needed; black hole, sector 7, 2026-10-18) "Success Chance 70%".
+            req = plain(req):gsub("^%[", ""):gsub("%]$", ""):gsub("%s*%-%s*([^%d%-:]+):%s*(%d)", ", %1 %2")
+            req = (req:gsub("^([^%d:]+):%s*(%d+%%)", "%1 %2"))
+            -- The second number is the hero's bonus, shown highlighted: "chance
+            -- 40% + 45%" read as a sum to work out (Jetrel, 2026-10-15).
+            req = (req:gsub("(%d+%%) %+ (%d+%%)", "%1, plus %2 bonus"))
+            parts[#parts + 1] = (unmet and "Needs " or "") .. req
+        end
     end
     local reward = ""
     pcall(function() reward = plain(text_of(c.RightButton.Reward)) end)
@@ -571,13 +705,16 @@ end
 
 -- Continue while a line is still typing only finishes the typing, so Casey
 -- needed two Enters per line (log, 2026-10-10). The mod speaks the whole line
--- at once, so finish the typing first and continue on the next poll.
+-- at once, so finish the typing first and continue when the window says the
+-- line has been shown (its FinishShowingDialogueRow), not on the next poll.
+-- OPEN POINT: that the window calls it after SkipToLineEnd too is not seen
+-- yet (the census saw it after lines that typed out by themselves).
 
 -- Some lines do not take the continue action at all: Zilis's "Whoops...
 -- HULL -3" in the Equinox chase took fourteen Enters and only Shift+Enter
 -- (the hold to skip) moved it on (VM, 2026-10-18). After two Enters on the
--- same finished line, say so instead of staying silent.
-local stuck = { line = nil, count = 0 }
+-- same finished line, say so instead of staying silent (stuck is declared
+-- at the top; a new conversation resets it).
 
 function M.continue()
     local w = M.active()
@@ -589,7 +726,34 @@ function M.continue()
     end
     local line = nil
     pcall(function() line = (w.DialogueSpeakerText:GetText():ToString()) .. "|" .. text:GetText():ToString() end)
-    if line and line == stuck.line then stuck.count = stuck.count + 1 else stuck.line, stuck.count = line, 1 end
+    -- An Enter that went to another window on top (an away mission's result
+    -- with the conversation waiting behind it) is not an Enter on this line:
+    -- three of them said "This line does not move on with Enter" (VM,
+    -- 2026-10-20).
+    -- Nor is Enter on a choice (a choice that loops back to the same line,
+    -- "Offer amends" then "Nevermind" in The Omega Directive, set it off),
+    -- or with an away mission or another read-once window up (its result
+    -- window has no focused button).
+    local elsewhere = false
+    pcall(function()
+        local cur = require("focus").current_path()
+        local b = cur and StaticFindObject(cur)
+        elsewhere = (b ~= nil and b:IsValid() and screen.shown(b) and not M.contains(cur))
+            or M.is_choice(cur)
+            or require("awaymission").mission_active()
+        if elsewhere then return end
+        -- Map markers and room prompts are windows too and always up.
+        for _, p in ipairs(require("popups").open_windows()) do
+            if not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("RoomPrompt", 1, true) then elsewhere = true end
+        end
+    end)
+    if elsewhere then
+        stuck.line, stuck.count = nil, 0
+    elseif line and line == stuck.line then
+        stuck.count = stuck.count + 1
+    else
+        stuck.line, stuck.count = line, 1
+    end
     if stuck.count >= 3 then
         stuck.count = 0
         speech.say("This line does not move on with Enter. Shift+Enter skips to the next choice.", true)
@@ -654,10 +818,24 @@ function M.install()
     local keys = require("keys")
     keys.on("r", M.repeat_line)
     keys.on("shift+enter", M.skip)
-    LoopInGameThreadWithDelay(INTERVAL_MS, function()
-        local ok, err = pcall(poll)
-        if not ok then print("[VoyagerAccess] dialogue error: " .. tostring(err) .. "\n") end
+    -- Dialogue windows as the game makes them (no 150 ms scan), and those
+    -- there already (a reload): hooked once per class.
+    local ok, err = pcall(NotifyOnNewObject, NATIVE_WINDOW, function(o)
+        local okp, p = pcall(function() return path_of(o) end)
+        if not (okp and p) then return end
+        ExecuteInGameThread(function()
+            pcall(function()
+                local w = StaticFindObject(p)
+                if w and w:IsValid() then hook_window(w) end
+            end)
+        end)
     end)
+    print("[VoyagerAccess] dialogue: new windows " .. (ok and "watched" or ("not watched: " .. tostring(err))) .. "\n")
+    for _, cls in ipairs(WINDOW_CLASSES) do
+        for _, w in ipairs(FindAllOf(cls) or {}) do
+            if w:IsValid() and live(w) then pcall(hook_window, w) end
+        end
+    end
 end
 
 return M
