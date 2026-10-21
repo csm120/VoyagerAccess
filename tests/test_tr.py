@@ -68,6 +68,24 @@ end
         self.assertEqual(tr.apply("Ship view. Deck 5, Wissenschaftslabor."),
                          "Schiffsansicht. Deck 5, Wissenschaftslabor.")
 
+    def test_repeated_line_and_language_change_with_the_cache(self):
+        lua = lupa.LuaRuntime()
+        lua.execute(TABLE)
+        lua.execute('''
+CULTURE = "de"
+CLOCK = 0
+os.clock = function() return CLOCK end
+function StaticFindObject()
+    return { GetCurrentCulture = function() return { ToString = function() return CULTURE end } end }
+end
+''')
+        tr = lua.execute(TR.read_text(encoding="utf-8"))
+        self.assertEqual(tr.apply("5 of 10"), "5 von 10")
+        self.assertEqual(tr.apply("5 of 10"), "5 von 10")
+        # A language switch is picked up within a second, cache or not.
+        lua.execute('CULTURE = "fr"; CLOCK = 5')
+        self.assertEqual(tr.apply("5 of 10"), "5 sur 10")
+
     def test_longest_template_wins(self):
         tr = self.load("de")
         # "decks {n} to {n}" must win over "{n} to {n}".

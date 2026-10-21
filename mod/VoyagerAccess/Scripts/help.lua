@@ -199,9 +199,13 @@ function M.say_where()
                     end
                 end
             end)
-            if result then
+            -- An empty one is shown during the mission's opening story, and
+            -- I said just "Away mission result." (demo, VM, 2026-10-21).
+            -- Any text, not letters: %a misses Russian, Japanese and Chinese
+            -- (GPT review, 2026-10-21).
+            if result and result:find("%S") then
                 parts[1] = "Away mission result"
-                parts[2] = result ~= "" and result or nil
+                parts[2] = result
                 parts[3] = require("hints").fresh("r_result") and "R repeats it, Enter continues" or nil
             elseif label and label:find("^Choice %d") then
                 parts[2] = label
@@ -347,15 +351,73 @@ local function view_now()
     -- the VM with the check above alone). Game Over too: "System map.
     -- Nothing selected" came after "Game Over. The hull ruptured..."
     -- (Casey's machine, 2026-10-15). popups.lua knows which are open.
+    -- A dilemma's result (and the other front windows) before focus reaches
+    -- its button: "System map. Nothing selected" came between the result
+    -- and its CLOSE (Q Trial, VM, 2026-10-21).
     for _, wp in ipairs(require("popups").open_windows()) do
-        if wp:find("WBP_PauseMenu_Confirms_C", 1, true) or wp:find("WBP_GameOver_C", 1, true) then v = "other" end
+        if wp:find("WBP_PauseMenu_Confirms_C", 1, true) or wp:find("WBP_GameOver_C", 1, true) or front_window(wp) then v = "other" end
     end
     return v
 end
 
-local function view_look()
+-- A view is said once it has held for VIEW_HOLD_MS and no loading screen or
+-- main menu came up meanwhile: arriving in a new sector said "System map.
+-- Nothing selected" twice as the view flickered away and back, and leaving
+-- to the main menu said "System map" on the way out (VM, 2026-10-21; 0.3.67
+-- waited 600 ms in its loop). One delayed check, not a loop.
+local VIEW_HOLD_MS = 400
+local pending_view, view_token = nil, 0
+local function leaving()
+    for _, wp in ipairs(require("popups").open_windows()) do
+        if wp:find("WBP_Loading_Screen_C", 1, true) then return true end
+    end
+    -- The main menu is not one of popups' windows, so it is looked for
+    -- itself (Fable review, 2026-10-21).
+    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then return true end
+    end
+    return false
+end
+
+local say_view   -- below
+
+-- attempt: how many times this has waited for a loading screen to go. The
+-- check comes back while one is up (up to about 18 s), and starts again
+-- when the view changed during the wait: with one try, a view checked
+-- during the loading screen was never said after it (demo, VM, and GPT's
+-- review, 2026-10-21). Going back to the view already said cancels a wait.
+local function view_look(attempt)
+    attempt = attempt or 0
     local v = view_now()
-    if v == stable_view then return end
+    if v == stable_view then
+        pending_view = nil
+        view_token = view_token + 1
+        return
+    end
+    if v == pending_view then return end
+    pending_view = v
+    view_token = view_token + 1
+    local mine = view_token
+    ExecuteInGameThreadWithDelay(VIEW_HOLD_MS, function()
+        if view_token ~= mine then return end
+        pending_view = nil
+        local ok, err = pcall(function()
+            if view_now() ~= v then return view_look(0) end
+            if v ~= "other" and leaving() then
+                if attempt < 20 then
+                    ExecuteInGameThreadWithDelay(500, function()
+                        if view_token == mine then view_look(attempt + 1) end
+                    end)
+                end
+                return
+            end
+            say_view(v)
+        end)
+        if not ok then print("[VoyagerAccess] view look error: " .. tostring(err) .. "\n") end
+    end)
+end
+
+function say_view(v)
     stable_view = v
     if v == "other" then return end
     -- Not over one of the mod's own lists: "Ship view. Deck 2, Ruined room"

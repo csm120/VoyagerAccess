@@ -1789,6 +1789,13 @@ local function poll()
         local ok, err = pcall(wire_rows, path)
         if not ok then print("[VoyagerAccess] rows error: " .. tostring(err) .. "\n") end
     end
+    -- An arrow that moved focus has been used (the menu's crossing check
+    -- above, wire_rows' disabled-button skip): forgotten now, or a later
+    -- move by the game or a click was taken for an arrow and undone on the
+    -- main menu (Fable review, 2026-10-21; 0.3.67 kept it for 2 polls).
+    -- "go_in" stays: Enter into a main menu panel can move focus twice
+    -- (the panel animates open first) and the second move needs it.
+    if last_nav == "arrow" then last_nav = nil end
     if not path then return end
     -- Arriving back at a button Enter was pressed on closes everything opened after it.
     for i = #back_stack, 1, -1 do

@@ -2,6 +2,19 @@
 
 ## Wednesday October 21st 2026
 
+Version 0.3.69
+
+- Fixed: E right after you close a room window now acts on that room. The mod presses the window's buttons with the mouse, so the pointer was left where the last button was, and E could do nothing or hit the wrong room. The pointer now goes back to the room you heard.
+- Fixed: after loading a save, the view you land in is announced again once the loading screen is gone.
+- Fixed: arriving in a new sector no longer says "System map. Nothing selected" twice, leaving to the main menu no longer says "System map" on the way out, and a dilemma's result no longer gets "System map" read in the middle of it.
+- Fixed: pressing I during an away mission's opening story no longer says an empty "Away mission result".
+- Changed: Voyager Access now checks its own keys separately from speech, so a key like I, O or C that you press while something is being read is picked up without waiting.
+- Changed: in other languages, lines you hear often are translated once and remembered, which takes a little load off the game.
+
+Thanks again to firefly82, whose ideas for making the mod quicker are behind the last two.
+
+## Wednesday October 21st 2026
+
 Version 0.3.68
 
 - Fixed: quick key presses, like a fast E on a room, no longer get lost. The mod used to check the game on a timer, and those checks held the game up just long enough to swallow a short tap. It now listens to the game's own events instead, so the game stays responsive and you hear things sooner. Moving around the System Map is quicker too.

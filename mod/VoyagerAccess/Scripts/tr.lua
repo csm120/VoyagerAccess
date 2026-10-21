@@ -174,10 +174,21 @@ local function pass(text, d, store, depth)
     return text
 end
 
+-- Lines already translated, per language table: spoken lines repeat a lot
+-- (room names, list positions, "Ship view"), and each new one runs about 850
+-- patterns (outside review of firefly82's patch, 2026-10-21). Cleared when
+-- it grows past MEMO_MAX lines or the language changes.
+local MEMO_MAX = 400
+local memo, memo_for, memo_n = {}, nil, 0
+
 function M.apply(text)
     if type(text) ~= "string" or text == "" then return text end
     local d = current()
     if not d then return text end
+    if memo_for ~= d or memo_n >= MEMO_MAX then memo, memo_for, memo_n = {}, d, 0 end
+    local hit = memo[text]
+    if hit then return hit end
+    local original = text
     local store = {}
     text = pass(text, d, store, 1)
     -- Markers can sit inside a later piece's slot; unwrap until none left.
@@ -186,6 +197,8 @@ function M.apply(text)
         text, n = text:gsub("\1(\2+)\1", function(s) return store[#s] or "" end)
         if n == 0 then break end
     end
+    memo[original] = text
+    memo_n = memo_n + 1
     return text
 end
 

@@ -973,6 +973,30 @@ function M.install()
     end
     popups.on_widget("WBP_Button_RoomSelection_C", install_state)
     popups.on_widget("WBP_Sideview_InfoPanel_C", install_hover)
+    -- A room window's buttons are pressed with the mouse, so when it closes
+    -- the pointer is where its last button was, and the game's E acts on
+    -- whatever is under it: E right after Escape did nothing until the room
+    -- was chosen again, and could have hit another room (VM, 2026-10-21).
+    -- The pointer goes back to the room heard, after the window's fade.
+    popups.on_close(function(_, cls)
+        if cls ~= "WBP_RoomManagementV2_C" then return end
+        -- Not if the player has chosen another room meanwhile (select()
+        -- makes a new selected table; GPT review, 2026-10-21).
+        local was = selected
+        ExecuteInGameThreadWithDelay(300, function()
+            pcall(function()
+                if selected ~= was or not M.active() then return end
+                -- Not under another window the player opened meanwhile
+                -- (Fable review, 2026-10-21).
+                for _, wp in ipairs(popups.open_windows()) do
+                    if not wp:find("WBP_PoiEventWidget_C", 1, true) and not wp:find("RoomPrompt", 1, true) then return end
+                end
+                local list = rooms()
+                local i = index_of_selected(list)
+                if i then point_at(list[i].hull) end
+            end)
+        end)
+    end)
     -- Already made (the main menu has room buttons; a reload in the ship view).
     for cls, fn in pairs({ WBP_Button_RoomSelection_C = install_state, WBP_Sideview_InfoPanel_C = install_hover }) do
         for _, w in ipairs(FindAllOf(cls) or {}) do

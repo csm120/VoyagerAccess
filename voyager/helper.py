@@ -681,11 +681,21 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
     log_on_file = speech_file.parent / "input-log-on"
     log_on = [log_on_file.exists()]
 
+    # keys.txt is written by the key thread below and by note() on this
+    # thread, so writes share a lock.
+    import queue
+    import threading
+    write_lock = threading.Lock()
+
+    def append(lines):
+        with write_lock:
+            with open(keys_file, "a", encoding="utf-8") as f:
+                f.write("".join(s + "\n" for s in lines))
+
     def note(text):
         """A line for UE4SS.log through the mod (with the hooks only)."""
         if hooks and log_on[0]:
-            with open(keys_file, "a", encoding="utf-8") as f:
-                f.write("log:%s %s\n" % (hooks.events.now(), text))
+            append(["log:%s %s" % (hooks.events.now(), text)])
 
     def timed(what, fn, *a):
         """Runs one of the loop's own jobs and logs how long it held the
@@ -695,8 +705,28 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
         fn(*a)
         note("helper: %s took %d ms" % (what, (time.perf_counter() - t) * 1000))
 
-    last_speech = last_check = 0.0
-    while True:
+    # Keys on a thread of their own, every 10 ms, so speech and the mod's
+    # mouse clicks (click sleeps 110 ms) never hold a key back: a lost E
+    # reached the mod 210 to 370 ms late while this loop was busy (firefly82,
+    # 2026-10-21; idea from the outside reviews of that patch). on_keys
+    # stays on the main thread, which also speaks through Tolk.
+    pressed_queue = queue.Queue()
+    stop = threading.Event()
+
+    def key_loop():
+        errors = 0
+        while not stop.is_set():
+            try:
+                key_step()
+            except Exception:
+                # Logged the first three times only: a lasting fault would
+                # otherwise write a traceback every 10 ms (Fable review).
+                errors += 1
+                if errors <= 3:
+                    log.exception("key thread (error %d)", errors)
+            time.sleep(0.01)
+
+    def key_step():
         out = []
         if hooks:
             written = time.perf_counter()
@@ -731,11 +761,36 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
             # The mod says it (keys.lua reads the file), in the game's
             # language like its other words.
             log.info("input log %s", "on" if log_on[0] else "off")
+        # A session that has ended writes nothing more (GPT review,
+        # 2026-10-21: a late write could reach the next session's file).
+        if stop.is_set():
+            return
         if out:
-            with open(keys_file, "a", encoding="utf-8") as f:
-                f.write("".join(s + "\n" for s in out))
-        if pressed and on_keys:
-            on_keys(pressed)
+            append(out)
+        if pressed:
+            pressed_queue.put(pressed)
+
+    keys_thread = threading.Thread(target=key_loop, name="keys", daemon=True)
+    keys_thread.start()
+    try:
+        _serve_loop(tolk, tailer, keep_going, on_keys, note, timed, pressed_queue)
+    finally:
+        stop.set()
+        keys_thread.join(1.0)
+
+
+def _serve_loop(tolk, tailer, keep_going, on_keys, note, timed, pressed_queue):
+    """serve's main loop: speech, clicks and the session check; keys come
+    from the key thread through pressed_queue."""
+    last_speech = last_check = 0.0
+    while True:
+        while True:
+            try:
+                pressed = pressed_queue.get_nowait()
+            except Exception:
+                break
+            if on_keys:
+                on_keys(pressed)
         now = time.monotonic()
         if now - last_check >= 1.0:
             last_check = now
