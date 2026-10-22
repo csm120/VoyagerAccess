@@ -53,7 +53,7 @@ local WINDOW_CLASSES = { "WBP_Dialogue_Window_C", "WBP_Dialogue_Window_SideView_
 local NATIVE_WINDOW = "/Script/STVoyager.STVDialogueWindow"
 local WINDOW_EVENTS = { ShowDialogue = "line", FinishShowingDialogueRow = "typed", FinishShowChoices = "choices",
     OnTriggerNextNode = "next", BP_OnActivated = "open", BP_OnDeactivated = "close", Destruct = "close",
-    OnShowConsequences = "consequences", OnFinishedShowingConsequences = "consequences",
+    OnShowConsequences = "consequences_start", OnFinishedShowingConsequences = "consequences",
     OnFinishedShowConsequencesAnim = "consequences" }
 -- The story card inside a window (WBP_Dialogue_Popup).
 local POPUP_EVENTS = { BP_OnActivated = "card", SetContent = "card" }
@@ -137,6 +137,21 @@ local function read_popup(w)
     speech.say("Continue", false)
 end
 
+-- Focus on a story card's Continue (focus.lua): the card is read here if
+-- the window's events missed it. A second "Seeking Sanctuary" card in
+-- sector 11 was silent while focus sat on its Continue (VM, 2026-10-21):
+-- the card was not shown yet when the window opened, and a card with no
+-- dialogue line gets no later event. read_popup says nothing for a card
+-- read already.
+function M.card_focused(path)
+    local wp = path:match("^(.-)%.WidgetTree_%d+%.WBP_Dialogue_Popup%.")
+    if not wp then return end
+    local w = StaticFindObject(wp)
+    if not (w and w:IsValid() and screen.shown(w)) then return end
+    window_path = wp
+    read_popup(w)
+end
+
 local crumb = require("crumb")
 
 -- One line, as ShowDialogue gives it: the speaker is the row's own name,
@@ -150,8 +165,79 @@ local function say_line(w, speaker, line)
     if line == "" or line == last_line then return end
     local sp = w.DialogueSpeakerText
     local shows_speaker = sp and sp:IsValid() and screen.shown(sp)
-    -- The call's row could not be read: the field the window shows.
-    if speaker == nil and shows_speaker then speaker = sp:GetText():ToString() end
+    -- A conversation's first line comes while its window still fades in,
+    -- so nothing in it counts as shown yet, and the line went without its
+    -- speaker ("Captain, sensors are picking up something...", Harry Kim's;
+    -- VM, 2026-10-21). Then the field's own visibility decides (the away
+    -- mission window keeps it collapsed).
+    if not shows_speaker and sp and sp:IsValid() and not screen.shown(w) then
+        local okv, vis = pcall(function() return sp:IsVisible() end)
+        shows_speaker = okv and vis
+    end
+    -- Still hidden on a call's first line, with the speaker known from the
+    -- row: the field comes up a moment later ("Captain, we're being hailed
+    -- on all emergency frequencies" was said without Harry Kim, whose name
+    -- was on screen; VM, 2026-10-22). Looked at again 200 ms on, except in
+    -- the away mission window, which keeps its speaker hidden for good.
+    -- The same when the speaker is only the field's own text, still the
+    -- placeholder: Tuvok's "Repairs in progress." went without his name
+    -- (demo, VM, 2026-10-22).
+    local row_who = (speaker and speaker ~= "" and plain(speaker) ~= PLACEHOLDER_SPEAKER) and plain(speaker) or nil
+    local field_who = ""
+    pcall(function() field_who = plain(sp:GetText():ToString()) end)
+    local have_name = shows_speaker and (row_who ~= nil or (field_who ~= "" and field_who ~= PLACEHOLDER_SPEAKER))
+    -- A field the shown window keeps hidden is no name to wait for.
+    local field_vis = false
+    pcall(function() field_vis = sp:IsVisible() end)
+    -- The placeholder means the name is still loading (row and field both
+    -- "Character Name" for Tuvok's second line, the field not yet visible).
+    local loading = (speaker and plain(speaker) == PLACEHOLDER_SPEAKER) or field_who == PLACEHOLDER_SPEAKER
+    local hidden_for_good = row_who == nil and not loading and screen.shown(w) and not field_vis
+    if sp and sp:IsValid() and not have_name and not hidden_for_good then
+        local okc, cls = pcall(function() return w:GetClass():GetFName():ToString() end)
+        if okc and cls ~= "WBP_Dialogue_Window_AwayMission_C" then
+            last_line = line
+            local wp = path_of(w)
+            -- Up to four looks 150 ms apart: one look at 200 ms still found
+            -- the field empty when the window's class was hooked late (Tuvok's
+            -- "Until completion, it would be logical..."; demo, VM, 2026-10-22).
+            local function look(tries)
+                local said = false
+                pcall(function()
+                    local w2 = StaticFindObject(wp)
+                    local sp2 = w2 and w2:IsValid() and w2.DialogueSpeakerText
+                    local shown, who = false, row_who
+                    if sp2 and sp2:IsValid() then
+                        local okv, vis = pcall(function() return sp2:IsVisible() end)
+                        shown = screen.shown(sp2) or (okv and vis)
+                        if not who then
+                            local t = plain(sp2:GetText():ToString())
+                            if t ~= "" and t ~= PLACEHOLDER_SPEAKER then who = t end
+                        end
+                    end
+                    if (shown and who) or tries <= 1 or not (w2 and w2:IsValid()) then
+                        said = true
+                        if shown and who then last_speaker = who end
+                        speak_story((shown and who) and (who .. ": " .. line) or line)
+                    end
+                end)
+                if not said and tries > 1 then
+                    ExecuteInGameThreadWithDelay(150, function() look(tries - 1) end)
+                end
+            end
+            -- The placeholder can stay up to about a second (the wait this
+            -- mod had before 0.3.68), so up to eight looks then.
+            local tries = loading and 8 or 4
+            ExecuteInGameThreadWithDelay(150, function() look(tries) end)
+            return
+        end
+    end
+    -- The call's row could not be read, or names nobody (a speaker's second
+    -- line: Tuvok's "Until completion..." went without his name, shown on
+    -- screen; demo, VM, 2026-10-22): the field the window shows.
+    if (speaker == nil or plain(speaker) == "" or plain(speaker) == PLACEHOLDER_SPEAKER) and shows_speaker then
+        speaker = sp:GetText():ToString()
+    end
     speaker = shows_speaker and plain(speaker or "") or ""
     if speaker == PLACEHOLDER_SPEAKER then speaker = "" end
     last_speaker = speaker ~= "" and speaker or last_speaker
@@ -225,8 +311,9 @@ local function on_window(kind)
                         continue_pending = false
                         inject_continue()
                     end
-                elseif kind == "consequences" then
+                elseif kind == "consequences" or kind == "consequences_start" then
                     -- The away mission summary is final now (popups.lua).
+                    if kind == "consequences" then pcall(function() require("awaymission").outcome_finished() end) end
                     pcall(function() require("popups").reread_class("WBP_AwayMissionOutcome_C") end)
                 end
                 read_popup(w)
@@ -370,8 +457,18 @@ function M.choice_step(path, dir)
     if not i then return false end
     local from = list[i].c:GetFullName():match("^%S+%s+(.+)$")
     local to = list[i + dir] and list[i + dir].c:GetFullName():match("^%S+%s+(.+)$")
-    if not to then return true end
-    ExecuteInGameThreadWithDelay(200, function()
+    -- At either end the choice is said again, as in the mod's lists (Down
+    -- on the last choice said nothing; VM, 2026-10-21).
+    if not to then
+        pcall(function() require("focus").reannounce() end)
+        return true
+    end
+    -- On the next tick, not 200 ms later: the game never moved on these
+    -- choices in the VM log ("moving to the next choice myself" on every
+    -- key), and the wait was part of a 420 to 730 ms answer (2026-10-21).
+    -- Where the game does move, it has by now (its key comes before the
+    -- mod's), and the check below sees that.
+    ExecuteInGameThread(function()
         pcall(function()
             local fc = StaticFindObject(from)
             local tc = StaticFindObject(to)
@@ -467,16 +564,33 @@ function M.choice_label(path)
     local c = cpath and StaticFindObject(cpath)
     if not (c and c:IsValid()) then return nil end
     local parts = {}
-    -- Its number, as shown on its left ("1" to "4").
+    -- The choice's own texts, from its widget tree: searching every text in
+    -- the game for its number and then its requirements (five searches of
+    -- about 30 ms) made Up and Down on a choice take 420 to 730 ms to be
+    -- answered (NVDA log times, VM, 2026-10-21; TheRev on the forum). The
+    -- walk follows visibility down, as screen.shown did for each text.
     local number = ""
+    local reqs, seen = {}, {}
+    local want = cpath .. "."
     pcall(function()
-        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-            local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
-            if tp and tp:sub(1, #cpath + 1) == cpath .. "." and tp:find("LeftButton", 1, true) and screen.shown(t) then
+        local T = { StaticFindObject("/Script/UMG.TextBlock"), StaticFindObject("/Script/UMG.RichTextBlock") }
+        local order = 0
+        screen.walk(c, function(t)
+            local is_text = false
+            for _, k in ipairs(T) do if k and k:IsValid() and t:IsA(k) then is_text = true end end
+            if not is_text then return false end
+            local tp = t:GetFullName():match("^%S+%s+(.+)$")
+            if not (tp and tp:sub(1, #want) == want) or seen[tp] then return true end
+            seen[tp] = true
+            if tp:find("WBP_Dialogue_Requirement", 1, true) then
+                order = order + 1
+                reqs[#reqs + 1] = { text = text_of(t), idx = order, path = tp }
+            elseif tp:find("LeftButton", 1, true) then
                 local s = plain(text_of(t))
                 if s:match("^%d+$") then number = s end
             end
-        end
+            return true
+        end)
     end)
     local wording = ""
     pcall(function() wording = text_of(c.RightButton.Choice) end)
@@ -500,26 +614,8 @@ function M.choice_label(path)
     -- alive" needs Deuterium 1,200 and Food 1,200 (both unmet) and Dilithium
     -- 15, and only the last found, the met one, was read, so the reason it
     -- could not be taken was never heard (The Omega Directive, VM,
-    -- 2026-10-20). Each one is read, in the order they are laid out.
-    local reqs, seen = {}, {}
-    local want = cpath .. "."
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
-        for _, t in ipairs(FindAllOf(cls) or {}) do
-            local tp = t:IsValid() and t:GetFullName():match("^%S+%s+(.+)$")
-            -- One widget is found under two of these classes (each
-            -- requirement was read twice, VM, 2026-10-20).
-            if tp and not seen[tp] and tp:sub(1, #want) == want and tp:find("WBP_Dialogue_Requirement", 1, true)
-                and screen.shown(t) then
-                seen[tp] = true
-                -- The boxes have no parent widget to ask for a position, so
-                -- they go in the order they were made: object numbers count
-                -- down (Deuterium _C_..495, Food ..492, Dilithium ..489, the
-                -- order of the game's own requirement list).
-                local idx = -(tonumber(tp:match("WBP_Dialogue_Requirement[%w_]-_C_(%d+)")) or 0)
-                reqs[#reqs + 1] = { text = text_of(t), idx = idx, path = tp }
-            end
-        end
-    end
+    -- 2026-10-20). Each one is read, in the order they are laid out (the
+    -- walk above gathers them in the choice's own layout order).
     table.sort(reqs, function(a, b)
         if a.idx ~= b.idx then return a.idx < b.idx end
         return a.path < b.path

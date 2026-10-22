@@ -253,6 +253,67 @@ local function in_nebula(actor)
     return ok and hidden
 end
 
+-- The storms, fields and clouds a point lies in, by the game's own names
+-- (ST_Phenomena_SharedStrings, PhenomenonName...): the map draws them, and a
+-- blind player could not tell the Class M planet sat in an ion storm that
+-- ate the warp core while waiting there (Friendship One, VM, 2026-10-21).
+-- Class name part to the string table's key.
+local PHENOMENA = { AsteroidField = "AsteroidField", ContaminationCloud = "ContaminatedCloud", IonStorm = "IonStorm",
+    Nebula = "Nebula", NeutronicStorm = "NeutronicStorm", PlasmaStorm = "PlasmaStorm" }
+local phenomenon_names = {}
+local function phenomenon_name(key)
+    if phenomenon_names[key] then return phenomenon_names[key] end
+    local word = nil
+    pcall(function()
+        local lib = StaticFindObject("/Script/Engine.Default__KismetTextLibrary")
+        local out = {}
+        if lib:FindTextInLocalizationTable("ST_Phenomena_SharedStrings", "PhenomenonName" .. key, out, "") then
+            local s = out.OutText:ToString()
+            if s ~= "" then word = s end
+        end
+    end)
+    word = word or (key:gsub("(%l)(%u)", "%1 %2"))
+    phenomenon_names[key] = word
+    return word
+end
+
+local function phenomena_at(actor)
+    local found = {}
+    pcall(function()
+        local loc = actor:K2_GetActorLocation()
+        for _, n in ipairs(FindAllOf("STVPhenomenon") or {}) do
+            if n:IsValid() and n:GetFullName():find("PersistentLevel", 1, true) then
+                local cls = n:GetClass():GetFName():ToString()
+                local part = cls:match("^BP_STVPhenomenon_(%a-)%u?_C$") or cls:match("^BP_STVPhenomenon_(%a+)_C$")
+                local key = part and PHENOMENA[part]
+                if key then
+                    local s = n.Sphere
+                    local c = s:K2_GetComponentLocation()
+                    local d = math.sqrt((loc.X - c.X) ^ 2 + (loc.Y - c.Y) ^ 2 + (loc.Z - c.Z) ^ 2)
+                    if d < s:GetScaledSphereRadius() then
+                        local name = phenomenon_name(key)
+                        local dup = false
+                        for _, f in ipairs(found) do if f == name then dup = true end end
+                        if not dup then found[#found + 1] = name end
+                    end
+                end
+            end
+        end
+    end)
+    return found
+end
+
+-- ", inside Ion Storm" or "".
+local function inside_text(actor)
+    -- Points of the open system only: a star system on the Sector Map is
+    -- not in the same space as the system's phenomena.
+    local okc, cls = pcall(function() return actor:GetClass():GetFName():ToString() end)
+    if not okc or cls == "BP_STVSolarSystem_C" then return "" end
+    local found = phenomena_at(actor)
+    if #found == 0 then return "" end
+    return ", " .. require("tr").fill("inside {s}", table.concat(found, ", "))
+end
+
 local function name_of(actor)
     local cls = actor:GetClass():GetFName():ToString()
     if cls == "BP_STVSolarSystem_C" then
@@ -363,6 +424,9 @@ local function status(p)
     if not explored(p.actor) then return "not scanned" end
     local res = resources(p.poi)
     if res == "" then res = found[p.path] or "" end
+    -- A found text that ends a sentence went before a comma: "We need to
+    -- scan it to find out more., 6 cycles away" (VM, 2026-10-21).
+    res = (res:gsub("%s*%.%s*$", ""))
     -- A point whose events are all over (ESTVEventState Completed 5 or
     -- Failed 7) has nothing left: arriving there again opens nothing, and a
     -- player asked how to collect at a planet (forum, 2026-10-17).
@@ -522,7 +586,7 @@ local function select(list, i, prefix)
         if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
     end
     local travel = travel_time(p)
-    local text = string.format("%s, %s, %s%d of %d", name, status(p), travel and (travel .. ", ") or "", i, #list)
+    local text = string.format("%s, %s%s, %s%d of %d", name, status(p), inside_text(p.actor), travel and (travel .. ", ") or "", i, #list)
     if prefix then text = prefix .. ": " .. text end
     print("[VoyagerAccess] system: " .. text .. "\n")
     speech.say(text, true)
@@ -690,6 +754,13 @@ local function watch_arrival(name, target, start_d)
             return j and j:IsValid() and j:IsTravelling()
         end)
         if okj and moving == true then still = 0 end
+        -- A short hop ends at about the distance it started from (Voyager
+        -- orbits a point some 900 out): from a Class H planet to the cloud
+        -- beside it, "Voyager did not move" was said after the trip (VM,
+        -- 2026-10-21). The game's own travelling flag, seen on and then
+        -- off, is an arrival too.
+        if okj and moving == true then travel.seen_moving = true end
+        local hopped = travel.seen_moving and okj and moving == false
         -- The No Way Back warning stops the ship until it is answered:
         -- "Arrived at Borg Cube Debris Field" was said while it waited for
         -- YES (campaign sector 6, VM, 2026-10-17).
@@ -705,7 +776,7 @@ local function watch_arrival(name, target, start_d)
         -- were said over the battle setup (Q Trial, VM, 2026-10-14).
         local okb, battle = pcall(function() return require("combat").screen_up() end)
         battle = okb and battle
-        if still >= 2 and (not start_d or d <= start_d * 0.9) then
+        if still >= 2 and (not start_d or d <= start_d * 0.9 or hopped) then
             travel = nil
             print("[VoyagerAccess] course: arrived at " .. name .. (battle and " (in battle, not said)" or "") .. "\n")
             if not battle then speech.say("Arrived at " .. name, false) end
@@ -777,7 +848,7 @@ local function watch_arrival(name, target, start_d)
         -- once. Avery III (a story planet, Voyager already in its orbit
         -- 1,598 from the centre) took the course and never moved, and I
         -- said "0 percent of the way, not moving" for good (VM, 2026-10-16).
-        if still >= 4 and start_d and d > start_d * 0.9 and not (okj and moving == true) and not battle then
+        if still >= 4 and start_d and d > start_d * 0.9 and not (okj and moving == true) and not battle and not hopped then
             travel = nil
             print("[VoyagerAccess] course: no movement towards " .. name .. "\n")
             -- Not over an arrival conversation or a window: it was said over
@@ -1032,17 +1103,33 @@ local function run(action, p)
             end)
         end)
     else
-        speech.say("Setting course for " .. name, true)
         -- The game's own travel call first, no mouse (Casey, 2026-10-16:
         -- "why not do everything without the reliance on the mouse"). The
         -- mouse route showed no confirmation of its own on a Sector Map trip
         -- either, so nothing is skipped. When CanTravel says no, the mouse
         -- route runs, so the game can show its own reason.
         local d0 = target_distance(p.path)
+        -- Only the point Voyager is really at: a Class H planet beside the
+        -- cloud Voyager had stopped at was "already at" too, and no course
+        -- could be set to it (Caretaker, VM, 2026-10-21).
+        local nearest = true
         if d0 and d0 <= 1000 then
-            speech.say(already_at(name, p.actor), false)
+            pcall(function()
+                for _, q in ipairs(points()) do
+                    if q.path ~= p.path then
+                        local dq = target_distance(q.path)
+                        if dq and dq < d0 then nearest = false end
+                    end
+                end
+            end)
+        end
+        if d0 and d0 <= 1000 and nearest then
+            -- Only this, not "Setting course for X" first (Caretaker, VM,
+            -- 2026-10-22).
+            speech.say(already_at(name, p.actor), true)
             return
         end
+        speech.say("Setting course for " .. name, true)
         pcall(function() pw:SetFocusPoint(p.actor) end)   -- the camera follows, as before
         if M.declare_travel(name, p.path, d0) then return end
         fire_course(name, p.path, 1)
@@ -1197,7 +1284,7 @@ function M.where()
         if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
     end
     local travel = travel_time(p)
-    local text = string.format("%s, %s, %s%d of %d", name, status(p), travel and (travel .. ", ") or "", i, #list)
+    local text = string.format("%s, %s%s, %s%d of %d", name, status(p), inside_text(p.actor), travel and (travel .. ", ") or "", i, #list)
     if menu then text = text .. ". Action list open: " .. require("tr").word(ACTIONS[menu]) end
     return text
 end

@@ -505,6 +505,15 @@ local said_pause = false
 
 local function pause_poll(w)
     local p = M.paused_text(w)
+    -- The pause text hides while the order wheel is open, and the wheel
+    -- keeps the battle stopped: Enter on a paused battle said "Combat
+    -- resumed" with the wheel up and nothing moving (VM, 2026-10-21). Said
+    -- once the wheel has closed and the battle really runs.
+    if not p and said_pause then
+        for _, x in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
+            if live(x) and screen.shown(x) then return end
+        end
+    end
     if p and p ~= said_pause then
         print("[VoyagerAccess] combat: " .. p .. "\n")
         speech.say(p, false)

@@ -34,6 +34,13 @@ local function resource_of(raw)
     return text.game_resource_name(r == "Crews" and "Crew" or r) or (RESOURCE_WORDS[r] and require("tr").word(RESOURCE_WORDS[r])) or r:lower()
 end
 
+-- An amount and its resource: "7 bio-neural gel packs", not "7 bio-neural
+-- gel pack" (a room's E: Repair line, demo, VM, 2026-10-22).
+local function amount_of(v, res)
+    if res == "bio-neural gel pack" and v ~= "1" then res = "bio-neural gel packs" end
+    return v .. " " .. res
+end
+
 -- Tokens in tree order: { kind = "text", name, value } or { kind = "key" }
 -- or { kind = "res", word }.
 local function tokens(root)
@@ -109,7 +116,7 @@ function M.lines(root)
             local nxt = toks[i + 1]
             if nxt and nxt.kind == "res" then nxt = toks[i + 2] end
             if res and number(t.value) then
-                local item = t.value .. " " .. res
+                local item = amount_of(t.value, res)
                 if line then line = line .. ", " .. item else list[#list + 1] = item end
                 res = nil
             elseif not number(t.value) and t.value ~= "/" and not NUMBER_NAMES[t.name]
@@ -126,7 +133,7 @@ function M.lines(root)
                 -- glued a room's name to its energy (firefly82's review,
                 -- 2026-10-20).
                 local sep = res and ", " or " "
-                if res then v = v .. " " .. res; res = nil end
+                if res then v = amount_of(v, res); res = nil end
                 line = t.value .. sep .. v
                 while toks[j + 2] and toks[j + 1].kind == "text" and toks[j + 1].value == "/"
                     and toks[j + 2].kind == "text" and number(toks[j + 2].value) do

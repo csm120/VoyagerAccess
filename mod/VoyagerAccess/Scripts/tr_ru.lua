@@ -1,5 +1,6 @@
 -- Russian translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "Enter",
     -- awaymission.lua
     ["Ability: {s}"] = "Способность: {s}",
     ["Away team slot"] = "Место в группе высадки",
@@ -303,6 +304,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "Герой с навыком ниже нужного тоже может добиться успеха.",
     ["After a result, Enter continues and R repeats it."] = "После результата Enter продолжает, а R повторяет его.",
     ["Up and Down move between settings."] = "Стрелки вверх и вниз перемещают между параметрами.",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "Стрелки влево и вправо переключают категорию; после последней идут все технологии от А до Я.",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "Enter открывает панель технологии, где Enter начинает исследование.",
+    ["Escape closes the panel, then the tree."] = "Escape закрывает панель, затем дерево.",
+    ["Up and Down go through the tab line by line."] = "Стрелки вверх и вниз проходят по вкладке строка за строкой.",
+    ["On the Heroes tab, Up and Down choose a hero."] = "На вкладке героев стрелки вверх и вниз выбирают героя.",
+    ["Escape closes the Overview."] = "Escape закрывает обзор.",
     ["Left and Right change the value."] = "Стрелки влево и вправо меняют значение.",
     ["Backspace goes back."] = "Backspace возвращает назад.",
     ["Up and Down move."] = "Стрелки вверх и вниз перемещают.",
@@ -665,6 +672,8 @@ return {
     ["{n} injured"] = "раненых: {n}",
     ["{n} hungry"] = "голодных: {n}",
     ["{n} homeless"] = "без жилья: {n}",
+    ["{n} homeless Ex-Borg"] = "Бывшие борги без жилья: {n}",
+    ["inside {s}"] = "в зоне: {s}",
     ["{n} severe"] = "в тяжёлом состоянии: {n}",
     ["Deuterium"] = "Дейтерий",
     ["Duranium"] = "Дюраний",

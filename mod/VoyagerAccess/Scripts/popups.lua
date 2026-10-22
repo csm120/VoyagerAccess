@@ -216,6 +216,9 @@ M.plain = plain
 -- fading in; its texts count as shown when shown inside it (set by
 -- process below for the read of that window only).
 local read_stop = nil
+-- False while popups' read of a window may still be retried (process below);
+-- true otherwise, including every read from outside process.
+local read_last_try = true
 -- The search parts_under used until 2026-10-21, kept for the development
 -- comparison below: every text in the game whose path is under the window,
 -- in creation order. It took 60 to 120 ms a window (timing log).
@@ -280,13 +283,29 @@ local function tree_parts(path)
     -- old search reads its texts without walking its children, since
     -- walking a hidden panel's children once crashed the game (probe,
     -- 2026-10-20; Fable review, 2026-10-21).
-    if inside and not root:IsVisible() then return search_parts(path) end
+    -- The search's order is the order the game made the texts in, so the
+    -- same card read "Chakotay. Homesick." while fading in and "Homesick.
+    -- Chakotay." after (VM, 2026-10-21). Nothing is read until the window
+    -- is visible, through popups' retries (up to about 2 s); the search is
+    -- the last try only.
+    if inside and not root:IsVisible() then
+        if not read_last_try then return parts end
+        return search_parts(path)
+    end
     -- Only texts whose path is under the window, as the search had it: the
     -- build ring's centre texts belong to the game instance, and read with
     -- the ring they said "Clear Debris. No Life Support. +16. +6." before
     -- the ring's own reading (VM, 2026-10-21).
     local prefix = path .. "."
+    -- The battle setup's "unassigned slots" warning: its button labels are
+    -- in the window's button list, and read with the message they came
+    -- after it ("... Continue? Continue"). They were taken out by their
+    -- English words, so in every other language they stayed (review of
+    -- 0.3.70, 2026-10-22). Its buttons' branches are skipped instead, by
+    -- class, in any language.
+    local BTN = path:find("FewerHeroesConfirmWidget", 1, true) and StaticFindObject("/Script/CommonUI.CommonButtonBase")
     screen.walk(root, function(w)
+        if BTN and BTN:IsValid() and w:IsA(BTN) then return true end
         if not is_text(w) then return false end
         local tp = path_of(w)
         if tp and tp:sub(1, #prefix) == prefix then
@@ -1339,6 +1358,15 @@ function M.ensure_damage_hook()
             damage = { injured = #s.InjuredCrewMembers + #s.InjuredHeroes, rooms = #s.DamagedRooms }
             print("[VoyagerAccess] battle: injured " .. damage.injured .. ", damaged rooms " .. damage.rooms .. "\n")
         end)
+        -- The result window has no event of its own ("events: none"), and
+        -- focus is looked at only after input: a battle that ended by
+        -- itself left its result unsaid until a key (demo, VM, 2026-10-22:
+        -- six minutes of silence). This call fills it, so the window and
+        -- the focus are looked at now and as it fades in (request_settle).
+        ExecuteInGameThread(function()
+            pcall(M.reread_class, "WBP_BattleResultLCARS_C")
+            pcall(function() require("focus").request_settle() end)
+        end)
     end)
 end
 local function battle_result(_, path)
@@ -1443,7 +1471,12 @@ local function away_detail(parts)
     local system = by.SystemNameTextBlock
     local out = {}
     if place ~= "" then out[#out + 1] = place end
-    if system and system ~= "" then out[#out + 1] = "system " .. system end
+    -- Said the Starfleet way, as on the map ("system 8 oh 1 6 point 3"):
+    -- "system 8,016.3" read as a number (Friendship One, VM, 2026-10-21).
+    if system and system ~= "" then
+        local ok, spoken = pcall(function() return require("system").spoken_number(system) end)
+        out[#out + 1] = "system " .. ((ok and spoken) or system)
+    end
     if #out == 0 then return "" end
     return table.concat(out, ", ") .. "."
 end
@@ -1680,20 +1713,24 @@ end
 function M.leave_sector_step(current, dir)
     local win = current and current:match("^(.-WBP_LeaveSector_C_%d+)")
     if not win then return false end
+    -- The window's own buttons, from its widget tree in layout order (the
+    -- sectors as laid out), not a search of every button in the game.
     local entries, cancel = {}, nil
-    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-        local p = b:IsValid() and path_of(b)
-        if p and p:sub(1, #win + 1) == win .. "." and screen.shown(b) then
+    local root = StaticFindObject(win)
+    local BTN = StaticFindObject("/Script/CommonUI.CommonButtonBase")
+    if not (root and root:IsValid() and BTN and BTN:IsValid() and screen.shown(root)) then return false end
+    screen.walk(root, function(b)
+        if not b:IsA(BTN) then return false end
+        local p = path_of(b)
+        if p and p:sub(1, #win + 1) == win .. "." then
             if p:find("WBP_LeaveSectorEntry_C_%d+$") then
-                local idx = 0
-                pcall(function() idx = b:GetParent():GetChildIndex(b) end)
-                entries[#entries + 1] = { b = b, p = p, idx = idx }
+                entries[#entries + 1] = { b = b, p = p }
             elseif p:find("%.CancelButton$") then
                 cancel = { b = b, p = p }
             end
         end
-    end
-    table.sort(entries, function(x, y) return x.idx < y.idx end)
+        return true
+    end)
     if cancel then entries[#entries + 1] = cancel end
     if #entries == 0 then return false end
     -- Focus on something else in the window: Down goes to the first entry.
@@ -1958,6 +1995,13 @@ rebuild_order()
 
 -- The watched windows on screen now, outermost first, nested ones dropped,
 -- in WATCH order (a tutorial's title before its page).
+-- A window the game destroyed instead of hiding was dropped here without a
+-- word to the close listeners: a Construction Report's CLOSE never counted
+-- as closed, so the ship view did not put the pointer back on the room
+-- and the next E did nothing (VM, 2026-10-22). Set below, where the
+-- listeners are.
+local dropped = nil
+
 local function on_screen()
     local found, order = {}, {}
     -- The Q Trials setup stays alive and "shown" behind a started trial:
@@ -1985,6 +2029,10 @@ local function on_screen()
         end
         if not (w and w:IsValid()) then
             open[p] = nil
+            if dropped then
+                local dp, dc = p, cls
+                ExecuteInGameThread(function() pcall(dropped, dp, dc) end)
+            end
         elseif not stale and not ((in_game and cls == "WBP_Sandbox_Setup_C") or (skip_room and cls == "WBP_RoomManagementV2_C"))
             and screen.shown(w) then
             found[#found + 1] = p
@@ -2034,6 +2082,7 @@ function M.close_tutorial()
                 local close = w.CloseButton
                 if close and close:IsValid() then
                     print("[VoyagerAccess] tutorial: close\n")
+                    M.tutorial_closed_at = os.clock()
                     close:HandleButtonPressed()
                     close:HandleButtonReleased()
                     close:HandleButtonClicked()
@@ -2102,28 +2151,9 @@ local function read_window(p, reread)
         local okw, owner = pcall(function() return sys and require("combat").destroyed_owner(sys, low) end)
         if okw and owner then text = text:gsub(":%s*" .. sys, function() return ": " .. require("tr").fill("{s}'s {s}", owner, sys) end, 1) end
     end
-    if p:find("FewerHeroesConfirmWidget", 1, true) then
-        -- The warning's buttons came first ("Continue. Return.
-        -- Warning..."); they are in the button list, so leave them out.
-        -- Also after the title: "Warning. Return. Continue. You
-        -- still have unassigned slots" (battle setup, VM, 2026-10-16).
-        text = text:gsub("Continue%. Return%. ", ""):gsub("Return%. Continue%. ", "")
-        -- Sometimes only one of them: "Warning. Continue. You still
-        -- have unassigned slots" (Q Trial, VM, 2026-10-16).
-        text = text:gsub("^(Warning%.) Continue%. ", "%1 "):gsub("^(Warning%.) Return%. ", "%1 ")
-        -- Or before the title: "Continue. Warning. You still..."
-        -- (campaign battle, VM, 2026-10-16).
-        text = text:gsub("^Continue%. (Warning%.)", "%1"):gsub("^Return%. (Warning%.)", "%1")
-        -- Read in layout order the labels come after the message: "Warning.
-        -- You still have unassigned slots. Continue? Continue" (VM,
-        -- 2026-10-21). Any part that is just a button's word goes, wherever
-        -- it is ("Continue?" in the message stays).
-        local kept = {}
-        for part in (text .. ". "):gmatch("(.-)%.%s+") do
-            if part ~= "Continue" and part ~= "Return" and part ~= "" then kept[#kept + 1] = part end
-        end
-        text = table.concat(kept, ". ")
-    end
+    -- The warning's buttons ("Continue", "Return"), read with its message
+    -- since 2026-10-16, are left out by tree_parts now, by class: the
+    -- English words matched here missed every other language.
     -- The away mission summary counts up as it fills in, and was read
     -- three times over (2026-10-14). It is read when the mission window
     -- says it has shown the consequences (dialogue.lua asks for it), and
@@ -2314,6 +2344,10 @@ local function tell(list, ...)
         if not ok then print("[VoyagerAccess] popups listener error: " .. tostring(err) .. "\n") end
     end
 end
+dropped = function(p, cls)
+    print("[VoyagerAccess] popups: closed " .. (p:match("([%w_]+)$") or "?") .. " (destroyed)\n")
+    tell(close_listeners, p, cls)
+end
 
 -- Other parts told when the game makes a widget of a class they name
 -- (view.lua: the navigation bar, help.lua: the main menu): fn(path) on the
@@ -2344,7 +2378,11 @@ local reopen_gen = {}    -- path -> count of closes, so a waiting read knows its
 -- One window event, handled on the next tick (a pre hook: the game fills
 -- the window inside the function).
 local CHANGE_RETRY_MS = { 60, 120, 250, 500, 1000 }   -- after a read that said nothing new (below)
-local room_wait = {}   -- path -> { gen, at }: when this showing's first look waited for its description
+local room_wait = {}   -- path -> "tab" or "modules": a room window waiting for that game event
+local room_hooked = false   -- OnLoadedModuleClasses is hooked (M.install)
+local room_tab_hooked = false   -- the room window's tab switcher event is hooked (M.install)
+local room_tab_seen = {}   -- path -> true: the game has set this showing's tab
+local card_active = {}   -- path -> true: an info card seen activated this showing (closed_card)
 -- retry: how many of those looks this is (nil for the event itself).
 local function process(p, kind, trust, retry)
     local w = StaticFindObject(p)
@@ -2356,6 +2394,9 @@ local function process(p, kind, trust, retry)
         open[p], announced[p], last_text[p], settle[p] = nil, nil, nil, nil
         -- A read waiting after a reopen is for a showing that is over.
         reopen_wait[p] = nil
+        room_wait[p] = nil
+        room_tab_seen[p] = nil
+        card_active[p] = nil
         reopen_gen[p] = (reopen_gen[p] or 0) + 1
         M.result_pending = false
         after_change()
@@ -2374,9 +2415,6 @@ local function process(p, kind, trust, retry)
     -- it is read a moment later.
     if kind == "open" and trust and (announced[p] or last_text[p]) then
         announced[p], last_text[p] = nil, nil
-        -- A new showing: its room description wait starts again (Fable
-        -- review: no close came, so reopen_gen did not move).
-        room_wait[p] = nil
         open[p] = open[p] or cls
         if not reopen_wait[p] then
             reopen_wait[p] = true
@@ -2406,6 +2444,8 @@ local function process(p, kind, trust, retry)
     end
     fresh[p] = nil
     open[p] = open[p] or cls
+    -- Seen activated while open: closed_card may count it closed later.
+    pcall(function() if w:IsActivated() == true then card_active[p] = true end end)
     if cls == "WBP_SavegameNotification_C" then
         if kind == "open" then say_save(p) end
         return
@@ -2419,31 +2459,50 @@ local function process(p, kind, trust, retry)
         end
     end
     local reread = announced[p] == true
-    -- A room window read before its description is on screen: looked at
-    -- again every 80 ms, for up to 400 ms from the first look of this
-    -- showing (a change event in between does not start the count again;
-    -- Fable review), before reading it without (rooms.description_ready).
-    -- Focus waits for the window's read.
-    local room_gen = reopen_gen[p] or 0
+    -- A room window builds its modules (power, description, crew, the
+    -- room's own tab) only after it is activated: BP_OnActivated came with
+    -- none, and the game's own OnLoadedModuleClasses about 46 ms later, with
+    -- all of them filled on the next tick, on every opening (probe,
+    -- Krankenstation, 2026-10-22). So a room window without modules is not
+    -- read yet; the game's event reads it (M.install). No timer: 0.3.70
+    -- looked every 80 ms for up to 400 ms (room_wait). Focus waits for the
+    -- window's read as before.
+    -- Read once the game has set the window's tab, not when its modules
+    -- are built: the window builds on its power tab, unseen, and then
+    -- switches to the tab it shows (the Mess Hall's rations, the Sickbay's
+    -- patients) with its switcher's OnActiveIndexChanged, as it becomes
+    -- visible; a room that stays on the power tab gets the same event with
+    -- index 0, its modules in place (probe 2026-10-22, roomorder.lua). Read
+    -- at the modules, the Mess Hall was read with the power tab's
+    -- description, which the screen never shows, and before it was shown,
+    -- so no "Ship view" came after Escape. Without the tab event (its class
+    -- not hooked yet), the modules event as above.
     if cls == "WBP_RoomManagementV2_C" and not reread then
-        local st = room_wait[p]
-        if not st or st.gen ~= room_gen then
-            st = { gen = room_gen, at = os.clock() }
-            room_wait[p] = st
-        end
-        local okd, ready = true, true
-        if os.clock() - st.at < 0.4 then
-            okd, ready = pcall(function() return require("rooms").description_ready(p) end)
-        end
-        if okd and not ready then
-            local n = (retry or 0) + 1
-            local gen = room_gen
-            ExecuteInGameThreadWithDelay(80, function()
-                if (reopen_gen[p] or 0) ~= gen or queued[p] or announced[p] then return end
-                local ok, err = pcall(process, p, kind, trust, n)
-                if not ok then print("[VoyagerAccess] popups room wait error: " .. tostring(err) .. "\n") end
+        -- A backstop only, if the event never comes (a reused window set
+        -- again to the tab it is already on was not probed): read after
+        -- 600 ms, as 0.3.70's 400 ms wait did (Fable review, 2026-10-22).
+        local function wait_for(kind)
+            room_wait[p] = kind
+            ExecuteInGameThreadWithDelay(600, function()
+                if room_wait[p] ~= kind then return end
+                room_wait[p] = nil
+                room_tab_seen[p] = true   -- so this read does not wait again
+                print("[VoyagerAccess] popups: room window " .. kind .. " event did not come, reading\n")
+                local ok, err = pcall(process, p, "change", true)
+                if not ok then print("[VoyagerAccess] popups room read error: " .. tostring(err) .. "\n") end
             end)
-            return
+        end
+        if room_tab_hooked then
+            if not room_tab_seen[p] then
+                wait_for("tab")
+                return
+            end
+        elseif room_hooked and not room_tab_seen[p] then
+            local okm, built = pcall(function() return require("rooms").modules_built(w) end)
+            if okm and not built then
+                wait_for("modules")
+                return
+            end
         end
     end
     -- Activated but a parent still fading in: the census saw a room window's
@@ -2451,8 +2510,9 @@ local function process(p, kind, trust, retry)
     -- if they are shown inside the window (screen.shown with the window as
     -- the stop).
     read_stop = (not shown) and w or nil
+    read_last_try = (retry or 0) >= #CHANGE_RETRY_MS
     local okr, spoken = pcall(read_window, p, reread)
-    read_stop = nil
+    read_stop, read_last_try = nil, true
     if not okr then print("[VoyagerAccess] popups read error: " .. tostring(spoken) .. "\n"); spoken = nil end
     -- Read only once something was said or it is really on screen: a window
     -- with nothing to say yet stays unread, so its next event reads it.
@@ -2522,27 +2582,46 @@ local function queue(p, kind, trust)
     end)
 end
 
--- Windows that close with no event the mod can hook: the info card
--- (Sensor Alert, crew logs; none of CloseInfoWidget, OnCloseClicked or
--- CallOnCloseEvent came, VM, 2026-10-21). Only these, and only after two
--- looks find them off screen: any window a button hides for a moment
--- would be closed by mistake (Fable review).
-local SILENT_CLOSE = { WBP_CommonInfoWidget_C = true }
-local function gone(p)
+-- Info cards close with no event the mod can hook: the game does it all in
+-- C++. Probed on 2026-10-22 with "Overwrite save" and "Return to main
+-- menu?" (both built on GXCommonInfoWidget, like the Sensor Alert): no
+-- CloseInfoWidget, OnCloseClicked, CallOnCloseEvent, DeactivateWidget,
+-- RemoveFromParent, SetVisibility, container RemoveWidget or Blueprint
+-- event of the card came. But the card's own state is final in the same
+-- call as the click: IsActivated() false (closestate.lua). So it is read
+-- right after the mod's own click and after any input, with no wait; a
+-- card a button only hides for a moment stays activated, so it is not
+-- taken for closed. Every class built on GXCommonInfoWidget counts: 0.3.70
+-- checked only WBP_CommonInfoWidget_C itself, and never saw the two cards
+-- above close. The reports are built on it too (Construction, Research and
+-- Energy Loss reports: a Construction Report's CLOSE left no "closed" in
+-- the log, so the ship's pointer stayed on that button for the next E; VM,
+-- 2026-10-22).
+-- Only a card seen activated counts as closed when it no longer is: an
+-- embedded card its parent shows with SetVisibility (the away mission's
+-- "unassigned slots" confirm, on GXCommonInfoWidget_EmbeddedReusable) may
+-- never be activated at all (Fable review, 2026-10-22).
+local INFO_BASE = nil
+local function closed_card(p)
     local w = StaticFindObject(p)
-    return not (w and w:IsValid() and screen.shown(w))
+    if not (w and w:IsValid()) then return true end
+    INFO_BASE = INFO_BASE or StaticFindObject("/Script/GameXcite.GXCommonInfoWidget")
+    if not (INFO_BASE and INFO_BASE:IsValid() and w:IsA(INFO_BASE)) then return false end
+    local ok, active = pcall(function() return w:IsActivated() end)
+    if not ok then return false end
+    if active == true then card_active[p] = true; return false end
+    if active == false and card_active[p] then
+        card_active[p] = nil
+        return true
+    end
+    return false
 end
--- focus.lua asks after pressing a window's button: every open window of
--- those classes is checked, not only the list's first window (Fable
+-- focus.lua asks after pressing a window's button and after every input:
+-- every open window is checked, not only the list's first window (Fable
 -- review: a button list joins the buttons of every open window).
 function M.check_gone()
-    for p, cls in pairs(open) do
-        if SILENT_CLOSE[cls] and gone(p) then
-            local gen = reopen_gen[p] or 0
-            ExecuteInGameThreadWithDelay(300, function()
-                if open[p] and (reopen_gen[p] or 0) == gen and gone(p) then queue(p, "close", false) end
-            end)
-        end
+    for p in pairs(open) do
+        if closed_card(p) then queue(p, "close", false) end
     end
 end
 
@@ -2590,6 +2669,16 @@ local function holds(p)
         end)
     end
     return os.clock() - unread_since[p] < 2
+end
+
+-- True while the window at path is on screen and not read yet (focus.lua
+-- holds a button inside it; Auto Resolve's "Proceed" came before the
+-- window, as its class is a named part of the battle setup and its open
+-- event came after focus moved; VM, 2026-10-21).
+function M.window_unread(p)
+    if not p or announced[p] then return false end
+    local w = StaticFindObject(p)
+    return w ~= nil and w:IsValid() and screen.shown(w)
 end
 
 -- True while a window of one of the classes in set (name -> true) is open
@@ -2718,6 +2807,50 @@ function M.install()
         end)
     end)
     print("[VoyagerAccess] popups: new widgets " .. (okn and "watched" or ("not watched: " .. tostring(err))) .. "\n")
+    -- A room window's modules are in place on the tick after this (see
+    -- process). A native function of the room window's C++ class, called
+    -- through the game's reflection on every opening (probe 2026-10-22),
+    -- so it can be hooked when the mod starts. Without it, room windows are
+    -- read at once, as before 0.3.70.
+    local ROOM_EVENT = "/Script/STVoyager.STVRoomManagementV2:OnLoadedModuleClasses"
+    if StaticFindObject(ROOM_EVENT) then
+        room_hooked = pcall(RegisterHook, ROOM_EVENT, function(ctx)
+            local okp, p = pcall(function() return path_of(ctx:get()) end)
+            if not (okp and p) then return end
+            ExecuteInGameThread(function()
+                if room_wait[p] ~= "modules" then return end
+                room_wait[p] = nil
+                queue(p, "change", true)
+            end)
+        end)
+    end
+    print("[VoyagerAccess] popups: room window modules event " .. (room_hooked and "hooked" or "not hooked") .. "\n")
+    -- The room window Blueprint's tab switcher event (see process), hooked
+    -- on its class when the game first makes a room window.
+    local TAB_EVENT = "BndEvt__WBP_RoomManagementV2_WidgetSwitcher_K2Node_ComponentBoundEvent_1_OnActiveIndexChangedDelegate__DelegateSignature"
+    local function hook_room_tab(path)
+        if room_tab_hooked then return end
+        local w = path and StaticFindObject(path)
+        if not (w and w:IsValid()) then return end
+        local cp = path_of(w:GetClass())
+        if not (cp and StaticFindObject(cp .. ":" .. TAB_EVENT)) then return end
+        room_tab_hooked = pcall(RegisterHook, cp .. ":" .. TAB_EVENT, function(ctx)
+            local okp, p = pcall(function() return path_of(ctx:get()) end)
+            if not (okp and p) then return end
+            ExecuteInGameThread(function()
+                room_tab_seen[p] = true
+                if room_wait[p] ~= "tab" then return end
+                room_wait[p] = nil
+                queue(p, "change", true)
+            end)
+        end)
+        print("[VoyagerAccess] popups: room window tab event " .. (room_tab_hooked and "hooked" or "not hooked") .. "\n")
+    end
+    M.on_widget("WBP_RoomManagementV2_C", hook_room_tab)
+    for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
+        local p = w:IsValid() and path_of(w)
+        if p and p:find("^/Engine/Transient%.") then hook_room_tab(p) end
+    end
     -- Windows that exist already (the main menu, a reload): once.
     for _, c in ipairs(WATCH) do
         for _, w in ipairs(FindAllOf(c) or {}) do

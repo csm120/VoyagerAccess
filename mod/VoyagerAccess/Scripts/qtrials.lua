@@ -117,14 +117,33 @@ local function setup_of(path)
     return valid(w) and w or nil, p
 end
 
+-- The shown widgets of the given classes (name -> true) inside the window
+-- at wpath, from its own widget tree in layout order (screen.walk), not by
+-- searching every widget of the class in the game (review of 0.3.70,
+-- 2026-10-22). Only those whose path is under the window, as before.
+local function in_window(wpath, classes)
+    local w = StaticFindObject(wpath)
+    local found = {}
+    if not (valid(w) and screen.shown(w)) then return found end
+    local prefix = wpath .. "."
+    screen.walk(w, function(x)
+        if not classes[x:GetClass():GetFName():ToString()] then return false end
+        local p = path_of(x)
+        if p and p:sub(1, #prefix) == prefix then found[#found + 1] = x end
+        return true
+    -- List and entry box entries too: the old search found buttons wherever
+    -- they sat.
+    end)
+    return found
+end
+
 -- The setup page's items, as paths, in reading order.
 local function setup_items(wpath)
-    local prefix = wpath .. "."
-    local function under(cls, needle)
+    local plus = in_window(wpath, { WBP_PlusButton_C = true })
+    local function under(_, needle)
         local found = {}
-        for _, b in ipairs(FindAllOf(cls) or {}) do
-            local p = b:IsValid() and path_of(b)
-            if p and p:sub(1, #prefix) == prefix and p:find(needle, 1, true) and screen.shown(b) then found[#found + 1] = b end
+        for _, b in ipairs(plus) do
+            if path_of(b):find(needle, 1, true) then found[#found + 1] = b end
         end
         return found
     end
@@ -152,12 +171,6 @@ local function setup_items(wpath)
     end
     local w = StaticFindObject(wpath)
     local start = valid(w) and w.ConfirmButton
-    if not valid(start) then
-        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-            local p = b:IsValid() and path_of(b)
-            if p and p:match("^" .. wpath:gsub("%p", "%%%0") .. "%.WidgetTree_%d+%.ConfirmButton$") then start = b end
-        end
-    end
     if valid(start) and screen.shown(start) then out[#out + 1] = path_of(start) end
     return out
 end
@@ -239,12 +252,11 @@ end
 
 -- The ship tabs of the setup window at wpath, Voyager first.
 local function ship_tabs(wpath)
-    local prefix = wpath .. "."
+    local found = in_window(wpath, { WBP_Sandbox_Setup_TabButton_C = true })
     local tabs = {}
     for _, name in ipairs({ "VoyagerButton", "EquinoxButton" }) do
-        for _, b in ipairs(FindAllOf("WBP_Sandbox_Setup_TabButton_C") or {}) do
-            local p = b:IsValid() and path_of(b)
-            if p and p:sub(1, #prefix) == prefix and p:find("%." .. name .. "$") and screen.shown(b) then tabs[#tabs + 1] = b end
+        for _, b in ipairs(found) do
+            if path_of(b):find("%." .. name .. "$") then tabs[#tabs + 1] = b end
         end
     end
     return tabs
@@ -252,16 +264,12 @@ end
 
 local function tab_locked(b)
     -- The lock box itself (Locker_HB), not the word: "Locked" is
-    -- translated (outside review, 2026-10-17). Superseded 2026-10-21: the
-    -- review also said FindAllOf("TextBlock") misses CommonTextBlocks, but
-    -- a probe in the VM found it returns them.
+    -- translated (outside review, 2026-10-17). The fallback that still
+    -- looked for the English word went (review of 0.3.70, 2026-10-22): it
+    -- matched in English only; without the box the log says so.
     local okh, shown = pcall(function() return b.Locker_HB and b.Locker_HB:IsValid() and screen.shown(b.Locker_HB) end)
     if okh and shown ~= nil then return shown == true end
-    local prefix = path_of(b) .. "."
-    for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-        local tp = t:IsValid() and path_of(t)
-        if tp and tp:sub(1, #prefix) == prefix and text(t) == "Locked" and screen.shown(t) then return true end
-    end
+    print("[VoyagerAccess] qtrials: ship tab without its lock box\n")
     return false
 end
 
@@ -277,8 +285,8 @@ local function ship_text(wpath)
         else others[#others + 1] = n .. (tab_locked(b) and ", locked" or "") end
     end
     local parts = { "Ship: " .. (name or "unknown") }
-    for _, x in ipairs(FindAllOf("WBP_Sandbox_Setup_ShipInfo_C") or {}) do
-        if x:IsValid() and screen.shown(x) then
+    for _, x in ipairs(in_window(wpath, { WBP_Sandbox_Setup_ShipInfo_C = true })) do
+        do
             parts[#parts + 1] = text(x.Description_Text)
             local facts = {}
             for _, pair in ipairs({ { "Difficulty", "Difficulty_TXT" }, { "Decks", "Decks_TXT" },
@@ -453,6 +461,10 @@ function M.enter(b, path)
         b:HandleButtonClicked()
         local s = kind == "captain" and (name .. " is your captain")
             or ((kind == "modifier" and "Q Modifier: " or "Q Challenges: ") .. name .. ", chosen")
+        -- OPEN POINT (review of 0.3.70, 2026-10-22): this wait reads no
+        -- state; it puts the sentence after the slot the game focuses as
+        -- the list closes (the game restores focus on the next tick, probe
+        -- 2026-10-22). Not changed until it is tried in play.
         ExecuteInGameThreadWithDelay(300, function()
             pcall(function()
                 print("[VoyagerAccess] qtrials: " .. s .. "\n")
@@ -470,22 +482,23 @@ function M.enter(b, path)
     b:HandleButtonReleased()
     b:HandleButtonClicked()
     local wp = valid(win) and path_of(win)
-    ExecuteInGameThreadWithDelay(300, function()
-        pcall(function()
-            local nb = StaticFindObject(path)
-            local w = wp and StaticFindObject(wp)
-            local marked = valid(nb) and nb.bIsMarked
-            local n, max = counter_of(w)
-            local s = name .. (marked and " chosen" or " not chosen")
-            if n then s = s .. ", " .. n .. " of " .. max end
-            -- A full team ignores a new hero; "Maxwell Burke not chosen, 8
-            -- of 8" read like Enter not working (Casey, 2026-10-14).
-            if not marked and n and n >= max and not was_marked then
-                s = name .. " not chosen: the team is full, " .. n .. " of " .. max .. ". Enter on a chosen hero removes them"
-            end
-            print("[VoyagerAccess] qtrials: " .. s .. "\n")
-            speech.say(s, true)
-        end)
+    -- Read now: the hero's bIsMarked and the counter are the new ones in the
+    -- same call as the click (probe 2026-10-22: 00/08 to 01/08 and back),
+    -- not 300 ms later. Focus stays on the hero, so nothing talks over it.
+    pcall(function()
+        local nb = StaticFindObject(path)
+        local w = wp and StaticFindObject(wp)
+        local marked = valid(nb) and nb.bIsMarked
+        local n, max = counter_of(w)
+        local s = name .. (marked and " chosen" or " not chosen")
+        if n then s = s .. ", " .. n .. " of " .. max end
+        -- A full team ignores a new hero; "Maxwell Burke not chosen, 8
+        -- of 8" read like Enter not working (Casey, 2026-10-14).
+        if not marked and n and n >= max and not was_marked then
+            s = name .. " not chosen: the team is full, " .. n .. " of " .. max .. ". Enter on a chosen hero removes them"
+        end
+        print("[VoyagerAccess] qtrials: " .. s .. "\n")
+        speech.say(s, true)
     end)
     return true
 end
@@ -538,7 +551,10 @@ function M.back(path)
     close:HandleButtonClicked()
     if not valid(picker) then return true end
     local pp = path_of(picker)
-    ExecuteInGameThreadWithDelay(300, function()
+    -- On the next tick, not 300 ms later: the list is closed in the same
+    -- call, and the game puts focus back into the setup on the next tick
+    -- by itself (probe 2026-10-22); the slot's button is focused after that.
+    ExecuteInGameThread(function()
         pcall(function()
             local np = StaticFindObject(pp)
             if valid(np) and valid(np.OpenSelectionButton) then np.OpenSelectionButton:SetFocus() end
@@ -572,12 +588,13 @@ function M.switch_ship(path, dir)
     nxt:HandleButtonPressed()
     nxt:HandleButtonReleased()
     nxt:HandleButtonClicked()
-    ExecuteInGameThreadWithDelay(300, function()
-        pcall(function()
-            local s = ship_text(wpath)
-            print("[VoyagerAccess] qtrials: " .. s .. "\n")
-            speech.say(s, true)
-        end)
+    -- Read now: the new tab is selected and the ship info shows the new
+    -- ship in the same call as the click (probe 2026-10-22), not 300 ms
+    -- later.
+    pcall(function()
+        local s = ship_text(wpath)
+        print("[VoyagerAccess] qtrials: " .. s .. "\n")
+        speech.say(s, true)
     end)
     return true
 end

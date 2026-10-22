@@ -339,6 +339,13 @@ local function selected_view()
     return v, start, abort
 end
 
+-- A technology's panel is open, or was until a moment ago (focus.lua:
+-- Escape closes it, not the tree). The game's Escape closes the panel
+-- before the mod's key handler runs, so a panel last said open, or closed
+-- within a second, still counts.
+-- (M.panel_open is below view_said.)
+local panel_closed_at = -100
+
 -- Its numbers have no words, only an icon before each (Cycle,
 -- SciencePoints, Dilithium): the walk keeps the last icon's name. The
 -- brush is checked valid before it is read (an unchecked read crashed the
@@ -447,6 +454,11 @@ end
 
 local view_said = nil
 
+function M.panel_open()
+    local ok, v = pcall(selected_view)
+    return (ok and v ~= nil) or view_said ~= nil or os.clock() - panel_closed_at < 1
+end
+
 -- The list item whose Enter opened the details view. The view stays open
 -- while Up and Down move on, and Enter then pressed the open view's Start:
 -- Bussard Collectors was announced and Plasma Torch began (firefly82's
@@ -488,12 +500,16 @@ local function ensure_grid_hook()
     print("[VoyagerAccess] techtree: grid hook " .. (grid_hooked and "installed" or "not installed") .. "\n")
 end
 
--- fn once the grid has refreshed, or after 1.5 s if no refresh came: a
--- tab click that rebuilt nothing, a tree closed mid-build or a missing
--- hook left the A to Z list "building" for good, and Enter and Left and
--- Right in the tree did nothing until a restart (review of firefly82's
--- patch, 2026-10-21). It runs once either way.
-local GRID_FALLBACK_MS = 1500
+-- fn once the grid has refreshed. 0.3.70 also ran it after 1.5 s without a
+-- refresh, for three cases that left the A to Z list "building" for good
+-- (review of firefly82's patch, 2026-10-21); each has its own answer now,
+-- with no timer (review of 0.3.70, 2026-10-22):
+-- - a tab already shown is not clicked (show_tab asks its GetSelected);
+-- - the tree closed mid-build: its BP_OnDeactivated runs the waiters
+--   (hook_view), and the build ends there (open_now() is false);
+-- - the hook missing: fn runs at once, as the ship view does without its
+--   hover hook. The grid class is loaded whenever the tree is, so this is
+--   logged, not expected.
 local function after_grid(fn)
     pcall(ensure_grid_hook)
     local ran = false
@@ -503,17 +519,32 @@ local function after_grid(fn)
         local ok, err = pcall(fn)
         if not ok then print("[VoyagerAccess] techtree: " .. tostring(err) .. "\n") end
     end
-    if grid_hooked then
+    -- A tree that is not open builds no grid: at once (the A to Z build
+    -- then ends on its own open_now() check).
+    if grid_hooked and open_now() then
         grid_waiters[#grid_waiters + 1] = run
+        -- A backstop only, for a click the game ignored with the tree still
+        -- open (no refresh, no close): without it the A to Z list stayed
+        -- "building" (GPT review, 2026-10-22). Never runs twice (ran).
+        ExecuteInGameThreadWithDelay(3000, function()
+            if not ran then
+                print("[VoyagerAccess] techtree: no grid refresh after 3 s, going on\n")
+                run()
+            end
+        end)
+    elseif grid_hooked then
+        run()
     else
-        print("[VoyagerAccess] techtree: grid hook missing, reading after " .. GRID_FALLBACK_MS .. " ms\n")
+        print("[VoyagerAccess] techtree: grid hook missing, reading at once\n")
+        run()
     end
-    ExecuteInGameThreadWithDelay(GRID_FALLBACK_MS, function()
-        if not ran then
-            print("[VoyagerAccess] techtree: no grid refresh in " .. GRID_FALLBACK_MS .. " ms, reading now\n")
-            run()
-        end
-    end)
+end
+
+-- The tree has closed: whatever waited for a grid refresh is told now.
+local function release_waiters()
+    local list0 = grid_waiters
+    grid_waiters = {}
+    for _, w in ipairs(list0) do w() end
 end
 
 -- Clicks a category tab and runs fn once its grid is shown. A tab already
@@ -614,16 +645,9 @@ function M.enter()
         end
         print("[VoyagerAccess] techtree: " .. (start and "begin" or "abort") .. " research\n")
         press(start or abort)
-        -- Beginning a research does not refresh the grid (VM, 2026-10-20),
-        -- so this one keeps its wait. The list is brought up to date
-        -- without saying it: the open details view already says
-        -- "Researching", and the whole tier line came after it, then again
-        -- on Escape (Q Trials, VM, 2026-10-21).
-        ExecuteInGameThreadWithDelay(600, function()
-            pcall(function()
-                if list then refresh(true) end
-            end)
-        end)
+        -- Beginning a research does not refresh the grid (VM, 2026-10-20);
+        -- the game's research events bring the list up to date instead
+        -- (research_changed, M.install), not a 600 ms wait.
         return
     end
     local b = it and StaticFindObject(it.button)
@@ -632,9 +656,21 @@ function M.enter()
     view_for = it.button
     view_said = nil
     press(b)
-    -- Its state can change (research started): read it again shortly,
-    -- unless the details view opened (poll reads that).
-    ExecuteInGameThreadWithDelay(600, function()
+    -- If this began a research, the game's research event reads the
+    -- technology again (research_changed); the details view, if it opened,
+    -- is read by poll.
+end
+
+-- The game announces a research begun or stopped on its event bus, as a
+-- new STVResearchStartedPayload or STVResearchCancelledPayload (event-bus
+-- census, 2026-10-22). The list is brought up to date on the next tick,
+-- when the payload has been sent. Without the details view the item is said
+-- again; with it, the view already says "Researching", and the whole tier
+-- line after it was noise (Q Trials, VM, 2026-10-21). Replaces two 600 ms
+-- waits (review of 0.3.70, 2026-10-22). OPEN POINT: not yet seen in play.
+local function research_changed()
+    print("[VoyagerAccess] techtree: research event from the game\n")
+    ExecuteInGameThread(function()
         pcall(function()
             if list and refresh(true) and not selected_view() then say(false) end
         end)
@@ -699,6 +735,9 @@ local function poll()
         end
     elseif not now and list then
         list = nil
+        -- Closing the tree said nothing; the ship view or map behind it is
+        -- said again (VM, 2026-10-21).
+        pcall(function() require("help").view_again() end)
     end
     if list then
         local view, start, abort = selected_view()
@@ -712,6 +751,7 @@ local function poll()
         elseif view_said then
             -- Closed (Escape): say where the list is again.
             view_said = nil
+            panel_closed_at = os.clock()
             say(true)
         end
     end
@@ -750,6 +790,8 @@ local function hook_view(path)
     for _, fn in ipairs({ "BP_OnActivated", "BP_OnDeactivated", "ShowTechDescription", "HideTechDescription" }) do
         if StaticFindObject(cpath .. ":" .. fn) and pcall(RegisterHook, cpath .. ":" .. fn, function()
             request_look()
+            -- Closed: a tab click waiting for its grid gets none now.
+            if fn == "BP_OnDeactivated" then ExecuteInGameThread(release_waiters) end
             -- The tree fades in for a few ticks after it opens; if that
             -- look and PostRefreshGrid's both came too early, it stayed
             -- silent until reopened (review of firefly82's patch,
@@ -776,6 +818,10 @@ function M.install()
         if p and p:find("^/Engine/Transient%.") then pcall(hook_view, p) break end
     end
     require("keys").on_any(function() if list then request_look() end end)
+    for _, cls in ipairs({ "STVResearchStartedPayload", "STVResearchCancelledPayload" }) do
+        local ok, err = pcall(NotifyOnNewObject, "/Script/STVoyager." .. cls, function() research_changed() end)
+        print("[VoyagerAccess] techtree: " .. cls .. " " .. (ok and "watched" or ("not watched: " .. tostring(err))) .. "\n")
+    end
 end
 
 return M

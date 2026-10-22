@@ -1,5 +1,29 @@
 # New in Voyager Access
 
+## Thursday October 22nd 2026
+
+Version 0.3.71
+
+- Fixed: when a battle ends by itself, its result is read right away. You used to hear nothing until you pressed a key. The result now comes once, before Proceed.
+- Fixed: "System map. Nothing selected" no longer comes between the battle tutorial and "Prepare for combat", and the battle setup says "Prepare for combat" before the slot you're on, not around it. "Combat resumed" isn't said while the Orders wheel is open.
+- Changed: dialogue choices answer Up and Down a lot quicker, in about a tenth to a third of a second instead of nearly three quarters. At either end of the list you hear the end choice again.
+- Fixed: a call or conversation sometimes left the speaker's name off the first line, like Harry Kim's hail, even though the name was on screen.
+- New: points on the System Map say the storm, field or cloud they lie in, like "inside Ion Storm". The C list counts the homeless Ex-Borg.
+- Fixed: a short hop to the point next door now ends with "Arrived at", and Set course to a point beside Voyager no longer says Voyager is already there. When Voyager really is there, you hear only that, not "Setting course" first.
+- Changed: an away mission's header says the system number digit by digit, the Starfleet way, like "system 4 8 3 2 point 1".
+- Fixed: in the demo, room changes like "Science Laboratory, off" were silent; you hear them again. Repairing from a room window is said once, and costs say "bio-neural gel packs" when there's more than one.
+- New: F1 in the tech tree and the Overview tells you their own keys, and Escape right after opening the tech tree closes it.
+- Fixed: a second story card in the same window, like the second Seeking Sanctuary card, is read now.
+
+From firefly82's review this week:
+
+- Changed: a room window is read on the tab you actually see. The Mess Hall opens on its rations, so you no longer hear the description of a tab that isn't showing. Escape from a room says "Ship view" again; sometimes it said nothing.
+- New: the ship view tells you every action a room offers, each with its own key, like "E: Toggle power. F: Upgrade. T: Dismantle". An empty space says "Enter: Build room", since E doesn't build.
+- Fixed: closing a card like "Overwrite save" or "Return to main menu" is noticed at once, and E after a Construction Report acts on the room again.
+- Changed: the main menu, Settings tabs and Restart Sector answer without the small waits they had, and the tech tree's list updates the moment a research starts or stops.
+
+Thanks to firefly82 for another careful package.
+
 ## Wednesday October 21st 2026
 
 Version 0.3.70

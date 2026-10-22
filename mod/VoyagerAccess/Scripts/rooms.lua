@@ -138,6 +138,8 @@ local function costs_under(path)
                 local c = w.Amount.ColorAndOpacity.SpecifiedColor
                 short = c.R > 0.9 and c.G < 0.3 and c.B < 0.3
             end)
+            -- "7 bio-neural gel pack" (demo, VM, 2026-10-22).
+            if res == "bio-neural gel pack" and amount ~= "1" then res = "bio-neural gel packs" end
             if amount ~= "" then out[#out + 1] = amount .. " " .. res .. (short and " not enough" or "") end
         end
     end
@@ -554,8 +556,27 @@ open_window = function()
     return nil
 end
 
+-- Whether a room window is in front: the window's own state, IsActivated,
+-- not whether it is on screen yet. It is activated from BP_OnActivated, while
+-- still building unseen, and deactivated in the same call as its close
+-- (probes 2026-10-22, roomwin.lua). Asked by being on screen, a room read
+-- before it showed did not count, the view behind stayed "in front", and
+-- Escape said no "Ship view". Not behind the System Map, as open_window.
+-- A window whose state cannot be read counts by being on screen.
 function M.window_open()
-    return open_window() ~= nil
+    local okm, map = pcall(function() return require("system").active() end)
+    if okm and map then return false end
+    for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") then
+            local ok, act = pcall(function() return w:IsActivated() end)
+            if ok and type(act) == "boolean" then
+                if act then return true end
+            elseif screen.shown(w) then
+                return true
+            end
+        end
+    end
+    return false
 end
 
 -- A combat ally on the Bridge's Combat Allies tab (WBP_CombatAllyButton):
@@ -1126,17 +1147,30 @@ function M.switch_tab(dir)
     return true
 end
 
--- True once the room window at path shows its description module with
--- text. The first time a room window opened, its description was not on
--- screen yet when the window was read ("Mess Hall, level 2, damaged."; the
--- second opening had it; VM, 2026-10-21), so popups.lua waits for this.
-function M.description_ready(path)
-    local win = StaticFindObject(path)
-    if not (win and win:IsValid()) then return true end
-    for _, w in ipairs(FindAllOf("WBP_RoomDescriptionModule_C") or {}) do
-        if w:IsValid() and screen.shown(w, win) and plain(text_of(w.DescriptionText)) ~= "" then return true end
+-- The room window's modules, from its own fields (USTVRoomManagementV2:
+-- PowerModules, RoomInteractionModules, CrewModules), not by searching the
+-- game: calls fn(module) for each valid one.
+local MODULE_FIELDS = { "PowerModules", "RoomInteractionModules", "CrewModules" }
+local function each_module(win, fn)
+    for _, field in ipairs(MODULE_FIELDS) do
+        pcall(function()
+            win[field]:ForEach(function(_, e)
+                local m = e:get()
+                if m and m:IsValid() then fn(m) end
+            end)
+        end)
     end
-    return false
+end
+
+-- True once the room window has built its modules. The window is activated
+-- with none; they are made when the game calls OnLoadedModuleClasses, on
+-- every opening (probe 2026-10-22). Until then the description and the
+-- room's tab are missing ("Mess Hall, level 2, damaged."; VM, 2026-10-21),
+-- so popups.lua waits for that event.
+function M.modules_built(win)
+    local n = 0
+    each_module(win, function() n = n + 1 end)
+    return n > 0
 end
 
 -- Read when a room window opens: name, level, state, and the description.
@@ -1153,12 +1187,18 @@ function M.window_text(path)
     local energy = by.EnergyConsumptionText
     if energy and energy:match("^%d+$") then head = head .. ", uses " .. energy .. " energy" end
     local out = { head }
+    -- The description module is one of the window's own modules (in
+    -- PowerModules, the power tab; probe 2026-10-22), read only when that
+    -- tab is shown: the Engineering Office opens on its work teams, and its
+    -- description is not on screen then.
     local win = StaticFindObject(path)
-    for _, w in ipairs(FindAllOf("WBP_RoomDescriptionModule_C") or {}) do
-        if w:IsValid() and screen.shown(w, win) then
-            local d = plain(text_of(w.DescriptionText))
-            if d ~= "" then out[#out + 1] = d end
-        end
+    if win and win:IsValid() then
+        each_module(win, function(w)
+            if w:GetClass():GetFName():ToString() == "WBP_RoomDescriptionModule_C" and screen.shown(w, win) then
+                local d = plain(text_of(w.DescriptionText))
+                if d ~= "" then out[#out + 1] = d end
+            end
+        end)
     end
     -- Sickbay opens on Manage Patients.
     local okp, patients = pcall(M.patients_text)

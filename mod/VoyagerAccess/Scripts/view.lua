@@ -189,6 +189,9 @@ function M.nav_enter()
     b:HandleButtonReleased()
     b:HandleButtonClicked()
     -- Ship view and System map are announced by help.lua once they are up.
+    -- The Sector map is named here, and help.lua then says only what is
+    -- selected: "Sector map" came twice (VM, 2026-10-21).
+    if it[2] == "ShowSectorButton" then M.nav_named, M.nav_named_at = "Sector map", os.clock() end
     if it[2] ~= "ShowShipButton" and it[2] ~= "ShowSystemButton" then speech.say(it[1], true) end
 end
 

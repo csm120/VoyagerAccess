@@ -36,6 +36,13 @@ local HELP = {
     combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
         .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
         .. "I reads both ships and the energy. O reads the combat goal.",
+    -- F1 in the tech tree and the Overview gave the general keys and the
+    -- menu keys (VM, 2026-10-21).
+    techtree = "Up and Down move. Home and End go to the first and last. "
+        .. "Left and Right switch category; past the last one is every technology from A to Z. "
+        .. "Enter opens the technology's panel, where Enter begins the research. Escape closes the panel, then the tree.",
+    overview = "Left and Right switch tabs. Up and Down go through the tab line by line. "
+        .. "Home and End go to the first and last. On the Heroes tab, Up and Down choose a hero. Escape closes the Overview.",
     none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
         .. "I says where you are. R repeats the last line; R again goes further back. Ctrl+F12 lists what is new in Voyager Access.",
 }
@@ -123,8 +130,20 @@ function M.context()
     return focus or "none"
 end
 
+local function overview_open()
+    for _, w in ipairs(FindAllOf("WBP_OverviewInfoWidget_C") or {}) do
+        if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then
+            return true
+        end
+    end
+    return false
+end
+
 function M.say_help()
-    local ctx = require("awaymission").keys_active() and "mission" or M.context()
+    local ctx = require("awaymission").keys_active() and "mission"
+        or (require("techtree").open() and "techtree")
+        or (overview_open() and "overview")
+        or M.context()
     speech.say((HELP[ctx] or HELP.none) .. " Control F1 lists every key.", true)
 end
 
@@ -395,14 +414,43 @@ local QUICK_CLOSE = { WBP_RoomManagementV2_C = true, WBP_OverviewInfoWidget_C = 
 local closed_class, closed_at = nil, -100
 local pending_view, view_token = nil, 0
 local function leaving()
+    -- The game's own state first: USTVGameStateSubsystem runs a transition
+    -- for every load and for the way out to the main menu (CurrentTransition,
+    -- e.g. STVGameStateTransitionContinueAutoSavegame,
+    -- STVGameStateTransitionToMainMenu), and CurrentState is 3 (InGame) only
+    -- in play (2 is the main menu). Seen on 2026-10-22 through two loads.
+    -- No event marks the end of a load (loading screen, transition and
+    -- activation hooks all silent then; probe 2026-10-22), so the look
+    -- below still comes back each second while loading.
+    -- A battle and its setup, waited out like a loading screen: "System
+    -- map. Nothing selected" came between the Combat Hero Selection
+    -- tutorial and "Prepare for combat" (demo, VM, 2026-10-22). Asked
+    -- before the game state, which answers "in play" during a battle.
+    local okc, battle = pcall(function() return require("combat").screen_up() end)
+    if okc and battle then return true end
+    -- A loading screen still fading out after the game's transition ended
+    -- is waited out too (Fable review, 2026-10-22: the probe showed the
+    -- transition set during a load, not that it outlives the screen).
     -- A closed loading screen the game keeps is dropped from the open list
     -- by popups (IsActivated; after the demo's first-run screen it held
     -- every view announcement, VM, 2026-10-21).
     for _, wp in ipairs(require("popups").open_windows()) do
         if wp:find("WBP_Loading_Screen_C", 1, true) then return true end
     end
-    -- The main menu is not one of popups' windows, so it is looked for
-    -- itself (Fable review, 2026-10-21).
+    local oks, busy = pcall(function()
+        -- The live subsystem, not the class default (always state 0).
+        local s = nil
+        for _, o in ipairs(FindAllOf("STVGameStateSubsystem") or {}) do
+            if o:IsValid() and not o:GetFullName():find("Default__", 1, true) then s = o end
+        end
+        if not s then return nil end
+        local t = s.CurrentTransition
+        if t and t:IsValid() then return true end
+        return s.CurrentState ~= 3
+    end)
+    if oks and busy ~= nil then return busy end
+    -- Without the subsystem: the main menu is not one of popups' windows,
+    -- so it is looked for itself (Fable review, 2026-10-21).
     for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
         if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then return true end
     end
@@ -435,6 +483,17 @@ local function view_look(attempt)
         pending_view = nil
         local ok, err = pcall(function()
             if view_now() ~= v then return view_look(0) end
+            -- A tutorial just closed: the screen it introduced can still be
+            -- on its way. The battle setup came 500 ms after the Combat Hero
+            -- Selection tutorial closed, and "System map. Nothing selected"
+            -- was said in between (demo, VM, 2026-10-22).
+            local popups = require("popups")
+            if v ~= "other" and os.clock() - (popups.tutorial_closed_at or -100) < 0.8 and attempt < 20 then
+                ExecuteInGameThreadWithDelay(500, function()
+                    if view_token == mine then view_look(attempt + 1) end
+                end)
+                return
+            end
             if v ~= "other" and leaving() then
                 if attempt < 20 then
                     ExecuteInGameThreadWithDelay(500, function()
@@ -467,8 +526,10 @@ function say_view(v)
     -- (firefly82, 2026-10-21).
     local view = require("view")
     local after_name = view.toggled == v and map ~= "Sector map"
+    -- The navigation list's Sector map already said its name (view.nav_enter).
+    if view.nav_named == map and os.clock() - (view.nav_named_at or -100) < 3 then after_name = true end
     if after_name then text = here end
-    view.toggled = nil
+    view.toggled, view.nav_named = nil, nil
     print("[VoyagerAccess] view: " .. text .. "\n")
     speech.say(text, not after_name)
 end
@@ -490,6 +551,13 @@ function M.view_check(view)
         local ok, err = pcall(view_look)
         if not ok then print("[VoyagerAccess] view check error: " .. tostring(err) .. "\n") end
     end)
+end
+
+-- A full-screen view of the mod's own (the tech tree) has closed: the ship
+-- view or map behind it is said even though the game's view never changed.
+function M.view_again()
+    stable_view = nil
+    M.view_check()
 end
 
 -- For the helper's update restart (Casey, 2026-10-14): it closes the game
@@ -543,6 +611,8 @@ function M.install()
     end)
     popups.on_close(function(_, cls)
         closed_class, closed_at = cls, os.clock()
+        -- Closed some other way than the mod's Enter (Escape, the mouse).
+        if cls == "WBP_TutorialInfoWidget_C" then popups.tutorial_closed_at = os.clock() end
         M.view_check()
         -- Once more a moment later: as the Overview closed, its button list
         -- (CLOSE) was still up, the view still counted as "other", and

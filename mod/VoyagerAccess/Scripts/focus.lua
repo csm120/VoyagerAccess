@@ -1186,13 +1186,20 @@ function M.virtual_enter()
     local bpath = virtual.buttons[virtual.index]
     local okb, before = pcall(label_for, b, bpath)
     confirm_order(b, bpath, okb and before or nil)
+    -- ACCEPT on Exit to Main Menu: focus goes back to the pause menu's
+    -- RESUME while the game unloads, and "RESUME, 1 of 5" was said before
+    -- the main menu (VM, 2026-10-21). The pause menu is not said meanwhile.
+    if bpath:find(PAUSE_CONFIRM, 1, true) and bpath:find("%.AcceptButton$")
+        and last_real and last_real:find("WBP_PauseMenu_C", 1, true) and last_real:find("%.MainMenuButton$") then
+        M.undo_pause_until = os.clock() + 5
+    end
     click(b)
     -- Some windows close with no event the mod can hook (an info card's
     -- Close: no CloseInfoWidget, OnCloseClicked or CallOnCloseEvent came,
-    -- VM, 2026-10-21): popups looks whether one has gone from the screen.
-    ExecuteInGameThreadWithDelay(350, function()
-        pcall(function() require("popups").check_gone() end)
-    end)
+    -- VM, 2026-10-21): popups reads their state. It is final as the click
+    -- returns (IsActivated false in the same call, probe 2026-10-22), so
+    -- now, not 350 ms later.
+    pcall(function() require("popups").check_gone() end)
     -- A button whose wording changes said nothing: the Engineering
     -- Office's "Unassign from hull repair" became "Assign to hull repair"
     -- silently, its row rebuilt with new object numbers (VM, 2026-10-16).
@@ -1726,33 +1733,15 @@ label_for = function(b, path)
 end
 
 local poll_again   -- below: one more look on the next tick
+local auto_hold_since = nil   -- set while a button in an unread Auto Resolve is held
 
 local function poll()
     -- New windows of a kind seen for the first time, not on screen when
     -- they were made (popups.lua).
     pcall(function() require("popups").recheck_fresh() end)
-    crumb.at("focus: pending click")
-    if pending_click then
-        local p = pending_click
-        local menu = resolve(p.menu)
-        local switcher = menu and menu.ContentPanel
-        local animating = switcher and switcher:IsValid() and switcher:IsTransitionPlaying()
-        p.since = p.since or os.clock()
-        if animating and os.clock() - p.since < 1.5 then
-            -- OPEN POINT: the panel's switcher gives no event when its
-            -- animation ends that the mod knows of yet, so it is asked again
-            -- while the game itself says it is still switching. Every
-            -- 100 ms and for 1.5 s at most, then the click goes anyway: a
-            -- look on every tick with no limit was a per-frame loop heavier
-            -- than the ones removed, had the transition stuck (review of
-            -- firefly82's patch, 2026-10-21; 0.3.67 stopped after 15 polls).
-            ExecuteInGameThreadWithDelay(100, function() poll_again() end)
-        else
-            pending_click = nil
-            local button = resolve(p.button)
-            if button then click(button) end
-        end
-    end
+    -- Info cards the player closed (mouse, Escape): their state, read on
+    -- each look, as there is no event (popups.check_gone).
+    pcall(function() require("popups").check_gone() end)
     crumb.at("focus: scan buttons")
     local b = focused_button()
     -- Focus left behind a window whose own buttons cannot take it: the
@@ -1971,7 +1960,11 @@ local function poll()
         return
     end
     -- A story card's Continue: dialogue.lua says "Continue" after the card.
-    if path:find("WBP_Dialogue_Popup%.WidgetTree_%d+%.ContinueButtonStory$") then return end
+    -- A card its window's events missed is read now (dialogue.card_focused).
+    if path:find("WBP_Dialogue_Popup%.WidgetTree_%d+%.ContinueButtonStory$") then
+        pcall(function() require("dialogue").card_focused(path) end)
+        return
+    end
     -- While the game's chances are being read, the option waits: it was
     -- said with the mod's own chances, then again with the game's (Looted
     -- Wreckage, Q Trials, VM, 2026-10-15). The sweep says it at the end.
@@ -2008,6 +2001,36 @@ local function poll()
         -- ..." (Q Trial, VM, 2026-10-18).
         WBP_LeaveSector_C = true }
     if popups.unread_of(HOLD) then return end
+    -- Auto Resolve inside the battle setup (popups.window_unread): popups
+    -- says this button after reading the window. If that read has not come
+    -- in 2 s, the button is said then.
+    -- A battle's result inside the combat widget too: "Proceed", the
+    -- result, then "Proceed" again (demo, Caretaker's test battle, VM,
+    -- 2026-10-22).
+    local ar = path:match("^(.-%.AutoResolveWidget)%.") or path:match("^(.-%.CombatResultView)%.")
+    if ar and popups.window_unread(ar) then
+        if not auto_hold_since then
+            auto_hold_since = os.clock()
+            ExecuteInGameThreadWithDelay(2100, function()
+                auto_hold_since = nil
+                if popups.window_unread(ar) then pcall(M.reannounce) end
+            end)
+        end
+        return
+    end
+    -- The battle setup's slots likewise, until "Prepare for combat" is said.
+    local okp, prep = pcall(function() return require("awaymission").combat_prep_pending(path) end)
+    if okp and prep then
+        if not auto_hold_since then
+            auto_hold_since = os.clock()
+            ExecuteInGameThreadWithDelay(2100, function()
+                auto_hold_since = nil
+                local ok2, still = pcall(function() return require("awaymission").combat_prep_pending(path) end)
+                if ok2 and still then pcall(M.reannounce) end
+            end)
+        end
+        return
+    end
     label = with_position(label, path)
     if label then
         if require("dialogue").is_choice(path) then heard_choice = path end
@@ -2028,7 +2051,6 @@ function M.request_check()
         if not ok then print("[VoyagerAccess] focus error: " .. tostring(err) .. "\n") end
     end)
 end
-poll_again = M.request_check
 
 -- The focused button is said again on the next look: a hold that ran out
 -- without its window being read (the 10 s event result limit, the 2 s
@@ -2089,6 +2111,41 @@ local function panel(name, fallback)
     return panel_ids[name] or fallback
 end
 
+-- The live main menu (one object of its class), and the profile buttons of
+-- one of its profile columns, read from the menu's own fields
+-- (USTVMainMenu: SettingsButton, DLCButton, ProfileButtonParent,
+-- SandboxProfileButtonParent, SectorSaveWindow) instead of searching every
+-- button in the game.
+local function main_menu()
+    for _, w in ipairs(FindAllOf("WBP_MainMenu_C") or {}) do
+        if w:IsValid() and live(w) then return w end
+    end
+    return nil
+end
+local function profile_buttons(menu)
+    local out = {}
+    for _, field in ipairs({ "ProfileButtonParent", "SandboxProfileButtonParent" }) do
+        pcall(function()
+            local box = menu[field]
+            if not (box and box:IsValid()) then return end
+            for i = 0, box:GetChildrenCount() - 1 do
+                local c = box:GetChildAt(i)
+                if c and c:IsValid() then out[#out + 1] = c end
+            end
+        end)
+    end
+    return out
+end
+
+-- RULE EXCEPTION, kept on purpose (review of 0.3.70, 2026-10-22): this sets
+-- three of the game's widget fields itself, which is the mod doing what the
+-- game's hover does. The game gives the keyboard no way of its own here,
+-- proven in the main menu probes (Audit-Hauptmenue.md): Right on a profile
+-- calls the game's SectorProfileNavigated but leaves the save window empty
+-- (ProfileIndex -1), and a click only selects the profile (BP_OnSelected);
+-- only the mouse hover fills it, in C++ that Lua cannot call, and a real
+-- hover needs the button's place on screen, which Lua cannot read (FGeometry
+-- comes back empty, 2026-10-20).
 -- A profile's hover points the save panel at that profile and fills it in.
 -- The native Setup is not callable from Lua, but setting ProfileIndex and
 -- LeftNavigationTarget, then OnSaveSlotsChanged (which runs UpdateButtons),
@@ -2152,6 +2209,60 @@ function click(b)
     b:HandleButtonPressed()
     b:HandleButtonReleased()
     b:HandleButtonClicked()
+end
+
+-- Runs fn once the animated switcher that get_switcher() returns has
+-- finished fading to its new page. The main menu's panels
+-- (UCommonAnimatedSwitcher) and the settings window's pages (its subclass
+-- UCommonActivatableWidgetSwitcher) fade in, and a click or focus during
+-- the fade does not reach the new page. The game reports no end of the
+-- fade: no event of the menu, the settings window or its tabs came (probes
+-- 2026-10-22, Audit-Hauptmenue.md). What the game does say is its state,
+-- IsTransitionPlaying, and the fade's own length, TransitionDuration (the
+-- engine's 0.4 s; no setting changes it; a settings tab was done at 400 ms
+-- in the probe). So: no fade, fn at once (the campaign profiles open
+-- without one); a fade, one look after the game's own duration, and one
+-- more after the same again if a slow frame kept it going, then fn either
+-- way. Replaces 0.3.70's look every 100 ms for up to 1.5 s (panels) and
+-- its fixed 400 ms (settings tabs).
+local function when_switched(get_switcher, fn, what)
+    local function fading()
+        local sw = nil
+        pcall(function() sw = get_switcher() end)
+        local ok, playing = pcall(function() return sw:IsTransitionPlaying() end)
+        return ok and playing == true, sw
+    end
+    local function go(note)
+        if note then print("[VoyagerAccess] " .. what .. ": " .. note .. "\n") end
+        local ok, err = pcall(fn)
+        if not ok then print("[VoyagerAccess] " .. what .. ": " .. tostring(err) .. "\n") end
+    end
+    local now, sw = fading()
+    if not now then return go() end
+    local okd, dur = pcall(function() return sw.TransitionDuration end)
+    if not (okd and type(dur) == "number" and dur > 0) then
+        return go("fading, no duration from the game, going on now")
+    end
+    local ms = math.ceil(dur * 1000)
+    ExecuteInGameThreadWithDelay(ms, function()
+        if not fading() then return go() end
+        ExecuteInGameThreadWithDelay(ms, function()
+            go(fading() and "still fading after twice its duration, going on" or nil)
+        end)
+    end)
+end
+
+-- Clicks the main menu button at button_path once the panel the mod has just
+-- opened is up (when_switched on the menu's ContentPanel).
+local function click_when_panel_up(menu_path, button_path)
+    pending_click = { button = button_path, menu = menu_path }
+    local mine = pending_click
+    when_switched(function() return resolve(menu_path).ContentPanel end, function()
+        if pending_click ~= mine then return end
+        pending_click = nil
+        local button = resolve(button_path)
+        if button then click(button) end
+    end, "enter")
 end
 
 local function activate()
@@ -2343,8 +2454,13 @@ local function activate()
         -- over and again on every try (VM, 2026-10-16). When the click has
         -- not shown them, the window's UpdateShowLoadSaveButtons does, and
         -- focus moves to the first save that can be loaded.
+        -- At once, not 400 ms later (probes 2026-10-22): the click never
+        -- shows the list (it only selects the button; the game's own Right,
+        -- NavigatedSectorSaveButton, does not either: the list opens on
+        -- hover or gamepad focus), and after UpdateShowLoadSaveButtons(true)
+        -- the saves are shown and the first is focusable in the same call.
         if name == "SectorSaveButton" then
-            ExecuteInGameThreadWithDelay(400, function()
+            ExecuteInGameThread(function()
                 pcall(function()
                     local function any_shown()
                         for _, x in ipairs(FindAllOf("WBP_Button_LoadSectorSave_C") or {}) do
@@ -2509,8 +2625,8 @@ local function activate()
             if w:IsValid() and live(w) and require("screen").shown(w) then window = w end
         end
     end
-    local function focus_page()
-        local page = window.ContentPanel:GetActiveWidget()
+    local function focus_page(win)
+        local page = (win or window).ContentPanel:GetActiveWidget()
         local target = page and page:IsValid() and page:GetDesiredFocusTarget()
         if target and target:IsValid() then
             target:SetFocus()
@@ -2525,20 +2641,23 @@ local function activate()
     if window then
         click(b)
         local tab = current
-        ExecuteInGameThreadWithDelay(400, function()
-            pcall(function()
-                if current == tab and window:IsValid() then focus_page() end
-            end)
-        end)
+        -- The window is looked up again by its path after the fade, never
+        -- kept across ticks (GPT review, 2026-10-22).
+        local wpath = path_of(window)
+        -- The new page fades in (the window's own switcher); focus goes in
+        -- once it is there, not after a fixed 400 ms (when_switched).
+        when_switched(function() return resolve(wpath).ContentPanel end, function()
+            local w = resolve(wpath)
+            if current == tab and w then focus_page(w) end
+        end, "settings tab")
         return
     end
     local menu = open_panel_for(b)
     if menu then
         -- The click moves focus into the panel only once the panel is up;
         -- in the same tick it did nothing, and one poll later it still
-        -- failed about half the time (Casey had to press Enter twice), so
-        -- poll() waits for the panel animation to finish.
-        pending_click = { button = current, menu = path_of(menu), polls = 0 }
+        -- failed about half the time (Casey had to press Enter twice).
+        click_when_panel_up(path_of(menu), current)
     else
         -- A Q Trials hero is chosen or removed with its own announcement.
         if require("qtrials").enter(b, current) then return end
@@ -2864,13 +2983,12 @@ local function go_back()
     -- On a settings tab with nothing stacked, go back to the main menu's
     -- SETTINGS ("Nothing to go back to" left Casey in Settings, 2026-10-14).
     if current and current:find("LCARS_Button_MainMenu", 1, true) then
-        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-            local p = b:IsValid() and live(b) and path_of(b)
-            if p and p:find("WBP_MainMenu_C_%d+%.WidgetTree_%d+%.SettingsButton$") and require("screen").shown(b) then
-                print("[VoyagerAccess] back: main menu SETTINGS\n")
-                b:SetFocus()
-                return
-            end
+        local menu = main_menu()
+        local b = menu and menu.SettingsButton
+        if b and b:IsValid() and require("screen").shown(b) then
+            print("[VoyagerAccess] back: main menu SETTINGS\n")
+            b:SetFocus()
+            return
         end
     end
     -- In the main menu's DLC panel, close it as Escape does (its back
@@ -2881,16 +2999,13 @@ local function go_back()
         local panel = resolve(current:match("^(.-%.DLCContentPanel)"))
         print("[VoyagerAccess] back: closing the DLC panel\n")
         if panel and panel.CloseButton and panel.CloseButton:IsValid() then click(panel.CloseButton) end
-        ExecuteInGameThreadWithDelay(300, function()
-            pcall(function()
-                if current and not current:find("%.DLCContentPanel%.") and resolve(current) then return end
-                local b = nil
-                for _, x in ipairs(FindAllOf("CommonButtonBase") or {}) do
-                    local p = x:IsValid() and live(x) and path_of(x)
-                    if p and menu_path and p:sub(1, #menu_path) == menu_path and p:find("%.DLCButton$") then b = x end
-                end
-                if b then b:SetFocus() end
-            end)
+        -- Now, not 300 ms later: the panel is closed (IsActivated false)
+        -- in the same call as the click, and the game does not move focus
+        -- back to the DLC button itself (probe 2026-10-22).
+        pcall(function()
+            local menu = menu_path and resolve(menu_path)
+            local b = menu and menu.DLCButton
+            if b and b:IsValid() then b:SetFocus() end
         end)
         return
     end
@@ -2900,10 +3015,10 @@ local function go_back()
     -- 2026-10-16).
     if current and current:find("%.SectorSaveWindow%.") then
         local menu_path = current:match("^(.-WBP_MainMenu_C_%d+)")
+        local menu = menu_path and resolve(menu_path)
         local pick, first = nil, nil
-        for _, x in ipairs(FindAllOf("WBP_Button_SaveProfile_C") or {}) do
-            local p = x:IsValid() and live(x) and path_of(x)
-            if p and menu_path and p:sub(1, #menu_path) == menu_path and require("screen").shown(x) then
+        for _, x in ipairs(menu and profile_buttons(menu) or {}) do
+            if require("screen").shown(x) then
                 first = first or x
                 local oks, sel = pcall(function() return x:GetSelected() end)
                 if oks and sel then pick = x end
@@ -3130,6 +3245,28 @@ function M.install()
         local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
             or require("view").nav_close() or (map_mode() and system.menu_close())
         if closed then undo_pause() return end
+        -- The first Escape on the map closes a point's details panel, which
+        -- a sighted player sees go; it was silent (VM, 2026-10-21).
+        if map_mode() then
+            local details = {}
+            for _, wp in ipairs(require("popups").open_windows()) do
+                -- Named parts of the HUD ("...WidgetTree_n.POIDetailView"),
+                -- so the class name is not in the path.
+                if wp:find("POIDetailView", 1, true) or wp:find("PlanetDetailView", 1, true)
+                    or wp:find("ShipDetailView", 1, true) then details[#details + 1] = wp end
+            end
+            if #details > 0 then
+                ExecuteInGameThreadWithDelay(300, function()
+                    pcall(function()
+                        for _, wp in ipairs(details) do
+                            local w = StaticFindObject(wp)
+                            if w and w:IsValid() and require("screen").shown(w) then return end
+                        end
+                        speech.say("Closed", true)
+                    end)
+                end)
+            end
+        end
         if require("awaymission").is_hero_button(current or "") then M.restore_slot_hero() return end
         -- A ring (radial menu) whose only action is disabled keeps the
         -- focus on that button, and the game's Escape left it open ("Clear
@@ -3163,6 +3300,15 @@ function M.install()
         if M.virtual_active() and M.virtual_window() then targets[#targets + 1] = M.virtual_window() end
         if require("rooms").window_open() then
             for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
+                if w:IsValid() and require("screen").shown(w) then targets[#targets + 1] = path_of(w) end
+            end
+        end
+        -- The tech tree just opened keeps no focus (techtree parks it), and
+        -- Escape left it open (VM, 2026-10-21). Not with a technology's
+        -- panel open: that Escape closes only the panel, and the back
+        -- action closed the tree as well.
+        if require("techtree").open() and not require("techtree").panel_open() then
+            for _, w in ipairs(FindAllOf("WBP_TechTreeView_C") or {}) do
                 if w:IsValid() and require("screen").shown(w) then targets[#targets + 1] = path_of(w) end
             end
         end

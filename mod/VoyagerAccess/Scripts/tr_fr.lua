@@ -1,5 +1,6 @@
 -- French translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "Entrée",
     ["Ability: {s}"] = "Capacité : {s}",
     ["Away team slot"] = "Place dans l'équipe d'exploration",
     ["Combat slot"] = "Place de combat",
@@ -286,6 +287,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "Un héros sous la compétence requise peut quand même réussir.",
     ["After a result, Enter continues and R repeats it."] = "Après un résultat, Entrée continue et R le répète.",
     ["Up and Down move between settings."] = "Les flèches haut et bas passent d'un paramètre à l'autre.",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "Les flèches gauche et droite changent de catégorie ; après la dernière viennent toutes les technologies de A à Z.",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "Entrée ouvre le panneau de la technologie, où Entrée lance la recherche.",
+    ["Escape closes the panel, then the tree."] = "Échap ferme le panneau, puis l'arbre.",
+    ["Up and Down go through the tab line by line."] = "Les flèches haut et bas parcourent l'onglet ligne par ligne.",
+    ["On the Heroes tab, Up and Down choose a hero."] = "Dans l'onglet des héros, les flèches haut et bas choisissent un héros.",
+    ["Escape closes the Overview."] = "Échap ferme la vue d'ensemble.",
     ["Left and Right change the value."] = "Les flèches gauche et droite changent la valeur.",
     ["Backspace goes back."] = "Retour arrière revient en arrière.",
     ["Up and Down move."] = "Les flèches haut et bas se déplacent.",
@@ -634,6 +641,8 @@ return {
     ["{n} injured"] = "{n} blessés",
     ["{n} hungry"] = "{n} affamés",
     ["{n} homeless"] = "{n} sans logement",
+    ["{n} homeless Ex-Borg"] = "{n} Ex-Borg sans logement",
+    ["inside {s}"] = "zone : {s}",
     ["{n} severe"] = "{n} graves",
     ["Deuterium"] = "Deutérium",
     ["Duranium"] = "Duranium",

@@ -1,5 +1,6 @@
 -- Polish translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "Enter",
     -- awaymission.lua
     ["Ability: {s}"] = "Zdolność: {s}",
     ["Away team slot"] = "Miejsce w zespole zwiadowczym",
@@ -303,6 +304,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "Bohater z umiejętnością poniżej wymaganej nadal może odnieść sukces.",
     ["After a result, Enter continues and R repeats it."] = "Po wyniku Enter przechodzi dalej, a R go powtarza.",
     ["Up and Down move between settings."] = "Strzałki w górę i w dół przechodzą między ustawieniami.",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "Strzałki w lewo i w prawo przełączają kategorię; za ostatnią są wszystkie technologie od A do Z.",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "Enter otwiera panel technologii, a tam Enter rozpoczyna badanie.",
+    ["Escape closes the panel, then the tree."] = "Escape zamyka panel, a potem drzewo.",
+    ["Up and Down go through the tab line by line."] = "Strzałki w górę i w dół przechodzą przez zakładkę wiersz po wierszu.",
+    ["On the Heroes tab, Up and Down choose a hero."] = "Na zakładce bohaterów strzałki w górę i w dół wybierają bohatera.",
+    ["Escape closes the Overview."] = "Escape zamyka przegląd.",
     ["Left and Right change the value."] = "Strzałki w lewo i w prawo zmieniają wartość.",
     ["Backspace goes back."] = "Backspace cofa.",
     ["Up and Down move."] = "Strzałki w górę i w dół przechodzą między pozycjami.",
@@ -665,6 +672,8 @@ return {
     ["{n} injured"] = "ranni: {n}",
     ["{n} hungry"] = "głodni: {n}",
     ["{n} homeless"] = "bez kwatery: {n}",
+    ["{n} homeless Ex-Borg"] = "Ex-Borgi bez kwatery: {n}",
+    ["inside {s}"] = "w obszarze: {s}",
     ["{n} severe"] = "w ciężkim stanie: {n}",
     ["Deuterium"] = "Deuter",
     ["Duranium"] = "Duranium",

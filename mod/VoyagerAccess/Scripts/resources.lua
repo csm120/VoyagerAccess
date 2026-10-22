@@ -205,7 +205,9 @@ local function lines()
         local CONDITIONS = {
             { "SickOrInjuredWidget", "{n} sick or injured" }, { "SickWidget", "{n} sick" },
             { "InjuredWidget", "{n} injured" }, { "HungryWidget", "{n} hungry" },
-            { "HomelessWidget", "{n} homeless" }, { "HomelessWidgetExBorg", "{n} homeless" },
+            -- The Ex-Borg's own count: "72 homeless, 97 homeless" told
+            -- them apart only by an icon (VM, 2026-10-21).
+            { "HomelessWidget", "{n} homeless" }, { "HomelessWidgetExBorg", "{n} homeless Ex-Borg" },
         }
         for _, c in ipairs(CONDITIONS) do
             pcall(function()

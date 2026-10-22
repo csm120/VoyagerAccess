@@ -1,5 +1,6 @@
 -- Japanese translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "Enter",
     -- awaymission.lua
     ["Ability: {s}"] = "アビリティ: {s}",
     ["Away team slot"] = "遠征班スロット",
@@ -303,6 +304,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "必要スキルに届かないヒーローでも成功することがあります。",
     ["After a result, Enter continues and R repeats it."] = "結果の後、Enterで進み、Rで繰り返します。",
     ["Up and Down move between settings."] = "上下矢印で設定項目を移動します。",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "左右矢印でカテゴリーを切り替えます。最後のカテゴリーの次には、すべての技術がAからZの順に並びます。",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "Enterで技術のパネルを開き、そこでEnterを押すと研究を開始します。",
+    ["Escape closes the panel, then the tree."] = "Escapeでパネルを閉じ、もう一度押すとツリーを閉じます。",
+    ["Up and Down go through the tab line by line."] = "上下矢印でタブを1行ずつ読みます。",
+    ["On the Heroes tab, Up and Down choose a hero."] = "ヒーローのタブでは、上下矢印でヒーローを選びます。",
+    ["Escape closes the Overview."] = "Escapeで概要を閉じます。",
     ["Left and Right change the value."] = "左右矢印で値を変更します。",
     ["Backspace goes back."] = "Backspaceで戻ります。",
     ["Up and Down move."] = "上下矢印で移動します。",
@@ -665,6 +672,8 @@ return {
     ["{n} injured"] = "負傷 {n}",
     ["{n} hungry"] = "空腹 {n}",
     ["{n} homeless"] = "住居なし {n}",
+    ["{n} homeless Ex-Borg"] = "住居なしの元ボーグ {n}",
+    ["inside {s}"] = "{s}の中",
     ["{n} severe"] = "重症 {n}",
     ["Deuterium"] = "重水素",
     ["Duranium"] = "デュラニウム",

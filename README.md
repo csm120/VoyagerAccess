@@ -26,15 +26,20 @@ Already ran the Voyager Access installer before you had the game? That's fine. O
 3. The installer finds the game in Steam and adds Voyager Access to it, then tells you when it is ready.
 4. Start the game from Steam as usual. Speech starts when the game loads.
 
-Along the way, Steam closes for a moment and starts again by itself; there is nothing to answer. Voyager Access does that to set the game's launch options in Steam, so that it starts together with the game, and to set the game to use DirectX 11, because some computers crash when it uses DirectX 12. If you are playing another game through Steam at that moment, it waits until that game closes.
+While the installer adds Voyager Access to the game, Steam closes for a moment and starts again by itself. You don't need to answer anything. The installer does this to change two things in the game's launch options in Steam:
+
+1. Voyager Access starts whenever you start the game.
+2. The game uses DirectX 11, because some computers crash when it uses DirectX 12.
+
+If you are playing another game through Steam at that moment, the installer waits until that game closes.
 
 If the game is not installed yet, the installer says so and offers to open the game's page in Steam. Install the game, then add Voyager Access as described under Getting started.
 
 You don't need to do anything after installing:
 
 1. Voyager Access starts by itself when you start the game from Steam, and stops when you close the game. Nothing of it runs when you are not playing.
-2. If a game update removes it, it puts itself back before the game starts.
-3. If you uninstall it, the game's launch options in Steam go back to how they were.
+2. If a game update removes Voyager Access from the game, Voyager Access puts itself back before the game starts.
+3. If you uninstall Voyager Access, the game's launch options in Steam go back to how they were before you installed it.
 
 Voyager Access also keeps itself up to date. It checks for a new version when the game starts, and every 10 minutes while you play. When it finds one:
 

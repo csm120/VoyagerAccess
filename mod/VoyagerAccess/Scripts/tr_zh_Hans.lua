@@ -1,5 +1,6 @@
 -- Simplified Chinese translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "回车",
     ["Ability: {s}"] = "技能：{s}",
     ["Away team slot"] = "离舰小队位",
     ["Combat slot"] = "战斗位",
@@ -286,6 +287,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "技能低于要求的英雄仍可能成功。",
     ["After a result, Enter continues and R repeats it."] = "出结果后，按回车继续，按R重复。",
     ["Up and Down move between settings."] = "按上下箭头在设置之间移动。",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "按左右箭头切换类别；最后一个类别之后是按A到Z排列的全部科技。",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "按Enter打开科技面板，在面板中按Enter开始研究。",
+    ["Escape closes the panel, then the tree."] = "按Esc关闭面板，再按一次关闭科技树。",
+    ["Up and Down go through the tab line by line."] = "按上下箭头逐行浏览标签页。",
+    ["On the Heroes tab, Up and Down choose a hero."] = "在英雄标签页中，按上下箭头选择英雄。",
+    ["Escape closes the Overview."] = "按Esc关闭总览。",
     ["Left and Right change the value."] = "按左右箭头更改数值。",
     ["Backspace goes back."] = "按退格返回。",
     ["Up and Down move."] = "按上下箭头移动。",
@@ -634,6 +641,8 @@ return {
     ["{n} injured"] = "受伤{n}",
     ["{n} hungry"] = "饥饿{n}",
     ["{n} homeless"] = "无住处{n}",
+    ["{n} homeless Ex-Borg"] = "无住处的前博格人{n}",
+    ["inside {s}"] = "位于{s}内",
     ["{n} severe"] = "重症{n}",
     ["Deuterium"] = "氚",
     ["Duranium"] = "硬铀",

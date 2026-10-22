@@ -205,6 +205,15 @@ local function combat_prep_poll()
     require("dialogue").remember(text)
 end
 
+-- True while focus is in a battle setup whose "Prepare for combat" has not
+-- been said: focus.lua holds the slot, which the setup's reading says after
+-- it ("Combat slot 1 of 3, empty" came before and after it, demo, VM,
+-- 2026-10-22).
+function M.combat_prep_pending(path)
+    local cp = path and path:match(COMBAT_LOADOUT)
+    return cp ~= nil and combat_prep_said ~= cp
+end
+
 local function loadout_of(path)
     local cp = path:match(COMBAT_LOADOUT)
     if cp then
@@ -1183,7 +1192,29 @@ end
 -- (DescriptionText, ValueText) in their panel's order, then one
 -- WBP_AwayMissionHeroOutcome per hero (NewLevelText, levelDisplay "50/450")
 -- in the window's hero order. FindAllOf returned them in reverse.
+-- The experience rows and hero ranks fill in while the summary animates,
+-- and were said twice: "Experience: Successful Challenges x3 +150." and
+-- then the whole list again (Distant Origin and Friendship One, VM,
+-- 2026-10-21). They are said once the game has finished showing the
+-- summary (dialogue.lua's consequences events), or after 5 s.
+local outcome_final, outcome_wait = {}, {}
+function M.outcome_finished()
+    for _, w in ipairs(FindAllOf("WBP_AwayMissionOutcome_C") or {}) do
+        local p = w:IsValid() and path_of(w)
+        if p then outcome_final[p] = true end
+    end
+end
+
 function M.outcome_text(path)
+    local final = outcome_final[path]
+    if not final and not outcome_wait[path] then
+        outcome_wait[path] = true
+        ExecuteInGameThreadWithDelay(5000, function()
+            if outcome_final[path] == "timeout" then return end
+            outcome_final[path] = "timeout"
+            pcall(function() require("popups").reread_class("WBP_AwayMissionOutcome_C") end)
+        end)
+    end
     local function order(w)
         local parent = w:GetParent()
         return (parent and parent:IsValid()) and parent:GetChildIndex(w) or 0
@@ -1209,6 +1240,11 @@ function M.outcome_text(path)
     -- It sits beside the outcome widget, in the same widget tree.
     local okr, reward = pcall(choice_rewards, path:match("^(.*)%.[^%.]+$") or path, "WBP_AwayMission_Consequences_ResourceReward_C")
     if okr and reward ~= "" then parts[#parts + 1] = "Rewards: " .. reward end
+    -- The game's "finished" event came with the first row too ("x1 +50"
+    -- alone again, Caretaker, VM, 2026-10-21); the heroes' ranks come
+    -- last, so they must be up as well, or 5 s must have passed.
+    local heroes_up = #under("WBP_AwayMissionHeroOutcome_C") > 0
+    if not (final == "timeout" or (final and heroes_up)) then return sentences(parts) end
     if #exp > 0 then parts[#parts + 1] = "Experience: " .. table.concat(exp, ", ") end
     -- Each row's own ExperienceCache names its hero and final level. The
     -- rows used to be sorted by object name, which is the reverse of the

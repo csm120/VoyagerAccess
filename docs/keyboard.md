@@ -85,7 +85,9 @@ follows them.
    whether it fits here, and Enter builds it at the selected space.
    The game's own room keys act on the room you last moved to: E is the
    room's quick action (power on or off, repair, clear debris, or pause
-   work), F upgrades it and T demolishes it. Moving to a room puts the
+   work), F upgrades it and T demolishes it. Moving to a room says each
+   action the game offers there, with its key and cost, like "E: Toggle
+   Power" or "Enter: Build Room" on an empty space. Moving to a room puts the
    mouse pointer on it, and the camera goes to it when it is off screen.
    Press I twice for the room's details as a list: what the game's info
    panel shows when you point at the room (level, energy, crew, and what E

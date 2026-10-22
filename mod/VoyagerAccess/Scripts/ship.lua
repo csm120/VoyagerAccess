@@ -415,7 +415,37 @@ end
 -- SetHoverInfo(HoverSlot, ...) for the hovered room and emptied by
 -- RemoveInfo (hooked below).
 local hover_slot = nil     -- the slot the game's info panel shows, or nil
-local hover_action = nil   -- what E does there, from the same call: { desc, costs = { {id, n} } }
+local hover_action = nil   -- the room's actions, from the same call: { desc, key, costs = { {id, n} }, more = { {desc, key} } }
+
+-- The keyboard key the game maps to an input action, from its own Enhanced
+-- Input subsystem (QueryKeysMappedToAction; probe 2026-10-22). The first
+-- key that is not a gamepad button: "E", "F", "T", or "LeftMouseButton".
+-- Kept per action: the game has no key rebinding in its settings.
+local key_cache = {}
+local function key_for(a)
+    local name = a:GetFName():ToString()
+    if key_cache[name] then return key_cache[name] end
+    local found = false
+    pcall(function()
+        local sub = nil
+        for _, s in ipairs(FindAllOf("EnhancedInputLocalPlayerSubsystem") or {}) do
+            if s:IsValid() and not s:GetFullName():find("Default__", 1, true) then sub = s end
+        end
+        if not sub then return end
+        local keys = sub:QueryKeysMappedToAction(a)
+        for _, k in ipairs(keys or {}) do
+            local kk = (type(k) == "userdata" and k.get) and k:get() or k
+            local n = kk.KeyName:ToString()
+            if not n:find("^Gamepad") then found = n break end
+        end
+    end)
+    -- Hits only: a miss while the ship's input context is not applied (a
+    -- hover as a window closes) would have left "E:" out for the whole
+    -- session (Fable review, 2026-10-22).
+    if not found then print("[VoyagerAccess] ship: no keyboard key for " .. name .. "\n"); return nil end
+    key_cache[name] = found
+    return found
+end
 local hover_waiters = {}   -- slot -> functions to run once it is hovered
 local hover_hooked = false
 -- The slot the pointer is being brought to, until the game says it is
@@ -528,20 +558,52 @@ local function when_hovered(slot, fn, purpose)
     end)
 end
 
--- What E does on the hovered room, in the game's words and with its costs
--- or returns, as the info panel shows it ("E: Reparieren, 40 Duranium"),
--- from SetHoverInfo's QuickAction and QuickActionCostOrReturn (probe,
--- 2026-10-21: "Energie umschalten", "Reparieren", "Raum bauen"). nil when
--- the room has none (a ruined room on a deck without life support).
+-- What the hovered room's actions do, each with its key, in the game's words
+-- and with the quick action's costs or returns, as the info panel shows them
+-- ("E: Energie umschalten. F: Verbessern. T: Demontieren"), from
+-- SetHoverInfo's QuickAction, QuickActionCostOrReturn and
+-- AdditionalDisplayActions. The panel shows each key as an icon
+-- (InputIconImage), so the key is said as text. nil when the room has none
+-- (a ruined room on a deck without life support).
+-- The key is the game's own mapping, not a letter written here: 0.3.70 said
+-- "E" for every quick action, also "Raum bauen", which the game puts on the
+-- left mouse button (probe 2026-10-22: E for ExecuteRoomSpecific,
+-- RepairRoom, ClearDebris; F for UpgradeRoom; T for DemolishRoom;
+-- LeftMouseButton for OpenRadialMenu).
+local function action_line(desc, key)
+    if not (desc and desc ~= "") then return nil end
+    -- The left mouse button clicks the room, which the mod's Enter does.
+    if key == "LeftMouseButton" then key = require("tr").word("Enter") end
+    return key and (key .. ": " .. desc) or desc
+end
 local function quick_action_text()
     local a = hover_action
-    if not (a and a.desc and a.desc ~= "") then return nil end
-    local costs = {}
-    for _, c in ipairs(a.costs or {}) do
-        local name = require("text").game_resource_name(c.id) or c.id
-        costs[#costs + 1] = c.n .. " " .. name
+    if not a then return nil end
+    local out = {}
+    local first = action_line(a.desc, a.key)
+    if first then
+        local costs = {}
+        -- In English the game's id was said as it is: "1 BioNeuralGelPack" (demo,
+        -- VM, 2026-10-22). The words the room window uses instead.
+        local WORDS = { BioNeuralGelPack = { "bio-neural gel pack", "bio-neural gel packs" },
+            SciencePoints = { "science points", "science points" }, BorgNanites = { "Borg nanites", "Borg nanites" } }
+        for _, c in ipairs(a.costs or {}) do
+            local name = require("text").game_resource_name(c.id)
+            if not name then
+                local w = WORDS[c.id]
+                -- tr.word: bio-neural gel pack | bio-neural gel packs | science points | Borg nanites
+                name = w and require("tr").word(tonumber(c.n) == 1 and w[1] or w[2]) or c.id
+            end
+            costs[#costs + 1] = c.n .. " " .. name
+        end
+        out[#out + 1] = first .. (#costs > 0 and (", " .. table.concat(costs, ", ")) or "")
     end
-    return "E: " .. a.desc .. (#costs > 0 and (", " .. table.concat(costs, ", ")) or "")
+    for _, m in ipairs(a.more or {}) do
+        local line = action_line(m.desc, m.key)
+        if line then out[#out + 1] = line end
+    end
+    if #out == 0 then return nil end
+    return table.concat(out, ". ")
 end
 
 -- At either end of a deck Left and Right repeat the room, with no extra
@@ -655,9 +717,24 @@ local jump = nil   -- { items = { {deck, y, text} }, index }
 
 function M.list_open() return jump ~= nil end
 
+-- The room is described again each time it is said, from the game's room
+-- as it is now: the text made when J opened stayed as it was, so a room
+-- built, finished or switched off while the list was open was heard in its
+-- old state (review of 0.3.70, 2026-10-22). The list itself (which rooms,
+-- in which order) stays as J made it. The made text is kept for a room no
+-- longer found.
 local function say_jump()
     local it = jump.items[jump.index]
-    speech.say(string.format("%s, %d of %d", it.text, jump.index, #jump.items), true)
+    local text = it.text
+    pcall(function()
+        for _, r in ipairs(rooms()) do
+            if r.deck == it.deck and math.abs(r.y - it.y) < 1 then
+                text = describe(r, true)
+                break
+            end
+        end
+    end)
+    speech.say(string.format("%s, %d of %d", text, jump.index, #jump.items), true)
 end
 
 function M.list_toggle()
@@ -855,17 +932,47 @@ end
 -- nothing either (it used to compare the whole reading, cycles and all).
 local last_state = {}   -- slot -> "state|life support|paused"
 local state_hooked = false
+local room_closed_at = -100   -- os.clock() when a room window last closed
 
-local function on_set_state(slot, key)
+local function on_set_state(slot, key, button)
     pcall(function()
+        local list = rooms()
+        -- The demo's room button has no RoomSlot and no State struct (VM,
+        -- 2026-10-22: every change was silent there): the room is the one
+        -- whose own button this is, and its reading without the cycles left
+        -- stands in for the state.
+        if type(slot) ~= "number" then
+            for _, r in ipairs(list) do
+                local hw = (not r.upper) and r.hull.RoomHullWidget
+                if button and hw and hw:IsValid() and hw:GetAddress() == button then
+                    slot = r.hull:BP_GetSlotIndex()
+                    -- Without the count and its word: "3 cycles" to "1
+                    -- cycle" was said as a change (demo, VM, 2026-10-22).
+                    if not key then key = (describe(r, false):gsub("%d+%s*[^,%s]*", "")) end
+                    break
+                end
+            end
+            if type(slot) ~= "number" or not key then return end
+        end
         local before = last_state[slot]
         last_state[slot] = key
         if not before or before == key or not M.active() then return end
-        for _, r in ipairs(rooms()) do
+        -- A room window's own button says its change, and closing the window
+        -- says the room again: Repair there was "Shield Generator,
+        -- repairing, 3 cycles" and then "Ship view. Deck 2, Shield
+        -- Generator, repairing, 3 cycles" (demo, VM, 2026-10-22).
+        -- The change came 3 ms before the window's close notice, with the
+        -- window already hidden, so the line waits 100 ms for that notice.
+        local okw, win = pcall(function() return require("rooms").window_open() end)
+        if (okw and win) or os.clock() - room_closed_at < 1 then return end
+        for _, r in ipairs(list) do
             if not r.upper and r.hull:BP_GetSlotIndex() == slot then
                 local text = describe(r, false)
-                print("[VoyagerAccess] ship: changed: " .. text .. "\n")
-                speech.say(text, false)
+                ExecuteInGameThreadWithDelay(100, function()
+                    if os.clock() - room_closed_at < 1 then return end
+                    print("[VoyagerAccess] ship: changed: " .. text .. "\n")
+                    speech.say(text, false)
+                end)
                 return
             end
         end
@@ -885,16 +992,21 @@ local function install_state(path)
     -- UE4SS calls only the first (pre) callback for this Blueprint function
     -- (VM, 2026-10-20): the values come from the call itself.
     state_hooked = pcall(RegisterHook, cpath .. ":OnSetState", function(ctx, state, _, paused)
-        local slot, key = nil, nil
-        pcall(function() slot = ctx:get().RoomSlot end)
+        local slot, key, button = nil, nil, nil
         pcall(function()
-            local s = state:get()
-            key = tostring(s.State) .. "|" .. tostring(s.bLifeSupportEnabled) .. "|" .. tostring(paused:get())
+            local b = ctx:get()
+            button = b:GetAddress()
+            slot = b.RoomSlot
         end)
-        if type(slot) == "number" and key then
-            -- The button applies the state inside the call: read it next tick.
-            ExecuteInGameThread(function() on_set_state(slot, key) end)
+        if type(slot) == "number" then
+            pcall(function()
+                local s = state:get()
+                key = tostring(s.State) .. "|" .. tostring(s.bLifeSupportEnabled) .. "|" .. tostring(paused:get())
+            end)
+            if not key then return end
         end
+        -- The button applies the state inside the call: read it next tick.
+        ExecuteInGameThread(function() on_set_state(slot, key, button) end)
     end)
     print("[VoyagerAccess] ship: state hook " .. (state_hooked and "installed" or "not installed") .. "\n")
 end
@@ -906,18 +1018,36 @@ local function install_hover(path)
     local w = path and StaticFindObject(path)
     if not (w and w:IsValid()) then return end
     local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
-    local ok = pcall(RegisterHook, cpath .. ":SetHoverInfo", function(_, slot, _, _, qa, costs)
+    -- SetHoverInfo(HoverSlot, RoomState, RoomStateDuration, QuickAction,
+    -- QuickActionCostOrReturn, QuickActionDuration, AdditionalDisplayActions,
+    -- ...) (STVRoomHoverInfoWidget.h).
+    local ok = pcall(RegisterHook, cpath .. ":SetHoverInfo", function(_, slot, _, _, qa, costs, _, extra)
         local oks, s = pcall(function() return slot:get() end)
         if not oks then return end
-        local action = { costs = {} }
+        local action = { costs = {}, more = {} }
         pcall(function()
             local a = qa:get()
-            if a and a:IsValid() then action.desc = a.ActionDescription:ToString() end
+            if a and a:IsValid() then
+                action.desc = a.ActionDescription:ToString()
+                action.key = key_for(a)
+            end
         end)
         pcall(function()
             costs:get():ForEach(function(_, e)
                 local r = e:get()
                 action.costs[#action.costs + 1] = { id = r.ResourceName:ToString(), n = r.ResourceAmount }
+            end)
+        end)
+        -- The panel's other actions (AdditionalDisplayActions, the seventh
+        -- parameter): Upgrade on F and Dismantle on T beside the quick
+        -- action, each shown with its key icon (probe 2026-10-22, Emergency
+        -- Quarters). Never read before; only "E" was said.
+        pcall(function()
+            extra:get():ForEach(function(_, e)
+                local a = e:get()
+                if a and a:IsValid() then
+                    action.more[#action.more + 1] = { desc = a.ActionDescription:ToString(), key = key_for(a) }
+                end
             end)
         end)
         ExecuteInGameThread(function()
@@ -978,8 +1108,16 @@ function M.install()
     -- whatever is under it: E right after Escape did nothing until the room
     -- was chosen again, and could have hit another room (VM, 2026-10-21).
     -- The pointer goes back to the room heard, after the window's fade.
+    -- Any window, not only a room's: Enter on a window's button is a real
+    -- click, so after a Construction Report's CLOSE the pointer sat where
+    -- that button was, and E on the Phaser Control Room heard next did
+    -- nothing (VM, 2026-10-22).
     popups.on_close(function(_, cls)
-        if cls ~= "WBP_RoomManagementV2_C" then return end
+        -- Not toasts and map markers: they come and go on their own, have no
+        -- button, and never moved the pointer.
+        cls = cls or ""
+        if cls == "WBP_RoomManagementV2_C" then room_closed_at = os.clock() end
+        if cls:find("Toast", 1, true) or cls:find("PoiEventWidget", 1, true) or cls:find("RoomPrompt", 1, true) then return end
         -- Not if the player has chosen another room meanwhile (select()
         -- makes a new selected table; GPT review, 2026-10-21).
         local was = selected

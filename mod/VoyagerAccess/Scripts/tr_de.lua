@@ -1,5 +1,6 @@
 -- German translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "Eingabe",
     ["Ability: {s}"] = "Fähigkeit: {s}",
     ["Away team slot"] = "Außenteam-Platz",
     ["Combat slot"] = "Kampfplatz",
@@ -286,6 +287,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "Ein Held unter der benötigten Fertigkeit kann trotzdem Erfolg haben.",
     ["After a result, Enter continues and R repeats it."] = "Nach einem Ergebnis geht Eingabe weiter, und R wiederholt es.",
     ["Up and Down move between settings."] = "Pfeil nach oben und unten bewegen zwischen den Einstellungen.",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "Pfeil nach links und rechts wechseln die Kategorie; nach der letzten kommen alle Technologien von A bis Z.",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "Eingabe öffnet das Feld der Technologie, dort startet Eingabe die Forschung.",
+    ["Escape closes the panel, then the tree."] = "Escape schließt das Feld, dann den Baum.",
+    ["Up and Down go through the tab line by line."] = "Pfeil nach oben und unten gehen Zeile für Zeile durch die Registerkarte.",
+    ["On the Heroes tab, Up and Down choose a hero."] = "Auf der Registerkarte Helden wählen Pfeil nach oben und unten einen Helden.",
+    ["Escape closes the Overview."] = "Escape schließt die Übersicht.",
     ["Left and Right change the value."] = "Pfeil nach links und rechts ändern den Wert.",
     ["Backspace goes back."] = "Rücktaste geht zurück.",
     ["Up and Down move."] = "Pfeil nach oben und unten bewegen.",
@@ -634,6 +641,8 @@ return {
     ["{n} injured"] = "{n} verletzt",
     ["{n} hungry"] = "{n} hungrig",
     ["{n} homeless"] = "{n} ohne Quartier",
+    ["{n} homeless Ex-Borg"] = "{n} Ex-Borg ohne Quartier",
+    ["inside {s}"] = "Bereich: {s}",
     ["{n} severe"] = "{n} schwer",
     ["Deuterium"] = "Deuterium",
     ["Duranium"] = "Duranium",

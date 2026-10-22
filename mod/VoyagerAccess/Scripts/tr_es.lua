@@ -1,5 +1,6 @@
 -- Spanish translations of the mod's own words (tr.lua). Generated from docs/translation/phrases_en.txt.
 return {
+    ["Enter"] = "Intro",
     ["Ability: {s}"] = "Habilidad: {s}",
     ["Away team slot"] = "Puesto del equipo de exploración",
     ["Combat slot"] = "Puesto de combate",
@@ -286,6 +287,12 @@ return {
     ["A hero below the skill needed can still succeed."] = "Un héroe por debajo de la habilidad necesaria aún puede tener éxito.",
     ["After a result, Enter continues and R repeats it."] = "Tras un resultado, Intro continúa y R lo repite.",
     ["Up and Down move between settings."] = "Flechas arriba y abajo se mueven entre los ajustes.",
+    ["Left and Right switch category; past the last one is every technology from A to Z."] = "Flechas izquierda y derecha cambian de categoría; tras la última están todas las tecnologías de la A a la Z.",
+    ["Enter opens the technology's panel, where Enter begins the research."] = "Intro abre el panel de la tecnología, donde Intro inicia la investigación.",
+    ["Escape closes the panel, then the tree."] = "Escape cierra el panel y luego el árbol.",
+    ["Up and Down go through the tab line by line."] = "Flechas arriba y abajo recorren la pestaña línea a línea.",
+    ["On the Heroes tab, Up and Down choose a hero."] = "En la pestaña de héroes, flechas arriba y abajo eligen un héroe.",
+    ["Escape closes the Overview."] = "Escape cierra el resumen.",
     ["Left and Right change the value."] = "Flechas izquierda y derecha cambian el valor.",
     ["Backspace goes back."] = "Retroceso vuelve atrás.",
     ["Up and Down move."] = "Flechas arriba y abajo para moverse.",
@@ -634,6 +641,8 @@ return {
     ["{n} injured"] = "{n} heridos",
     ["{n} hungry"] = "{n} hambrientos",
     ["{n} homeless"] = "{n} sin alojamiento",
+    ["{n} homeless Ex-Borg"] = "{n} Ex-Borg sin alojamiento",
+    ["inside {s}"] = "zona: {s}",
     ["{n} severe"] = "{n} graves",
     ["Deuterium"] = "Deuterio",
     ["Duranium"] = "Duranio",

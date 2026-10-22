@@ -165,32 +165,42 @@ end
 -- The section headings are not properties of the window (designer texts
 -- without a variable), so they are found by name inside its widget tree.
 local headings = {}   -- widget name -> text, for the open Custom page
+-- Read in the page's own widget tree (screen.walk), not by searching every
+-- text in the game (review of 0.3.70, 2026-10-22); a heading not shown is
+-- not on screen, so it is not read.
+local TEXT_CLASS, RICH_CLASS = nil, nil
+local function texts_in(owner, cls, fn)
+    screen.walk(owner, function(w)
+        if not w:IsA(cls) then return false end
+        fn(w, path_of(w))
+        return true
+    end, { no_lists = true })
+end
 local function read_headings(csw)
     headings = {}
+    TEXT_CLASS = TEXT_CLASS or StaticFindObject("/Script/UMG.TextBlock")
+    if not (valid(csw) and TEXT_CLASS and TEXT_CLASS:IsValid()) then return end
     local prefix = path_of(csw) .. ".WidgetTree"
-    for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-        if t:IsValid() then
-            local p = path_of(t)
-            -- Directly in the page's own tree, not inside a setting row.
-            local n = p and p:sub(1, #prefix) == prefix and p:sub(#prefix + 1):match("^_%d+%.(TextBlock[_%d]*)$")
-            if n then headings[n] = text(t) end
-        end
-    end
+    texts_in(csw, TEXT_CLASS, function(t, p)
+        -- Directly in the page's own tree, not inside a setting row.
+        local n = p and p:sub(1, #prefix) == prefix and p:sub(#prefix + 1):match("^_%d+%.(TextBlock[_%d]*)$")
+        if n then headings[n] = text(t) end
+    end)
 end
 
 -- A page's title ("Select a difficulty mode", "Custom Difficulty
 -- Settings"): ReportContent, also a designer text with no property.
 local function title_of(owner)
+    RICH_CLASS = RICH_CLASS or StaticFindObject("/Script/UMG.RichTextBlock")
+    if not (valid(owner) and RICH_CLASS and RICH_CLASS:IsValid()) then return "" end
     local prefix = path_of(owner) .. ".WidgetTree"
-    for _, t in ipairs(FindAllOf("RichTextBlock") or {}) do
-        if t:IsValid() then
-            local p = path_of(t)
-            if p and p:sub(1, #prefix) == prefix and p:sub(#prefix + 1):match("^_%d+%.ReportContent$") then
-                return text(t)
-            end
+    local found = ""
+    texts_in(owner, RICH_CLASS, function(t, p)
+        if found == "" and p and p:sub(1, #prefix) == prefix and p:sub(#prefix + 1):match("^_%d+%.ReportContent$") then
+            found = text(t)
         end
-    end
-    return ""
+    end)
+    return found
 end
 
 local function setting_label(csw, b, name)
@@ -292,6 +302,7 @@ function M.adjust(path, left)
     if not (M.handles(path) and SECTION_OF[path:match("([%w_]+)$") or ""]) then return false end
     local b = StaticFindObject(path)
     if not valid(b) then return true end
+    local before = text(b.Value)
     local ok, err = pcall(function()
         if left then
             b:BndEvt__WBP_GameDifficulty_CustomSettings_Setting_leftButton_MKB_K2Node_ComponentBoundEvent_1_OnButtonClickedEvent__DelegateSignature()
@@ -300,17 +311,13 @@ function M.adjust(path, left)
         end
     end)
     if not ok then print("[VoyagerAccess] difficulty adjust error: " .. tostring(err) .. "\n") return true end
-    local before = text(b.Value)
-    -- The value text is set a moment after the event.
-    ExecuteInGameThreadWithDelay(150, function()
-        pcall(function()
-            local nb = StaticFindObject(path)
-            if not valid(nb) then return end
-            local now = word_case(text(nb.Value))
-            print("[VoyagerAccess] difficulty: " .. path:match("([%w_]+)$") .. " " .. before .. " to " .. now .. "\n")
-            speech.say(now, true)
-        end)
-    end)
+    -- The value text is the new one in the same call as the event (probe
+    -- 2026-10-22: Research time 100% to 125% at once), so it is read now,
+    -- not 150 ms later. "before" is read ahead of the event: read after it,
+    -- the log said the new value twice.
+    local now = word_case(text(b.Value))
+    print("[VoyagerAccess] difficulty: " .. path:match("([%w_]+)$") .. " " .. before .. " to " .. now .. "\n")
+    speech.say(now, true)
     return true
 end
 
