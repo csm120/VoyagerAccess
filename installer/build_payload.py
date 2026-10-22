@@ -9,7 +9,9 @@ import zipfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
-UE4SS_ZIP = next((REPO / "vendor").glob("UE4SS_*.zip"))
+# None when vendor/ is missing (the public copy): the tests import this
+# module, and only a build needs the zip.
+UE4SS_ZIP = next((REPO / "vendor").glob("UE4SS_*.zip"), None)
 OUT = REPO / "build" / "payload"
 
 
@@ -35,6 +37,8 @@ def main():
     if OUT.exists():
         shutil.rmtree(OUT)
     OUT.mkdir(parents=True)
+    if UE4SS_ZIP is None:
+        raise SystemExit("No vendor/UE4SS_*.zip: put the UE4SS release zip in vendor/ first.")
     with zipfile.ZipFile(UE4SS_ZIP) as z:
         z.extractall(OUT)
     mods = OUT / "ue4ss" / "Mods" / "mods.txt"

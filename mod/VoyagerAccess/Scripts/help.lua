@@ -43,8 +43,11 @@ local HELP = {
 -- Windows that open in front of a room or the map and hold the focused
 -- button: offers, notices and confirmations (a Cargo Bay stock-loss warning
 -- was named "Cargo Bay", VM, 2026-10-16).
+-- The Overview too: switching from its Q Trials tab to Heroes left focus
+-- on nothing for a moment, and "System map. Nothing selected" was said in
+-- the middle of the Overview (VM, 2026-10-21).
 local FRONT = { "WBP_MultipleChoiceWidget_C", "WBP_CommonInfoWidget_C", "WBP_CargoSwap_Confirmation_C",
-    "WBP_ConfirmationWidget_C", "WBP_EngineeringOffice_Confirmation_C" }
+    "WBP_ConfirmationWidget_C", "WBP_EngineeringOffice_Confirmation_C", "WBP_OverviewInfoWidget_C" }
 local function front_window(wp)
     -- By class too: inside a room the warning is a named part
     -- ("...ResourceCapacityChangeConfirmWidget"), not a class in the path.
@@ -139,6 +142,9 @@ local PLACES = { cutscene = "Cutscene", story = "Story", dialogue = "Dialogue", 
 -- on, as a list (Casey, 2026-10-19). For now the ship view's room.
 -- Wall-clock seconds: os.clock() is the game's processor time, which ran
 -- far faster than real time and never saw two presses as close (VM).
+-- Superseded 2026-10-21: measured in the VM in play, os.clock() advanced
+-- 21.7 s while the wall clock advanced 22 s, so it is wall time there;
+-- os.time() here still works and is kept.
 local last_i = -100
 function M.say_where()
     -- Whole seconds only, so "within 2" is one to three seconds.
@@ -346,7 +352,15 @@ local function view_now()
     -- A window with its own button list is up (Exit to Main Menu's
     -- confirmation): "System map. Class M planet" broke into its BACK and
     -- ACCEPT (Casey, 2026-10-14).
-    if require("focus").virtual_active() then v = "other" end
+    -- Only while that list's window is still on screen: the list is
+    -- dropped at focus.lua's next look, which comes after a key, so after
+    -- the Overview closed its CLOSE list still counted and the ship view
+    -- was never said (VM, 2026-10-21).
+    if require("focus").virtual_active() then
+        local vw = require("focus").virtual_window()
+        local w = vw and StaticFindObject(vw)
+        if w and w:IsValid() and require("screen").shown(w) then v = "other" end
+    end
     -- The confirmation opens before its button list exists (heard again in
     -- the VM with the check above alone). Game Over too: "System map.
     -- Nothing selected" came after "Game Over. The hull ruptured..."
@@ -366,8 +380,24 @@ end
 -- to the main menu said "System map" on the way out (VM, 2026-10-21; 0.3.67
 -- waited 600 ms in its loop). One delayed check, not a loop.
 local VIEW_HOLD_MS = 400
+-- Windows whose closing never leads to a loading screen or the main menu:
+-- after one of them the view is said after a short hold. Escape from a
+-- room window took 530 to 700 ms to say "Ship view" (NVDA log times, VM,
+-- 2026-10-21; tools\latency_report.py). The pause menu and its
+-- confirmations keep the long hold (Exit to Main Menu).
+local QUICK_CLOSE_MS = 120
+local QUICK_CLOSE = { WBP_RoomManagementV2_C = true, WBP_OverviewInfoWidget_C = true,
+    -- Not the info card (WBP_CommonInfoWidget_C): the next card can follow
+    -- in the same widget a moment after one closes.
+    WBP_POIMultipleChoice_C = true, WBP_LeaveSector_C = true,
+    WBP_LogEventWidget_Multitab_C = true, WBP_RadialMenu_C = true, WBP_ConstructionInfoWidget_C = true,
+    WBP_ResearchInfoWidget_C = true, WBP_EnergyLossInfoWidget_C = true }
+local closed_class, closed_at = nil, -100
 local pending_view, view_token = nil, 0
 local function leaving()
+    -- A closed loading screen the game keeps is dropped from the open list
+    -- by popups (IsActivated; after the demo's first-run screen it held
+    -- every view announcement, VM, 2026-10-21).
     for _, wp in ipairs(require("popups").open_windows()) do
         if wp:find("WBP_Loading_Screen_C", 1, true) then return true end
     end
@@ -398,7 +428,9 @@ local function view_look(attempt)
     pending_view = v
     view_token = view_token + 1
     local mine = view_token
-    ExecuteInGameThreadWithDelay(VIEW_HOLD_MS, function()
+    local quick = attempt == 0 and v ~= "other" and closed_class and QUICK_CLOSE[closed_class]
+        and os.clock() - closed_at < 0.5
+    ExecuteInGameThreadWithDelay(quick and QUICK_CLOSE_MS or VIEW_HOLD_MS, function()
         if view_token ~= mine then return end
         pending_view = nil
         local ok, err = pcall(function()
@@ -492,7 +524,34 @@ function M.install()
     -- A room, event or report closing can bring the ship view or the map
     -- back to the front.
     popups.on_read(function() M.view_check() end)
-    popups.on_close(function() M.view_check() end)
+    -- A loading screen: looked at every second until it has gone, then the
+    -- view is checked. The view after a load otherwise came only from the
+    -- navigation bar's view event, and when that was not hooked the view was
+    -- said at the first window after the load instead (VM, 2026-10-21).
+    local load_watch = 0
+    popups.on_read(function(_, cls)
+        if cls ~= "WBP_Loading_Screen_C" then return end
+        load_watch = load_watch + 1
+        local mine, tries = load_watch, 0
+        local function look()
+            if load_watch ~= mine then return end
+            tries = tries + 1
+            if not leaving() then return M.view_check() end
+            if tries < 60 then ExecuteInGameThreadWithDelay(1000, look) end
+        end
+        ExecuteInGameThreadWithDelay(1000, look)
+    end)
+    popups.on_close(function(_, cls)
+        closed_class, closed_at = cls, os.clock()
+        M.view_check()
+        -- Once more a moment later: as the Overview closed, its button list
+        -- (CLOSE) was still up, the view still counted as "other", and
+        -- nothing looked again, so the ship view was never said (VM,
+        -- 2026-10-21).
+        if QUICK_CLOSE[cls] then
+            ExecuteInGameThreadWithDelay(250, function() M.view_check() end)
+        end
+    end)
     popups.on_widget("WBP_MainMenu_C", function()
         write_state("menu")
         -- Back at the main menu: the view the game last changed to is over.

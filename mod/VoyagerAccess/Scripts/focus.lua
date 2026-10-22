@@ -80,6 +80,74 @@ local function label_of(path)
     return table.concat(parts, ", ")
 end
 
+-- The same label from the button's own widget tree: searching all 5,000
+-- texts in the game took about 30 ms on every focus change (probe in the
+-- VM, 2026-10-21); the button's tree has a handful. TextBlocks and their
+-- subclasses count (FindAllOf("TextBlock") returned the CommonTextBlocks
+-- too, probe 2026-10-21); rich text never did.
+local function label_from_tree(path)
+    local root = StaticFindObject(path)
+    if not (root and root:IsValid()) then return nil end
+    local T = StaticFindObject("/Script/UMG.TextBlock")
+    local screen = require("screen")
+    if not screen.shown(root) then return nil end
+    local parts, seen = {}, {}
+    -- Visibility followed on the way down (screen.walk), not climbed for
+    -- each text; no list entries, as the search found none inside buttons.
+    -- Only texts whose path is under the button, as the search had it: a
+    -- text the game made at run time inside the button belongs to the game
+    -- instance (Fable review, 2026-10-21).
+    local prefix = path .. "."
+    screen.walk(root, function(w)
+        if not (T and w:IsA(T)) then return false end
+        local wp = w:GetFullName():match("^%S+%s+(.+)$")
+        if wp and wp:sub(1, #prefix) == prefix and w:GetFName():ToString() ~= "Entitlement_TXT" then
+            local ok, s = pcall(function() return w:GetText():ToString() end)
+            if ok and s ~= "" and s:sub(1, 1) ~= "#" and not seen[s] then
+                seen[s] = true
+                parts[#parts + 1] = s
+            end
+        end
+        return true
+    end, { limit = 300, no_lists = true })
+    if #parts == 0 then return nil end
+    return table.concat(parts, ", ")
+end
+
+-- Development only (flag file "treecheck"): both labels, compared and
+-- timed; a difference is logged once.
+local TREECHECK = (function()
+    local f = io.open((os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\treecheck", "r")
+    if f then f:close() return true end
+    return false
+end)()
+do
+    local search = label_of
+    local logged = {}
+    label_of = function(path)
+        local t0 = os.clock()
+        local tree = label_from_tree(path)
+        if not TREECHECK then return tree end
+        local t1 = os.clock()
+        local old = search(path)
+        local t2 = os.clock()
+        if old ~= tree then
+            local key = tostring(old) .. "|" .. tostring(tree)
+            if not logged[key] then
+                logged[key] = true
+                print(string.format("[VoyagerAccess] treecheck: label DIFFERS search [%s] %d ms tree [%s] %d ms | %s\n",
+                    tostring(old), math.floor((t2 - t1) * 1000 + 0.5), tostring(tree),
+                    math.floor((t1 - t0) * 1000 + 0.5), path))
+            end
+        elseif not logged.same then
+            logged.same = true
+            print(string.format("[VoyagerAccess] treecheck: label same, search %d ms tree %d ms\n",
+                math.floor((t2 - t1) * 1000 + 0.5), math.floor((t1 - t0) * 1000 + 0.5)))
+        end
+        return tree
+    end
+end
+
 -- Live widgets sit under /Engine/Transient; FindAllOf also returns blueprint
 -- templates under /Game/..., which have no Slate widget behind them. Skip
 -- those (an access violation inside UE4SS followed touching them, 2026-10-10).
@@ -416,6 +484,13 @@ end
 local radial_said = {}   -- segment path -> what was said, for L and R
 local ring_pending = nil  -- { path, fn }: the segment waiting for its hover
 local ring_hooked = false
+-- The ring focus last came into, until that ring closes (radial_focus).
+local ring_entered = nil
+pcall(function()
+    require("popups").on_close(function(_, cls)
+        if cls == "WBP_RadialMenu_C" then ring_entered = nil end
+    end)
+end)
 -- segment path -> the ring centre's own error text (the game's words, in its
 -- language), the reason a locked segment gives on Enter.
 local radial_error = {}
@@ -543,8 +618,31 @@ function M.radial_focus(b, path)
         print("[VoyagerAccess] radial: no hover came for " .. ring_pending.path:match("([^%.]+)$") .. "\n")
     end
     ring_pending = nil
-    say_it(false)
+    -- As the ring opens, its own text (popups.lua) is not read yet: the
+    -- segment's name came first, then the ring's text, then the segment
+    -- again with its centre ("Clear Debris. 1 of 1. Ruined Room. You can use
+    -- a work team... Clear Debris. No Life Support...", VM, 2026-10-21).
+    -- Then only the hovered reading is said, after the ring's text; if the
+    -- game reports no hover, the segment's own reading comes after 700 ms.
+    -- Opening: focus has just come into this ring (the game reuses the ring
+    -- widget, so a reopened ring is the same path; ring_entered is cleared
+    -- when the ring closes).
+    local opening = ring_hooked and menu and ring_entered ~= menu
+    ring_entered = menu
+    if not opening then say_it(false) end
     if ring_hooked then ring_pending = { path = path, fn = function() say_it(true) end } end
+    if opening then
+        local mine = ring_pending
+        -- The hover stays pending: if it comes later, its centre is still
+        -- said (say_it skips a hovered reading that adds nothing; GPT
+        -- review, 2026-10-21).
+        ExecuteInGameThreadWithDelay(700, function()
+            if ring_pending == mine and mine.fn then
+                print("[VoyagerAccess] radial: no hover as the ring opened, read without its centre\n")
+                say_it(false)
+            end
+        end)
+    end
 end
 
 -- The segment's own hover event: a pre callback, so the centre is read on
@@ -606,20 +704,21 @@ local NAV_UP, NAV_DOWN = 2, 3     -- EUINavigation
 local wired = {}                  -- window path -> signature of its buttons
 local BUTTON_CLASS, USER_WIDGET, PANEL = nil, nil, nil
 
-local function buttons_in(w, out, depth)
-    if depth > 40 or not (w and w:IsValid()) then return end
-    if not require("screen").shown(w) then return end
-    if w:IsA(BUTTON_CLASS) then
-        if w:GetIsEnabled() then out[#out + 1] = w end
-        return
-    end
-    if w:IsA(USER_WIDGET) then
-        local tree = w.WidgetTree
-        local root = tree and tree:IsValid() and tree.RootWidget
-        if root and root:IsValid() then buttons_in(root, out, depth + 1) end
-    elseif w:IsA(PANEL) then
-        for i = 0, w:GetChildrenCount() - 1 do buttons_in(w:GetChildAt(i), out, depth + 1) end
-    end
+-- Visibility is followed on the way down (screen.walk): M.shown on every
+-- widget, climbing to the top each time, made finding a window's buttons
+-- hold the game for up to 250 ms (timing log, VM, 2026-10-21).
+local function buttons_in(w, out)
+    local screen = require("screen")
+    if not (w and w:IsValid() and screen.shown(w)) then return end
+    screen.walk(w, function(x)
+        if x:IsA(BUTTON_CLASS) then
+            if x:GetIsEnabled() then out[#out + 1] = x end
+            return true
+        end
+        return false
+    -- wire_rows walks from the top of the screen; the old walk had no
+    -- count limit, so this one is high (and logged if reached).
+    end, { no_lists = true, limit = 20000 })
 end
 
 -- The widget above w, crossing from a UserWidget's tree to the UserWidget.
@@ -664,6 +763,14 @@ local ROWS = { HorizontalBox = true, UniformGridPanel = true, WrapBox = true }
 -- AcceptButton_1: the Q Trials warning's ACCEPT (ABORT is CloseButton_1).
 local PREFERRED = { "CloseButton", "ConfirmButton", "ContinueButton", "AcceptButton", "AcceptButton_1" }
 local virtual = nil   -- { window = path, buttons = { paths }, index = n }
+-- A window's button list ends with the window: kept until the next look
+-- (after a key), it made help.lua count the closed Overview as still in
+-- front, and the view was not said (GPT review, 2026-10-21).
+pcall(function()
+    require("popups").on_close(function(p)
+        if virtual and virtual.window == p then virtual = nil end
+    end)
+end)
 
 local function window_buttons(wpath)
     BUTTON_CLASS = BUTTON_CLASS or StaticFindObject("/Script/CommonUI.CommonButtonBase")
@@ -1080,6 +1187,12 @@ function M.virtual_enter()
     local okb, before = pcall(label_for, b, bpath)
     confirm_order(b, bpath, okb and before or nil)
     click(b)
+    -- Some windows close with no event the mod can hook (an info card's
+    -- Close: no CloseInfoWidget, OnCloseClicked or CallOnCloseEvent came,
+    -- VM, 2026-10-21): popups looks whether one has gone from the screen.
+    ExecuteInGameThreadWithDelay(350, function()
+        pcall(function() require("popups").check_gone() end)
+    end)
     -- A button whose wording changes said nothing: the Engineering
     -- Office's "Unassign from hull repair" became "Assign to hull repair"
     -- silently, its row rebuilt with new object numbers (VM, 2026-10-16).
@@ -1646,6 +1759,7 @@ local function poll()
     -- arrows moved the Q Trial profiles under the warning (2026-10-14).
     -- Park it, so the window's button list takes the keys.
     if b then
+        crumb.at("focus: focusless window")
         local fw = focusless_window()
         local bp = fw and path_of(b)
         if bp and bp:sub(1, #fw + 1) ~= fw .. "." then
@@ -1688,6 +1802,7 @@ local function poll()
     -- While a mod list is open the game still moves menu focus on Up and
     -- Down; say nothing about it and park focus again, or the menu talks
     -- over the list ("bleeding through", 2026-10-11).
+    crumb.at("focus: mod lists")
     if mod_list_open() then
         if b then M.park_focus() end
         return
@@ -1706,11 +1821,13 @@ local function poll()
             M.park_focus()
         end
     end
+    crumb.at("focus: first run, radial")
     if not b then b = focus_first_run_screen() end
     if not b then
         local okr, r = pcall(focus_radial)
         if okr then b = r end
     end
+    if not b then crumb.at("focus: restore or unfocused window") end
     if b then
         virtual = nil
         last_real = path_of(b)
@@ -1786,6 +1903,7 @@ local function poll()
     if path and path:find(".HeroLoadout.", 1, true) then pcall(require("combat").setup_sync) end
     if path and not was_choice and require("dialogue").is_choice(path) then heard_choice = nil end
     if path then
+        crumb.at("focus: rows")
         local ok, err = pcall(wire_rows, path)
         if not ok then print("[VoyagerAccess] rows error: " .. tostring(err) .. "\n") end
     end
@@ -1837,6 +1955,13 @@ local function poll()
     if path:find("WBP_PauseMenu_C", 1, true) and os.clock() < (M.undo_pause_until or 0) then return end
     -- go_back is putting a room's hero back and says the result itself.
     if os.clock() < (M.hush_focus_until or 0) then return end
+    -- An Overview tab switch: said after the new tab (view.overview_tab).
+    -- Any focus, not by path: the Q Challenges entries may have the game
+    -- instance as their outer, as the event options do.
+    if os.clock() < (require("view").tab_hold_until or 0) then
+        print("[VoyagerAccess] focus: held until the Overview tab is read\n")
+        return
+    end
     -- An event between its choice and its result (popups.lua).
     -- Held until the game shows the result (popups.result_pending), not for
     -- up to 10 s.
@@ -1850,7 +1975,12 @@ local function poll()
     -- While the game's chances are being read, the option waits: it was
     -- said with the mod's own chances, then again with the game's (Looted
     -- Wreckage, Q Trials, VM, 2026-10-15). The sweep says it at the end.
-    if path:find("WBP_POIMultipleChoice_C", 1, true) and require("events").sweeping_now() then return end
+    -- The options themselves have the game instance as their outer
+    -- ("...GameInstance.WBP_POISelectableOption_C_..."), so the window's
+    -- name is not in their path and the option was still said twice
+    -- (Abandoned Vessel, Q Trials, VM, 2026-10-21).
+    if (path:find("WBP_POIMultipleChoice_C", 1, true) or path:find("WBP_POISelectableOption_C", 1, true))
+        and require("events").sweeping_now() then return end
     -- A room window or event that has just opened: popups.lua reads the
     -- window and then says this button. Said here as well, it came three
     -- times over: "Life Support off. Life Support, inactive. ... Life

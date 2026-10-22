@@ -2,6 +2,22 @@
 
 ## Wednesday October 21st 2026
 
+Version 0.3.70
+
+- Changed: windows, rooms and the Overview are read a lot sooner, and the mod holds the game up far less while it reads them. It used to search every piece of text in the game to read one window; now it reads only that window. The Overview's tabs come up in about a quarter of a second instead of more than half, and you'll hear the ship view sooner after you close a room.
+- Fixed: a window right after loading a save, like a personal log, was sometimes never read at all. The mod kept a list of windows it had already read and mixed it up with windows from your last game.
+- Fixed: after the game showed its graphics quality screen on first start, the ship view and the System Map were never announced for the rest of that game.
+- Fixed: closing an info card, like a Sensor Alert or a crew log, now tells you where you are again.
+- Fixed: the first time you open a room, you now hear its description too, not just its name and state.
+- Fixed: in an event, the option you're on is said once, with the game's own chances, instead of twice with two different sets of numbers.
+- Fixed: in an event where the game has dropped its hero, Left and Right now include No hero again, and every choice says its chances.
+- Fixed: on the Overview's Q Trials tab you hear the tab's name first, and Up and Down move through the challenge levels without reading a second list over them. The Overview also no longer says "System map" between tabs, and closing it tells you where you are.
+- Fixed: starting or stopping a research no longer reads the whole tier line over the details.
+- Fixed: the build ring now reads the ring's own text first and then the part you're on, once.
+- Fixed: scanning a second point whose details match the first one's, like two asteroids, now reads the details again.
+
+## Wednesday October 21st 2026
+
 Version 0.3.69
 
 - Fixed: E right after you close a room window now acts on that room. The mod presses the window's buttons with the mouse, so the pointer was left where the last button was, and E could do nothing or hit the wrong room. The pointer now goes back to the room you heard.

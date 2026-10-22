@@ -35,7 +35,7 @@ local BUTTON_NAMES = { OpenSelectionButton = "Assign a hero" }
 -- Texts on screen under path, as name -> text (first of each name).
 -- stop (optional): texts count as shown when they are shown inside that
 -- widget, for a window still fading in.
-local function texts_under(path, stop)
+local function search_texts_under(path, stop)
     local by = {}
     local prefix = path .. "."
     -- FindAllOf does not include subclasses: a room hero's bonus,
@@ -49,6 +49,65 @@ local function texts_under(path, stop)
                 if not by[name] then by[name] = plain(text_of(t)) end
             end
         end
+    end
+    return by
+end
+
+-- The same, from the window's own widget tree (screen.walk): the search
+-- above held the game for over 100 ms on every room window read (timing
+-- log, VM, 2026-10-21). Only texts whose path is under the window count,
+-- as before. stop: the window itself while a parent fades in.
+local TEXT_BASES = nil
+local function tree_texts_under(path, stop)
+    local by = {}
+    local root = StaticFindObject(path)
+    if not (root and root:IsValid()) then return by end
+    local inside = stop ~= nil and stop:GetFullName() == root:GetFullName()
+    if not inside and not screen.shown(root, stop) then return by end
+    -- The window not visible yet: the search, which walks no children (a
+    -- hidden panel's children crashed the game once, probe 2026-10-20).
+    if inside and not root:IsVisible() then return search_texts_under(path, stop) end
+    TEXT_BASES = TEXT_BASES or { StaticFindObject("/Script/UMG.TextBlock"), StaticFindObject("/Script/UMG.RichTextBlock") }
+    local prefix = path .. "."
+    screen.walk(root, function(w)
+        local is_text = false
+        for _, c in ipairs(TEXT_BASES) do
+            if c and c:IsValid() and w:IsA(c) then is_text = true break end
+        end
+        if not is_text then return false end
+        local tp = path_of(w)
+        if tp and tp:sub(1, #prefix) == prefix then
+            local name = tp:match("([^%.]+)$")
+            if not by[name] then by[name] = plain(text_of(w)) end
+        end
+        return true
+    end, { no_root_check = inside, no_lists = true })
+    return by
+end
+
+local TREECHECK = (function()
+    local f = io.open((os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\treecheck", "r")
+    if f then f:close() return true end
+    return false
+end)()
+local tree_logged = {}
+local function texts_under(path, stop)
+    local t0 = os.clock()
+    local by = tree_texts_under(path, stop)
+    if not TREECHECK then return by end
+    local t1 = os.clock()
+    local old = search_texts_under(path, stop)
+    local t2 = os.clock()
+    local diffs = {}
+    for k, v in pairs(old) do if by[k] ~= v then diffs[#diffs + 1] = k .. ": [" .. tostring(v) .. "] tree [" .. tostring(by[k]) .. "]" end end
+    for k, v in pairs(by) do if old[k] == nil then diffs[#diffs + 1] = k .. ": only tree [" .. tostring(v) .. "]" end end
+    table.sort(diffs)
+    local key = table.concat(diffs, "; ")
+    if not tree_logged[key] then
+        tree_logged[key] = true
+        print(string.format("[VoyagerAccess] treecheck: room texts search %d ms tree %d ms, %s\n",
+            math.floor((t2 - t1) * 1000 + 0.5), math.floor((t1 - t0) * 1000 + 0.5),
+            #diffs == 0 and "same" or ("DIFFERS " .. key:sub(1, 600))))
     end
     return by
 end
@@ -1065,6 +1124,19 @@ function M.switch_tab(dir)
         end
     end
     return true
+end
+
+-- True once the room window at path shows its description module with
+-- text. The first time a room window opened, its description was not on
+-- screen yet when the window was read ("Mess Hall, level 2, damaged."; the
+-- second opening had it; VM, 2026-10-21), so popups.lua waits for this.
+function M.description_ready(path)
+    local win = StaticFindObject(path)
+    if not (win and win:IsValid()) then return true end
+    for _, w in ipairs(FindAllOf("WBP_RoomDescriptionModule_C") or {}) do
+        if w:IsValid() and screen.shown(w, win) and plain(text_of(w.DescriptionText)) ~= "" then return true end
+    end
+    return false
 end
 
 -- Read when a room window opens: name, level, state, and the description.

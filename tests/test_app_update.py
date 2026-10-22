@@ -93,6 +93,38 @@ class PlaySessionTests(unittest.TestCase):
             finally:
                 app.GAME_STATE = saved
 
+    def test_windows_read_cleared_when_the_game_starts(self):
+        # The mod's list of windows already read is for a reload in the same
+        # game; kept from an earlier run, a new window with a repeated path
+        # was taken as read and never spoken (VM, 2026-10-21).
+        with tempfile.TemporaryDirectory() as d:
+            saved = app.GAME_STATE, app.WINDOWS_READ
+            app.GAME_STATE = Path(d) / "game-state.txt"
+            app.WINDOWS_READ = Path(d) / "windows-read.txt"
+            try:
+                app.WINDOWS_READ.write_text("/Engine/Transient.X.WBP_Log_C_1\n", encoding="utf-8")
+                app.clear_game_state()
+                self.assertFalse(app.WINDOWS_READ.exists())
+            finally:
+                app.GAME_STATE, app.WINDOWS_READ = saved
+
+    def test_session_files_cleared_before_the_game_starts(self):
+        # Before the game is started, not after it is seen running: the mod
+        # could load an old read list first (GPT review, 2026-10-21).
+        with tempfile.TemporaryDirectory() as d:
+            saved = app.GAME_STATE, app.WINDOWS_READ
+            app.GAME_STATE = Path(d) / "game-state.txt"
+            app.WINDOWS_READ = Path(d) / "windows-read.txt"
+            speech = Path(d) / "speech.txt"
+            try:
+                app.WINDOWS_READ.write_text("clock 1.0\n/Engine/Transient.X\n", encoding="utf-8")
+                speech.write_text("I|old line\n", encoding="utf-8")
+                app.prepare_session_files(speech)
+                self.assertFalse(app.WINDOWS_READ.exists())
+                self.assertEqual(speech.read_text(encoding="utf-8"), "")
+            finally:
+                app.GAME_STATE, app.WINDOWS_READ = saved
+
     def test_late_update_patches_live_and_offers_f12(self):
         s = self.session()
         self.step(s)                         # first check: nothing

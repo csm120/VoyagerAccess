@@ -146,22 +146,40 @@ local announced = {}   -- path -> true while it stays on screen
 local last_text = {}   -- path -> text last read, for windows read again on change
 
 -- True once the window at path has been read (focus.lua's window list).
--- For a few seconds, read the windows whose path contains needle again when
--- their text changes. A second scan reuses the open POIDetailView, so the
+-- Read the windows whose path contains needle again on their next change,
+-- even with the same text. A second scan reuses the open POIDetailView, so the
 -- new planet's event and its item rewards were never read, only the rewards
 -- as buttons (Casey, "Kazon Security Codes", 2026-10-14). system.lua calls
 -- this on Scan.
-local reread_until = {}   -- needle -> os.time() until which it is re-read
-function M.reread_for(needle, seconds)
-    reread_until[needle] = os.time() + (seconds or 4)
+-- Since the reads follow the game's events (0.3.68) nothing checked the
+-- time this kept, and a second point whose details read the same as the
+-- first (two asteroids) was silent after its scan (VM, 2026-10-21): the
+-- windows are forgotten now, so the scan's update is read whatever it says.
+-- Returns what was forgotten, for M.restore when the scan did not go
+-- through (nothing changes then, and a later unrelated event would have
+-- read the same details again; Fable review, 2026-10-21).
+function M.reread_for(needle)
+    return M.forget(needle)
 end
 -- Forgets what the windows whose path contains needle last said, so the
 -- next poll reads them again: a tab switch back to the Overview's Heroes tab
 -- said nothing, its text being the same as before (VM, 2026-10-17).
+-- Returns { path = old text } for M.restore.
 function M.forget(needle)
-    for p in pairs(last_text) do
+    local saved = {}
+    for p, t in pairs(last_text) do
         -- Not nil: a re-read skips a window with nothing remembered.
-        if p:find(needle, 1, true) then last_text[p] = "\0" end
+        if p:find(needle, 1, true) then
+            saved[p] = t
+            last_text[p] = "\0"
+        end
+    end
+    return saved
+end
+-- Puts back what M.forget returned, for windows not read since.
+function M.restore(saved)
+    for p, t in pairs(saved or {}) do
+        if last_text[p] == "\0" then last_text[p] = t end
     end
 end
 -- What the first window whose path contains needle last said, or nil.
@@ -171,13 +189,6 @@ function M.remembered(needle)
     end
     return nil
 end
-local function rereading(p)
-    for needle, t in pairs(reread_until) do
-        if os.time() <= t and p:find(needle, 1, true) then return true end
-    end
-    return false
-end
-
 function M.was_announced(path)
     return announced[path] == true
 end
@@ -201,13 +212,14 @@ end
 
 M.plain = plain
 
--- On-screen texts inside the widget at path, in creation order, as
--- { name = last part of the text widget's name, text = plain text }.
 -- read_stop: a window the game has just activated while a parent is still
 -- fading in; its texts count as shown when shown inside it (set by
 -- process below for the read of that window only).
 local read_stop = nil
-local function parts_under(path)
+-- The search parts_under used until 2026-10-21, kept for the development
+-- comparison below: every text in the game whose path is under the window,
+-- in creation order. It took 60 to 120 ms a window (timing log).
+local function search_parts(path)
     local prefix = path .. "."
     local parts, seen_obj = {}, {}
     for _, cls in ipairs(TEXT_CLASSES) do
@@ -231,6 +243,107 @@ local function parts_under(path)
     return parts
 end
 
+-- Development only (flag file "treecheck"): each window read is also read
+-- by the old search and both are timed; a window class whose spoken text
+-- differs is logged once per difference.
+local TREECHECK = (function()
+    local f = io.open((os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\treecheck", "r")
+    if f then f:close() return true end
+    return false
+end)()
+local tree_logged = {}
+-- On-screen texts inside the widget at path, as { name = last part of the
+-- text widget's name, text = plain text, path }, in the order of the
+-- window's own widget tree (its layout), found by walking that tree rather
+-- than searching every text in the game: a few ms a window where the search
+-- took 60 to 200 ms, compared window by window in the VM (flag "treecheck",
+-- 2026-10-21). Only TextBlocks and RichTextBlocks (and their subclasses)
+-- are read, as the search did: GetText on an EditableText crashes the game
+-- (see TEXT_CLASSES).
+local TEXT_BASES = nil
+local function is_text(w)
+    TEXT_BASES = TEXT_BASES or { StaticFindObject("/Script/UMG.TextBlock"), StaticFindObject("/Script/UMG.RichTextBlock") }
+    for _, c in ipairs(TEXT_BASES) do
+        if c and c:IsValid() and w:IsA(c) then return true end
+    end
+    return false
+end
+local function tree_parts(path)
+    local root = StaticFindObject(path)
+    local parts = {}
+    if not (root and root:IsValid()) then return parts end
+    -- read_stop is the window itself while a parent fades in: then only
+    -- what is shown inside it counts.
+    local inside = read_stop ~= nil and read_stop:GetFullName() == root:GetFullName()
+    if not inside and not screen.shown(root, read_stop) then return parts end
+    -- The window itself not visible yet (activated while it fades in): the
+    -- old search reads its texts without walking its children, since
+    -- walking a hidden panel's children once crashed the game (probe,
+    -- 2026-10-20; Fable review, 2026-10-21).
+    if inside and not root:IsVisible() then return search_parts(path) end
+    -- Only texts whose path is under the window, as the search had it: the
+    -- build ring's centre texts belong to the game instance, and read with
+    -- the ring they said "Clear Debris. No Life Support. +16. +6." before
+    -- the ring's own reading (VM, 2026-10-21).
+    local prefix = path .. "."
+    screen.walk(root, function(w)
+        if not is_text(w) then return false end
+        local tp = path_of(w)
+        if tp and tp:sub(1, #prefix) == prefix then
+            local ok, s = pcall(function() return w:GetText():ToString() end)
+            s = ok and plain(s) or ""
+            local in_close = tp:find("%.Close[%w_]*Button[%w_]*%.") or tp:find("%.EnterShip[%w_]*%.")
+            if s ~= "" and s:sub(1, 1) ~= "#" and not NOISE[s:upper()] and not in_close then
+                parts[#parts + 1] = { name = tp:match("([^%.]+)$"), text = s, path = tp }
+            end
+        end
+        return true
+    end, { no_root_check = inside })
+    return parts
+end
+
+local tree_stats = {}   -- class -> { same = n, differs = n }
+local function tree_compare(path, tp, tree_ms)
+    local w = StaticFindObject(path)
+    local cls = (w and w:IsValid()) and w:GetClass():GetFName():ToString() or "?"
+    local t0 = os.clock()
+    local parts = search_parts(path)
+    local search_ms = math.floor((os.clock() - t0) * 1000 + 0.5)
+    -- The search first: a layout can remember what it read (poi_detail),
+    -- and the tree's reading is the one the mod goes on with.
+    local sa = M.text_from(parts, path)
+    local sb = M.text_from(tp, path)
+    local st = tree_stats[cls] or { same = 0, differs = 0 }
+    tree_stats[cls] = st
+    local verdict
+    if sa == sb then
+        st.same = st.same + 1
+        verdict = "same"
+    else
+        st.differs = st.differs + 1
+        local na, nb = {}, {}
+        for _, p in ipairs(parts) do na[#na + 1] = p.name end
+        for _, p in ipairs(tp) do nb[#nb + 1] = p.name end
+        verdict = "DIFFERS: search [" .. sa .. "] tree [" .. sb .. "] names search " .. table.concat(na, ",")
+            .. " tree " .. table.concat(nb, ",")
+    end
+    local key = cls .. verdict
+    if tree_logged[key] then return end
+    tree_logged[key] = true
+    print(string.format("[VoyagerAccess] treecheck: %s search %d ms tree %d ms (same %d, differs %d), %s\n",
+        cls, search_ms, tree_ms, st.same, st.differs, verdict))
+end
+
+local function parts_under(path)
+    local t0 = os.clock()
+    local parts = tree_parts(path)
+    if TREECHECK then
+        local ms = math.floor((os.clock() - t0) * 1000 + 0.5)
+        pcall(tree_compare, path, parts, ms)
+    end
+    return parts
+end
+
 -- A selected point of interest's detail window. Its texts come out of the
 -- game in creation order ("unknown. Deuterium. Resources. 7,104.0. System.
 -- Ship Wreck. Upgrade ..."), so they are put in reading order by name
@@ -248,15 +361,33 @@ local function poi_detail(parts)
     -- Cartography is upgraded" (Casey chose this wording, 2026-10-10).
     local upgrade = by.UpgradeText and by.UpgradeText:match("^Upgrade (.-) to collect more data")
     local until_text = upgrade and (" until " .. upgrade .. " is upgraded") or ""
-    local rewards, pending = {}, nil
+    -- Each reward's name and amount are paired by the entry widget they sit
+    -- in, not by which comes first: read in widget-tree order the name came
+    -- before its amount and "amount unknown" was lost (VM, 2026-10-21).
+    local rewards, entries, order = {}, {}, {}
     for _, p in ipairs(parts) do
-        if p.name == "ResourceAmountTextBlock" then
-            pending = p.text
-        elseif p.name == "ResourceNameTextBlock" then
-            local amount = pending and (pending == "unknown" and (", amount unknown" .. until_text)
-                or (", amount " .. pending)) or ""
-            rewards[#rewards + 1] = p.text .. amount
-            pending = nil
+        if p.name == "ResourceAmountTextBlock" or p.name == "ResourceNameTextBlock" then
+            -- The tree the text sits in: its path without the last part.
+            -- Live trees are numbered ("WidgetTree_2147..."); a pattern for
+            -- ".WidgetTree." never matched, and every amount was dropped
+            -- (GPT review; "Resources: Duranium" with no amount, VM,
+            -- 2026-10-21).
+            local owner = (p.path or ""):match("^(.*)%.[^%.]+$") or p.path or ""
+            local e = entries[owner]
+            if not e or (e[p.name] ~= nil) then
+                e = {}
+                entries[owner] = e
+                order[#order + 1] = e
+            end
+            e[p.name] = p.text
+        end
+    end
+    for _, e in ipairs(order) do
+        if e.ResourceNameTextBlock then
+            local a = e.ResourceAmountTextBlock
+            local amount = a and (a == "unknown" and (", amount unknown" .. until_text)
+                or (", amount " .. a)) or ""
+            rewards[#rewards + 1] = e.ResourceNameTextBlock .. amount
         end
     end
     local out = {}
@@ -516,14 +647,17 @@ end
 -- came out jumbled more than once). Hidden widgets and buttons' own labels
 -- are left out; skip(name, text) returns true to drop a text, or a string
 -- to say instead.
+-- Visibility is followed on the way down (screen.walk), not worked out
+-- from the top for every widget: the Overview's read held the game for
+-- about 400 ms that way (timing log, 2026-10-21). Only text widgets are
+-- asked for their text (is_text): GetText on an EditableText crashes.
 local function ordered_texts(root, skip)
-    local W = StaticFindObject("/Script/UMG.UserWidget")
-    local PANEL = StaticFindObject("/Script/UMG.PanelWidget")
     local BTN = StaticFindObject("/Script/CommonUI.CommonButtonBase")
     local out = {}
-    local function walk(w, depth)
-        if depth > 40 or not (w and w:IsValid()) or not screen.shown(w) then return end
-        if w:IsA(BTN) then return end
+    if not (root and root:IsValid() and screen.shown(root)) then return out end
+    screen.walk(root, function(w)
+        if w:IsA(BTN) then return true end
+        if not is_text(w) then return false end
         local ok, txt = pcall(function() return w:GetText():ToString() end)
         if ok and type(txt) == "string" then
             local t = plain(txt)
@@ -533,16 +667,9 @@ local function ordered_texts(root, skip)
                 if type(keep) == "string" then t = keep elseif keep then t = "" end
             end
             if t ~= "" then out[#out + 1] = t end
-            return
         end
-        if w:IsA(W) then
-            local tree = w.WidgetTree
-            if tree and tree:IsValid() and tree.RootWidget then walk(tree.RootWidget, depth + 1) end
-        elseif w:IsA(PANEL) then
-            for i = 0, w:GetChildrenCount() - 1 do walk(w:GetChildAt(i), depth + 1) end
-        end
-    end
-    walk(root, 0)
+        return true
+    end, { no_lists = true })
     return out
 end
 
@@ -1755,7 +1882,11 @@ end
 
 -- All on-screen text inside the widget at path, in reading order.
 function M.text_under(path)
-    local parts = parts_under(path)
+    return M.text_from(parts_under(path), path)
+end
+
+-- The text of a window from its parts (parts_under), in reading order.
+function M.text_from(parts, path)
     -- The class, not the name: inside the HUD the window is just named
     -- "POIDetailView".
     local w = StaticFindObject(path)
@@ -1806,6 +1937,9 @@ local OPEN_EVENTS = { BP_OnActivated = true, OnOpened = true, OnOpenRadial = tru
 local CHANGE_EVENTS = { OnChoiceResult = true, SetOutcomeText = true, DisplayResults = true,
     DisplayRewards = true, BPInitWithMenuData = true, OnUpdateDisplayEvent = true,
     OnTabChangedEvent = true, UpdateText = true, SetData = true, Construct = true }
+-- Closing an info card (Sensor Alert, a crew log) calls none of
+-- CloseInfoWidget, OnCloseClicked or CallOnCloseEvent (all hooked in a
+-- test, VM, 2026-10-21); M.check_gone sees it go instead.
 local CLOSE_EVENTS = { BP_OnDeactivated = true, OnCloseRadial = true, OnHideEvent = true,
     HideDetailView = true, Hide = true, Destruct = true, CloseInfoWidget = true }
 -- Native classes whose Blueprint events never reach a hook on the native
@@ -1836,9 +1970,22 @@ local function on_screen()
     local skip_room = okm and map
     for p, cls in pairs(open) do
         local w = StaticFindObject(p)
+        -- A loading screen the game has closed but not destroyed (after New
+        -- Game in the demo's first run) stays "shown" by every widget flag:
+        -- no parent, outer the game instance, not in the viewport even while
+        -- loading. CommonUI's IsActivated tells: true during a load, false
+        -- after (probes in the full game and the demo, 2026-10-21). Kept, it
+        -- held every view announcement for the whole game.
+        -- Skipped, not forgotten: it comes back the moment the game
+        -- activates it again (Fable review).
+        local stale = false
+        if cls == "WBP_Loading_Screen_C" and w and w:IsValid() then
+            local oka, act = pcall(function() return w:IsActivated() end)
+            stale = oka and act == false
+        end
         if not (w and w:IsValid()) then
             open[p] = nil
-        elseif not ((in_game and cls == "WBP_Sandbox_Setup_C") or (skip_room and cls == "WBP_RoomManagementV2_C"))
+        elseif not stale and not ((in_game and cls == "WBP_Sandbox_Setup_C") or (skip_room and cls == "WBP_RoomManagementV2_C"))
             and screen.shown(w) then
             found[#found + 1] = p
             order[p] = order_of[cls] or 1e9
@@ -1902,9 +2049,16 @@ end
 -- development does not read the open windows to Casey again.
 local SEEN_PATH = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\windows-read.txt"
 
+-- Only for a reload in the same run of the game: object paths repeat from
+-- one run to the next, and a list kept from an earlier run made the personal
+-- log after a load count as read, so it was never spoken (VM, 2026-10-21).
+-- The helper deletes the file when it starts the game; the first line also
+-- keeps os.clock() (time since the game started), and a list written later
+-- in its run than now is from another run.
 local function save_announced()
     local f = io.open(SEEN_PATH, "w")
     if not f then return end
+    f:write("clock ", string.format("%.3f", os.clock()), "\n")
     for p in pairs(announced) do f:write(p, "\n") end
     f:close()
 end
@@ -1912,7 +2066,11 @@ end
 local function load_announced()
     local f = io.open(SEEN_PATH, "r")
     if not f then return end
-    for line in f:lines() do announced[line] = true end
+    local first = f:read("l")
+    local saved = first and tonumber(first:match("^clock (%S+)$"))
+    if saved and saved <= os.clock() then
+        for line in f:lines() do announced[line] = true end
+    end
     f:close()
 end
 
@@ -1956,6 +2114,15 @@ local function read_window(p, reread)
         -- Or before the title: "Continue. Warning. You still..."
         -- (campaign battle, VM, 2026-10-16).
         text = text:gsub("^Continue%. (Warning%.)", "%1"):gsub("^Return%. (Warning%.)", "%1")
+        -- Read in layout order the labels come after the message: "Warning.
+        -- You still have unassigned slots. Continue? Continue" (VM,
+        -- 2026-10-21). Any part that is just a button's word goes, wherever
+        -- it is ("Continue?" in the message stays).
+        local kept = {}
+        for part in (text .. ". "):gmatch("(.-)%.%s+") do
+            if part ~= "Continue" and part ~= "Return" and part ~= "" then kept[#kept + 1] = part end
+        end
+        text = table.concat(kept, ". ")
     end
     -- The away mission summary counts up as it fills in, and was read
     -- three times over (2026-10-14). It is read when the mission window
@@ -2176,7 +2343,10 @@ local reopen_gen = {}    -- path -> count of closes, so a waiting read knows its
 
 -- One window event, handled on the next tick (a pre hook: the game fills
 -- the window inside the function).
-local function process(p, kind, trust)
+local CHANGE_RETRY_MS = { 60, 120, 250, 500, 1000 }   -- after a read that said nothing new (below)
+local room_wait = {}   -- path -> { gen, at }: when this showing's first look waited for its description
+-- retry: how many of those looks this is (nil for the event itself).
+local function process(p, kind, trust, retry)
     local w = StaticFindObject(p)
     if kind == "close" then
         if open[p] or announced[p] then
@@ -2204,6 +2374,9 @@ local function process(p, kind, trust)
     -- it is read a moment later.
     if kind == "open" and trust and (announced[p] or last_text[p]) then
         announced[p], last_text[p] = nil, nil
+        -- A new showing: its room description wait starts again (Fable
+        -- review: no close came, so reopen_gen did not move).
+        room_wait[p] = nil
         open[p] = open[p] or cls
         if not reopen_wait[p] then
             reopen_wait[p] = true
@@ -2246,6 +2419,33 @@ local function process(p, kind, trust)
         end
     end
     local reread = announced[p] == true
+    -- A room window read before its description is on screen: looked at
+    -- again every 80 ms, for up to 400 ms from the first look of this
+    -- showing (a change event in between does not start the count again;
+    -- Fable review), before reading it without (rooms.description_ready).
+    -- Focus waits for the window's read.
+    local room_gen = reopen_gen[p] or 0
+    if cls == "WBP_RoomManagementV2_C" and not reread then
+        local st = room_wait[p]
+        if not st or st.gen ~= room_gen then
+            st = { gen = room_gen, at = os.clock() }
+            room_wait[p] = st
+        end
+        local okd, ready = true, true
+        if os.clock() - st.at < 0.4 then
+            okd, ready = pcall(function() return require("rooms").description_ready(p) end)
+        end
+        if okd and not ready then
+            local n = (retry or 0) + 1
+            local gen = room_gen
+            ExecuteInGameThreadWithDelay(80, function()
+                if (reopen_gen[p] or 0) ~= gen or queued[p] or announced[p] then return end
+                local ok, err = pcall(process, p, kind, trust, n)
+                if not ok then print("[VoyagerAccess] popups room wait error: " .. tostring(err) .. "\n") end
+            end)
+            return
+        end
+    end
     -- Activated but a parent still fading in: the census saw a room window's
     -- BP_OnActivated with the window not yet shown. Its texts count as shown
     -- if they are shown inside the window (screen.shown with the window as
@@ -2277,6 +2477,31 @@ local function process(p, kind, trust)
     if #texts > 0 then require("dialogue").remember(table.concat(texts, ". ")) end
     after_change()
     if spoken then tell(read_listeners, p, cls) end
+    -- A change event can come before the game has put the new content in
+    -- (the Overview's OnTabChangedEvent: the old tab was still there, and
+    -- the new one was read 400 to 650 ms after the key; NVDA log times, VM,
+    -- 2026-10-21). With nothing new read, the window is looked at again a
+    -- few times shortly after; reading a window takes a few ms now. Only
+    -- the Overview: an event's result fills in over several events, and a
+    -- look between them could say half of it.
+    -- A window's opening read that said nothing too: the personal log after
+    -- a load was read before its text was in, has no later event, and was
+    -- never read (VM, 2026-10-21).
+    -- Any window's first read counts, whatever event led to it: the log's
+    -- first read came from the new-widget look (a "change"), not an open.
+    local again = (kind == "change" and cls == "WBP_OverviewInfoWidget_C") or kind == "open" or not reread
+        or (retry or 0) > 0
+    if again and not spoken and (retry or 0) < #CHANGE_RETRY_MS then
+        local n = (retry or 0) + 1
+        local gen = reopen_gen[p] or 0
+        ExecuteInGameThreadWithDelay(CHANGE_RETRY_MS[n], function()
+            -- Not while a reopen read is waiting: both read the window, the
+            -- first half filled (Fable review).
+            if (reopen_gen[p] or 0) ~= gen or queued[p] or reopen_wait[p] then return end
+            local ok, err = pcall(process, p, "change", trust, n)
+            if not ok then print("[VoyagerAccess] popups retry error: " .. tostring(err) .. "\n") end
+        end)
+    end
 end
 
 local function queue(p, kind, trust)
@@ -2295,6 +2520,30 @@ local function queue(p, kind, trust)
         local ok, err = pcall(process, p, e.kind, e.trust)
         if not ok then print("[VoyagerAccess] popups error: " .. tostring(err) .. "\n") end
     end)
+end
+
+-- Windows that close with no event the mod can hook: the info card
+-- (Sensor Alert, crew logs; none of CloseInfoWidget, OnCloseClicked or
+-- CallOnCloseEvent came, VM, 2026-10-21). Only these, and only after two
+-- looks find them off screen: any window a button hides for a moment
+-- would be closed by mistake (Fable review).
+local SILENT_CLOSE = { WBP_CommonInfoWidget_C = true }
+local function gone(p)
+    local w = StaticFindObject(p)
+    return not (w and w:IsValid() and screen.shown(w))
+end
+-- focus.lua asks after pressing a window's button: every open window of
+-- those classes is checked, not only the list's first window (Fable
+-- review: a button list joins the buttons of every open window).
+function M.check_gone()
+    for p, cls in pairs(open) do
+        if SILENT_CLOSE[cls] and gone(p) then
+            local gen = reopen_gen[p] or 0
+            ExecuteInGameThreadWithDelay(300, function()
+                if open[p] and (reopen_gen[p] or 0) == gen and gone(p) then queue(p, "close", false) end
+            end)
+        end
+    end
 end
 
 -- The windows of one watched class read again, when another part of the

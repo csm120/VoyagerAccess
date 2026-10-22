@@ -615,10 +615,13 @@ function M.enter()
         print("[VoyagerAccess] techtree: " .. (start and "begin" or "abort") .. " research\n")
         press(start or abort)
         -- Beginning a research does not refresh the grid (VM, 2026-10-20),
-        -- so this one keeps its wait.
+        -- so this one keeps its wait. The list is brought up to date
+        -- without saying it: the open details view already says
+        -- "Researching", and the whole tier line came after it, then again
+        -- on Escape (Q Trials, VM, 2026-10-21).
         ExecuteInGameThreadWithDelay(600, function()
             pcall(function()
-                if list and refresh(true) then say(false) end
+                if list then refresh(true) end
             end)
         end)
         return

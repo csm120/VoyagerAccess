@@ -7,7 +7,12 @@ local M = {}
 
 local PATH = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\crumb.txt"
 
+-- With the timing log on (timing.lua), each step's start is also kept, so
+-- a slow callback can say which step took the time.
+M.steps = nil   -- { {step, os.clock()}, ... } while timing.lua collects
+
 function M.at(step)
+    if M.steps then M.steps[#M.steps + 1] = { step, os.clock() } end
     local f = io.open(PATH, "w")
     if not f then return end
     f:write(os.date("%H:%M:%S "), step)

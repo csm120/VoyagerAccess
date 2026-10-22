@@ -325,6 +325,13 @@ end
 local ov = nil   -- { head = first line, index = n }
 
 function M.overview_list_step(dir, edge)
+    -- On the Q Trials tab focus is on the challenge levels (overview_tab),
+    -- a real list whose details only they give: the game moves along it and
+    -- focus.lua says each. Stepping these lines as well said two things for
+    -- every Down ("Q Challenges, 2 of 5" and "Level 2, not active...", VM,
+    -- 2026-10-21).
+    local okc, cur = pcall(function() return require("focus").current_path() end)
+    if okc and cur and cur:find("QChallengesPlaque", 1, true) then return false end
     local ok, lines = pcall(function() return require("popups").overview_lines() end)
     if not (ok and lines and #lines > 1) then
         ov = nil
@@ -361,6 +368,19 @@ function M.overview_tab(dir)
             b:HandleButtonPressed()
             b:HandleButtonReleased()
             b:HandleButtonClicked()
+            -- Focus inside the Overview waits for the new tab's reading
+            -- (focus.lua), then is said after it: on the Q Trials tab
+            -- "Level 0, active: No Q Trial modifiers are activated, 1 of 11"
+            -- came before "Overview, Q Trials tab" (VM, 2026-10-21). Said
+            -- anyway if the tab is not read within 0.8 s.
+            M.tab_hold_until = os.clock() + 0.8
+            local hold = M.tab_hold_until
+            ExecuteInGameThreadWithDelay(800, function()
+                if M.tab_hold_until == hold then
+                    M.tab_hold_until = 0
+                    pcall(require("focus").reannounce)
+                end
+            end)
             -- After the new tab is in place: forgotten at once, the old tab
             -- was read again and the new one missed (VM, 2026-10-17).
             -- Only when the new tab has not been read already: its text
@@ -436,8 +456,14 @@ local function hook_bar(path)
     if not (bar and bar:IsValid()) then return end
     if path:find("^/Engine/Transient%.") then bar_path = path end
     local cpath = bar:GetClass():GetFullName():match("^%S+%s+(.+)$")
-    if not cpath or bar_hooked[cpath] then return end
-    bar_hooked[cpath] = true
+    if not cpath then return end
+    -- Each hook is marked only once it is in: a first try that failed (the
+    -- class's functions not loaded yet) was marked anyway and never tried
+    -- again, so after that load no view change reached the mod and the view
+    -- was not said until some window opened (VM, 2026-10-21).
+    local done = bar_hooked[cpath] or {}
+    bar_hooked[cpath] = done
+    if done.calls and done.view then check_calls(bar) return end
     local function after(fn)
         return function(ctx, payload)
             local okp, p = pcall(function() return ctx:get():GetFullName():match("^%S+%s+(.+)$") end)
@@ -459,19 +485,41 @@ local function hook_bar(path)
             end)
         end
     end
-    local ok1 = pcall(RegisterHook, cpath .. ":UpdateIncomingCallButton", after(check_calls))
-    local ok2 = pcall(RegisterHook, cpath .. ":OnViewChanged", after(function(b, target)
-        check_calls(b)
-        local VIEWS = { [5] = "ship", [9] = "system" }
-        require("help").view_check(type(target) == "number" and (VIEWS[target] or "other") or nil)
-    end))
-    print("[VoyagerAccess] view: navigation bar events " .. ((ok1 and ok2) and "hooked" or "not all hooked") .. "\n")
+    if not done.calls then
+        done.calls = pcall(RegisterHook, cpath .. ":UpdateIncomingCallButton", after(check_calls))
+    end
+    if not done.view then
+        done.view = pcall(RegisterHook, cpath .. ":OnViewChanged", after(function(b, target)
+            check_calls(b)
+            local VIEWS = { [5] = "ship", [9] = "system" }
+            require("help").view_check(type(target) == "number" and (VIEWS[target] or "other") or nil)
+        end))
+    end
+    print("[VoyagerAccess] view: navigation bar events " .. ((done.calls and done.view) and "hooked" or "not all hooked yet") .. "\n")
+    -- Tried again a second later, up to five times, by path.
+    if not (done.calls and done.view) and (done.tries or 0) < 5 then
+        done.tries = (done.tries or 0) + 1
+        ExecuteInGameThreadWithDelay(1000, function() pcall(hook_bar, path) end)
+    end
     check_calls(bar)
 end
 
+M.tab_hold_until = 0
 function M.install()
     require("keys").on("v", M.toggle)
     require("keys").on("n", M.nav_toggle)
+    -- The new Overview tab has been read: the focused item now (overview_tab).
+    require("popups").on_read(function(_, cls)
+        if cls == "WBP_OverviewInfoWidget_C" and os.clock() < M.tab_hold_until then
+            M.tab_hold_until = 0
+            pcall(require("focus").reannounce)
+        end
+    end)
+    -- Escape just after a tab switch: no tab reading comes, and the hold
+    -- would keep every focus look quiet until it ran out (Fable review).
+    require("popups").on_close(function(_, cls)
+        if cls == "WBP_OverviewInfoWidget_C" then M.tab_hold_until = 0 end
+    end)
     require("popups").on_widget("WBP_NavigationBar_01_C", hook_bar)
     for _, b in ipairs(FindAllOf("WBP_NavigationBar_01_C") or {}) do
         local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")

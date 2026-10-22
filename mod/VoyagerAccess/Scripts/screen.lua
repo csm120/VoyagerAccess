@@ -86,6 +86,70 @@ function M.inside(w, target_path)
     return ok2 and r
 end
 
+-- Calls visit(w, depth) for every widget shown inside root, top down in
+-- the order of the widget tree, and walks into a widget's children unless
+-- visit returns true. Visibility is followed on the way down (a hidden
+-- widget and everything under it is skipped, and of a WidgetSwitcher only
+-- the active page is entered), which is what M.shown works out for each
+-- widget by climbing to the top: calling M.shown on every widget made the
+-- Overview's read hold the game for about 400 ms (timing log, 2026-10-21).
+-- root itself must be checked by the caller (M.shown(root)); its own
+-- visibility is skipped only with opts.no_root_check. List view and entry
+-- box entries are walked too.
+-- Never into a hidden branch: walking the children of a hidden panel
+-- crashed the game (probe, 2026-10-20).
+local CLS = nil
+function M.walk(root, visit, opts)
+    opts = opts or {}
+    if not CLS then
+        CLS = { W = StaticFindObject("/Script/UMG.UserWidget"), P = StaticFindObject("/Script/UMG.PanelWidget"),
+            S = StaticFindObject("/Script/UMG.WidgetSwitcher"), L = StaticFindObject("/Script/UMG.ListViewBase"),
+            D = StaticFindObject("/Script/UMG.DynamicEntryBoxBase") }
+    end
+    local limit, count, told = opts.limit or 3000, 0, false
+    local function walk(w, depth)
+        if depth > 40 or not valid(w) then return end
+        if count > limit then
+            -- Said once: a walk cut short leaves buttons or texts out
+            -- (Fable review, 2026-10-21).
+            if not told then
+                told = true
+                print("[VoyagerAccess] screen walk stopped at " .. limit .. " widgets under " .. tostring(root:GetFName():ToString()) .. "\n")
+            end
+            return
+        end
+        count = count + 1
+        if not (depth == 0 and opts.no_root_check) and not w:IsVisible() then return end
+        if visit(w, depth) then return end
+        if w:IsA(CLS.W) then
+            local tree = w.WidgetTree
+            if valid(tree) and valid(tree.RootWidget) then walk(tree.RootWidget, depth + 1) end
+        elseif CLS.S and w:IsA(CLS.S) then
+            local active = w:GetActiveWidget()
+            if valid(active) then walk(active, depth + 1) end
+        elseif CLS.P and w:IsA(CLS.P) then
+            for i = 0, w:GetChildrenCount() - 1 do walk(w:GetChildAt(i), depth + 1) end
+        elseif opts.no_lists then
+            return
+        elseif CLS.L and w:IsA(CLS.L) then
+            -- A game array: ForEach, as elsewhere in the mod, and on its own
+            -- pcall so a failure here does not end the whole walk (Fable
+            -- review, 2026-10-21).
+            local ok, err = pcall(function()
+                w:GetDisplayedEntryWidgets():ForEach(function(_, e) walk(e:get(), depth + 1) end)
+            end)
+            if not ok then print("[VoyagerAccess] screen walk: list entries failed: " .. tostring(err) .. "\n") end
+        elseif CLS.D and w:IsA(CLS.D) then
+            local ok, err = pcall(function()
+                w:GetAllEntries():ForEach(function(_, e) walk(e:get(), depth + 1) end)
+            end)
+            if not ok then print("[VoyagerAccess] screen walk: entry box failed: " .. tostring(err) .. "\n") end
+        end
+    end
+    local ok, err = pcall(walk, root, 0)
+    if not ok then print("[VoyagerAccess] screen walk failed: " .. tostring(err) .. "\n") end
+end
+
 -- The texts inside one widget, in the order of its own widget tree, as
 -- strings: read from that widget's parts, not by searching every text in
 -- the game (quest.lua read each objective that way, about 480 ms a second;

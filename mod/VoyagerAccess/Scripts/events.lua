@@ -621,18 +621,34 @@ function M.hero_step(path, dir)
         end
         if #free == 0 then speech.say("No hero", true) return true end
         local k = key_of(b)
+        -- No hero comes first, as in the game's own row: without it, one
+        -- Right was a hero for good, and Left stopped at the first hero
+        -- (Abandoned Vessel, Q Trials, VM, 2026-10-21).
         local at = 0
         local was = picked[k]
         for n, i in ipairs(free) do
             if was and list[i].name == was.name then at = n end
         end
         at = at + dir
-        if at < 1 then at = 1 elseif at > #free then at = #free end
+        if at < 0 then at = 0 elseif at > #free then at = #free end
+        local o = option_for(b, text_of(b.ChoiceButton_Text))
+        -- Each choice's chances, as the game's own selection says them
+        -- (say_hero): only the name and skill were said here.
+        local function with_chances(text, i)
+            local c = i and o and chances(o, b, hero_skills(list, i))
+            return c and (text .. ". " .. c) or text
+        end
+        if at == 0 then
+            picked[k] = nil
+            local none_i = nil
+            for i, h in ipairs(list) do if h.none then none_i = i end end
+            speech.say(with_chances("No hero", none_i) .. ". 1 of " .. (#free + 1), true)
+            return true
+        end
         -- By name and with the time: an index or an old pick could name
         -- another hero in a later event (GPT review, 2026-10-21).
         picked[k] = { name = list[free[at]].name, at = os.clock() }
-        local o = option_for(b, text_of(b.ChoiceButton_Text))
-        speech.say(hero_text(list[free[at]], o and attribute_of(o)) .. ". " .. at .. " of " .. #free, true)
+        speech.say(with_chances(hero_text(list[free[at]], o and attribute_of(o)), free[at]) .. ". " .. (at + 1) .. " of " .. (#free + 1), true)
         return true
     end
     pcall(ensure_nav_hook)

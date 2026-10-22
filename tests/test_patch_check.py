@@ -4,10 +4,15 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
-import patch_check  # noqa: E402
+TOOLS = Path(__file__).resolve().parent.parent / "tools"
+sys.path.insert(0, str(TOOLS))
+try:
+    import patch_check  # noqa: E402
+except ImportError:   # the public copy leaves the dump tools out
+    patch_check = None
 
 
+@unittest.skipIf(patch_check is None, "tools/patch_check.py is not in this copy")
 class CheckHooksTests(unittest.TestCase):
     def setUp(self):
         self.headers = {

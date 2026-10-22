@@ -371,14 +371,7 @@ def launch_game(command):
     if first:
         keep_installed()
     log.info("starting the game: %s", " ".join(command))
-    # Start the speech file empty, before the mod can write to it: when the
-    # last session left a short file, the reader started past the mod's
-    # first line and "Voyager Access loaded" was missed (2026-10-11).
-    try:
-        Path(DEFAULT_FILE).parent.mkdir(parents=True, exist_ok=True)
-        Path(DEFAULT_FILE).write_text("", encoding="utf-8")
-    except OSError:
-        pass
+    prepare_session_files(DEFAULT_FILE)
     try:
         subprocess.Popen(command)
     except OSError as e:
@@ -450,13 +443,35 @@ RESTART_WINDOW_SECONDS = 180
 # cleared when the game starts (clear_game_state), so an old "menu" from an
 # earlier run never counts.
 GAME_STATE = DATA_DIR / "game-state.txt"
+# The mod's list of windows already read (popups.lua), kept so a reload in
+# the same game does not read them again. From an earlier run of the game it
+# made new windows with the same path count as read, and the personal log
+# after a load was silent (VM, 2026-10-21), so it goes when the game starts.
+WINDOWS_READ = DATA_DIR / "windows-read.txt"
 
 
 def clear_game_state():
+    for f in (GAME_STATE, WINDOWS_READ):
+        try:
+            f.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def prepare_session_files(speech_file):
+    """Before the game is started: the speech file empty, and the files
+    from the last run gone (clear_game_state). The read list was deleted
+    only once the game was seen running, and the mod could load it first
+    (GPT review, 2026-10-21)."""
+    # Start the speech file empty, before the mod can write to it: when the
+    # last session left a short file, the reader started past the mod's
+    # first line and "Voyager Access loaded" was missed (2026-10-11).
     try:
-        GAME_STATE.unlink(missing_ok=True)
+        Path(speech_file).parent.mkdir(parents=True, exist_ok=True)
+        Path(speech_file).write_text("", encoding="utf-8")
     except OSError:
         pass
+    clear_game_state()
 
 
 def at_main_menu():

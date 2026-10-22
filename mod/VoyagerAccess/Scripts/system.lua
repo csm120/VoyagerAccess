@@ -1001,7 +1001,7 @@ local function run(action, p)
                     M.scan_missing = out
                 end)
         end
-        require("popups").reread_for("POIDetailView")
+        local forgotten = require("popups").reread_for("POIDetailView")
         pw:TryToScanPOI(p.poi)
         -- The result shows at once (Ship revealed Deuterium within a second).
         -- Look the point up again by path: objects are never kept across
@@ -1020,6 +1020,8 @@ local function run(action, p)
                     -- (Q Trial, VM, 2026-10-14); the panel says what was found.
                     speech.say(res ~= "" and ("Found " .. res) or "Scan complete", false)
                 else
+                    -- Nothing new to read: the details are remembered again.
+                    pcall(require("popups").restore, forgotten)
                     local why = ""
                     for _, t in ipairs(M.scan_missing or {}) do
                         if t:find("CanScan", 1, true) then why = ": the scanner needs a working Stellar Cartography"

@@ -24,13 +24,29 @@ local function timed(kind, fn)
     local name = kind .. " " .. where(fn)
     return function(...)
         local mem0 = collectgarbage("count")
+        local crumb = require("crumb")
+        local outer = crumb.steps
+        crumb.steps = {}
         local t0 = os.clock()
         local r = table.pack(pcall(fn, ...))
         local dt = os.clock() - t0
         local mem1 = collectgarbage("count")
+        local steps = crumb.steps
+        crumb.steps = outer
         if dt >= LIMIT or mem1 < mem0 then
-            print(string.format("[VoyagerAccess] timing: %s took %d ms%s\n", name, math.floor(dt * 1000 + 0.5),
-                mem1 < mem0 and string.format(", Lua memory %d to %d KB (collected)", math.floor(mem0), math.floor(mem1)) or ""))
+            -- The step (crumb.at) that took longest, from its start to the
+            -- next step or the end.
+            local slow = ""
+            if dt >= LIMIT and #steps > 0 then
+                local worst, worst_dt = "start", steps[1][2] - t0
+                for i, s in ipairs(steps) do
+                    local stop = steps[i + 1] and steps[i + 1][2] or (t0 + dt)
+                    if stop - s[2] > worst_dt then worst, worst_dt = s[1], stop - s[2] end
+                end
+                slow = string.format(", slowest step %d ms: %s", math.floor(worst_dt * 1000 + 0.5), tostring(worst):sub(1, 80))
+            end
+            print(string.format("[VoyagerAccess] timing: %s took %d ms%s%s\n", name, math.floor(dt * 1000 + 0.5),
+                mem1 < mem0 and string.format(", Lua memory %d to %d KB (collected)", math.floor(mem0), math.floor(mem1)) or "", slow))
         end
         if not r[1] then error(r[2], 0) end
         return table.unpack(r, 2, r.n)
