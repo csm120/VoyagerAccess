@@ -1443,6 +1443,13 @@ local function wire_rows(path)
         pcall(function()
             enabled = b:GetIsEnabled()
             if enabled and path_of(b):find("WBP_ScienceLab_ResearchModule_C", 1, true) then enabled = b:GetIsFocusable() end
+            -- Nor the main menu panels' mouse-only BACK (WBP_ActionBar_BackButton_C,
+            -- bIsFocusable false; Escape is its key): the DLC panel's six
+            -- tiles were "1 of 7", Down never reached 7, and End went to
+            -- the first tile (VM, 2026-10-22).
+            if enabled and b:GetClass():GetFName():ToString() == "WBP_ActionBar_BackButton_C" and b.bIsFocusable == false then
+                enabled = false
+            end
         end)
         if enabled and not require("warpcore").handles(path_of(b)) then list[#list + 1] = b end
     end
@@ -2722,11 +2729,20 @@ local function activate()
         -- are held.
         local okh, hold = pcall(function() return b.bRequiresHold end)
         if okh and hold then
+            -- A Leave Sector entry's hold confirms the window's selected
+            -- exit, not the entry held, and the selection had stayed on the
+            -- sector focus passed through: Sector 01 was heard and held, and
+            -- Voyager went to Sector 02 (Q Trial, VM, 2026-10-22). The held
+            -- entry is selected first, and again before the release.
+            local exit_entry = b:GetClass():GetFName():ToString() == "WBP_LeaveSectorEntry_C"
+            if exit_entry then pcall(function() b:NotifySelected() end) end
             speech.say("Holding", true)
             b:HandleButtonPressed()
             ExecuteInGameThreadWithDelay(2500, function()
                 pcall(function()
                     local nb = resolve(path)
+                    -- Its own pcall: an error here must not skip the release.
+                    if nb and exit_entry then pcall(function() if not nb:IsSelectedExit() then nb:NotifySelected() end end) end
                     if nb then nb:HandleButtonReleased() end
                     print("[VoyagerAccess] enter: released " .. path .. "\n")
                 end)

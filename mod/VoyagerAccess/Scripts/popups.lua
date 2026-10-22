@@ -1744,6 +1744,10 @@ function M.leave_sector_step(current, dir)
             entries[to].b:SetIsFocusable(true)
             entries[to].b:SetFocus()
         end)
+        -- The game's selected exit follows its own navigation, not this
+        -- focus: it stayed on Sector 02 while Sector 01 was heard (VM,
+        -- 2026-10-22). Stay for now has no selection.
+        if entries[to] ~= cancel then pcall(function() entries[to].b:NotifySelected() end) end
     end
     return true
 end
@@ -2292,6 +2296,12 @@ local function read_window(p, reread)
             and not p:find("WBP_DeleteProfileWarning_C", 1, true) and not p:find("WBP_Sandbox_Setup_C", 1, true)
             and not is_save_warning(p) then
             local function say_label()
+                -- The battle result after Auto Resolve: focus is still on
+                -- Auto Resolve's Proceed as the result is read, and "Proceed,
+                -- 2 of 2" came between the result and its own "Proceed, 5
+                -- of 5" (Q Trial, VM, 2026-10-22). The focus move says it.
+                local cur = require("focus").current_path()
+                if p:find("CombatResultView", 1, true) and cur and cur:find(".AutoResolveWidget.", 1, true) then return end
                 local okl, label = pcall(function() return require("focus").current_label() end)
                 if okl and label and label ~= "" then speech.say(label, false) end
             end

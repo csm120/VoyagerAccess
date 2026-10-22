@@ -191,6 +191,11 @@ end
 function M.spoken_number(raw)
     local numtxt, rest = raw:match("^(%d[%d%.,]*)%s*(.-)%s*$")
     if not numtxt then return raw end
+    -- The point details' system text is "2,208.1", a line break, then the
+    -- name, and the clean-up makes the break ". ": the number's own final
+    -- point lost its decimal, "2 2 oh 8 1" and "2 9 2 8 oh" (Q Trials, VM,
+    -- 2026-10-22).
+    numtxt = numtxt:gsub("[%.,]+$", "")
     local num, dec = numtxt:match("^(.-)[%.,](%d)$")
     if not num then num, dec = numtxt, "" end
     num = num:gsub("[%.,]", "")

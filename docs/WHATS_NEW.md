@@ -2,6 +2,16 @@
 
 ## Thursday October 22nd 2026
 
+Version 0.3.72
+
+- Fixed: in Q Trials, Leave Sector now takes you to the sector you heard and held Enter on. If you moved up and down the list first, the game could still have the other sector picked, and Voyager went there instead.
+- Fixed: after Auto Resolve, the battle's result is read as soon as it comes up. It used to wait silently until you pressed a key. Auto Resolve's own Proceed is no longer said again between the result and the result's Proceed.
+- Fixed: a room that's switched off on a deck whose life support is down now says "off, no life support", the way the game's info panel shows it. Before, it only said "off", and E does nothing there.
+- Fixed: the DLC list on the main menu counts its six cards as six, and End takes you to the last one. It used to say "1 of 7" and End went back to the first card.
+- Fixed: a point's details say the system number with its point, like "in system 2 2 oh 8 point 1". The point went missing there, so 2,208.1 came out "2 2 oh 8 1".
+
+## Thursday October 22nd 2026
+
 Version 0.3.71
 
 - Fixed: when a battle ends by itself, its result is read right away. You used to hear nothing until you pressed a key. The result now comes once, before Proceed.

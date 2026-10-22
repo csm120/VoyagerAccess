@@ -199,6 +199,11 @@ local function combat_prep_poll()
     combat_prep_said = key
     local text = M.combat_prep_text(L)
     print("[VoyagerAccess] combat prep: " .. text .. "\n")
+    -- The battle result's SetDamageSummary hook, again: tried when the result
+    -- class first appears, at the main menu, it did not register, and an
+    -- Auto Resolve result stayed silent until a key (Q Trial, VM,
+    -- 2026-10-22). By the setup it registers.
+    pcall(function() require("popups").ensure_damage_hook() end)
     require("speech").say_long(text, true)
     local okl, label = pcall(function() return require("focus").current_label() end)
     if okl and label and label ~= "" then require("speech").say(label, false) end

@@ -310,6 +310,18 @@ local function describe(r, with_deck)
     local state = room_state(r.hull, raw_name(t))
     local low = r.low or r.deck
     if raw_name(t) == "None" and state == "" and not deck_has_life(low) then state = "no life support" end
+    -- A switched-off room on a deck whose life support is down: its tile says
+    -- Offline, but the game's info panel says No life support and offers no
+    -- action (the room state's bLifeSupportEnabled). "off" alone invited E,
+    -- which does nothing there (Profile 01, deck 3 Phaser Control Room, VM,
+    -- 2026-10-22). The demo's room button has no State struct; the deck's
+    -- life support answers there.
+    local dark = false
+    if state == "off" and raw_name(t) ~= "LifeSupport" then
+        local ok, life = pcall(function() return r.hull.RoomHullWidget.State.bLifeSupportEnabled end)
+        if ok and type(life) == "boolean" then dark = not life else dark = not deck_has_life(low) end
+        if dark then state = "off, no life support" end
+    end
     local tall = decks_tall(r)
     if tall > 1 and state:find("no life support", 1, true) then
         local dark = {}
@@ -334,7 +346,11 @@ local function describe(r, with_deck)
     -- A lone state word in the game's language (tr.lua); longer states are
     -- phrases the line pass translates.
     -- tr.word: on | off
-    if state ~= "" then text = text .. ", " .. require("tr").word(state) end
+    if dark then
+        -- "off" is a lone word (tr.word); the rest is a phrase the line pass
+        -- translates.
+        text = text .. ", " .. require("tr").word("off") .. state:sub(4)
+    elseif state ~= "" then text = text .. ", " .. require("tr").word(state) end
     for _, s in ipairs(room_prompts(r.hull)) do text = text .. ", " .. s end
     if with_deck then
         -- A tall room says the deck the player is on first: moving down a
