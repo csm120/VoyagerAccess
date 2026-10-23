@@ -2,6 +2,13 @@
 
 ## Friday October 23rd 2026
 
+Version 0.3.76
+
+- Fixed: 0.3.75 brought back an old annoyance in conversations. When a new set of choices came up, you could hear the second choice first and then the first one. Now you only hear the choice the game puts you on.
+- Fixed: "Voyager is already at" comes from where the ship itself says it is, so a point right beside the one you're at no longer counts as "already there".
+
+## Friday October 23rd 2026
+
 Version 0.3.75
 
 - Fixed: repairing, clearing debris, upgrading or demolishing a room from the ship view never worked, because the game only takes those keys when you hold them down. Rooms now say "Hold E: Repair", "Hold F: Upgrade" or "Hold T: Demolish", and holding the key for about a second does it. Switching power with E is still a quick tap.

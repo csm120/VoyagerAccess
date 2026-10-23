@@ -943,6 +943,29 @@ function M.declare_travel(name, target, start_d)
     end)
     return true
 end
+-- The path of the point the player's ship is at, "" while travelling, nil
+-- when the ship cannot say (then the distances decide).
+local function ship_at_point()
+    local out = nil
+    pcall(function()
+        local j = FindFirstOf("STVJourneySubsystem")
+        if j and j:IsValid() and j:IsTravelling() then out = "" return end
+        for _, cls in ipairs(PLAYER_SHIPS) do
+            for _, s in ipairs(FindAllOf(cls) or {}) do
+                if s:IsValid() and not s:GetFullName():find("Default__", 1, true) then
+                    local poi = s.CurrentPOI
+                    if poi and poi:IsValid() then
+                        local owner = poi:GetOwner()
+                        if owner and owner:IsValid() then out = path_of(owner) end
+                    end
+                    return
+                end
+            end
+        end
+    end)
+    return out
+end
+
 -- "Voyager is already at X", and when X has a story waiting, how to start
 -- it: the game starts a point's story only on arrival, so a story that
 -- became ready while Voyager was there (Sobras, the Kazon Raider, VM,
@@ -1108,6 +1131,25 @@ local function run(action, p)
         -- either, so nothing is skipped. When CanTravel says no, the mouse
         -- route runs, so the game can show its own reason.
         local d0 = target_distance(p.path)
+        -- The ship says where it is: its CurrentPOI, while not travelling
+        -- (CurrentPOI already names the destination as a trip starts;
+        -- firefly82's probe, 2026-10-23). The distances below are the
+        -- fallback when the ship cannot be asked.
+        local here = ship_at_point()
+        -- Trusted only when it names a listed point (or none while travelling).
+        if here and here ~= "" then
+            local known = false
+            pcall(function() for _, q in ipairs(points()) do if q.path == here then known = true end end end)
+            if not known then here = nil end
+        end
+        if here ~= nil then
+            if here == p.path then
+                print("[VoyagerAccess] course: already at (the ship's CurrentPOI)\n")
+                speech.say(already_at(name, p.actor), true)
+                return
+            end
+            d0 = d0 and math.max(d0, 1001)
+        end
         -- Only the point Voyager is really at: a Class H planet beside the
         -- cloud Voyager had stopped at was "already at" too, and no course
         -- could be set to it (Caretaker, VM, 2026-10-21).

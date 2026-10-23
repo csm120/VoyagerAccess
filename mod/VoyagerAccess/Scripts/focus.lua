@@ -1908,6 +1908,17 @@ local function poll()
                 if done then return end
                 done = true
                 if current ~= path then return end
+                -- The game's own focus, not the mod's record of it: right
+                -- after FinishShowChoices the record still named the old
+                -- button, and "Choice 2 of 2: Show doubts about the plan" was
+                -- said before "Choice 1 of 2" (Equinox, VM, 2026-10-23).
+                local ob = resolve(path)
+                local still = false
+                pcall(function() still = ob and (ob:HasKeyboardFocus() or ob:HasFocusedDescendants()) end)
+                if not still then
+                    pcall(M.request_check)
+                    return
+                end
                 print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
                 heard_choice = label and path or nil
                 if label then speech.say(label, true) end
