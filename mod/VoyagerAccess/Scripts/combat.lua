@@ -817,9 +817,13 @@ end
 -- mod reads them as a list, and that list starts only while no other
 -- button has focus. focus.lua's restore_focus also leaves it alone then.
 local warning_open = false
+local warning_path = nil
 function M.fewer_heroes_open() return warning_open end
+-- The shown warning's own path (focus.lua lists its two buttons alone).
+function M.fewer_heroes_path() return warning_open and warning_path or nil end
 local function fewer_heroes_focus()
     warning_open = false
+    warning_path = nil
     -- Not the warning a slot's Enter raised, which focus.lua is closing.
     if os.clock() < (require("focus").quiet_start_warning_until or 0) then return end
     local scr = require("screen")
@@ -836,6 +840,7 @@ local function fewer_heroes_focus()
     end
     if not (back and accept) then return end
     warning_open = true
+    warning_path = cp
     local cur = require("focus").current_path()
     if cur and cur:sub(1, #cp + 1) ~= cp .. "." then
         require("focus").park_focus()

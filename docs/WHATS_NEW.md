@@ -2,6 +2,14 @@
 
 ## Thursday October 22nd 2026
 
+Version 0.3.74
+
+- Fixed: when a conversation offered a new set of choices, you sometimes heard the second choice first and then the first one, because the old choice's spot was read before the game moved to the new list. Now you hear the choice the game actually puts you on.
+- Fixed: the away team's "You still have unassigned slots" warning keeps Up and Down to its own Return and Continue. Before, Up went to Start mission behind it, and the count said "5 of 6".
+- Fixed: an objective that changed during a conversation, a battle or a cutscene is now said once it's over. Before, you could only find out by pressing O.
+
+## Thursday October 22nd 2026
+
 Version 0.3.73
 
 - New: in a battle you now hear what the bars show without pressing I. Each ship's hull is said as it drops past 75, 50, 25 and 10 percent, like "Kazon Carrier, hull 50%", and when the enemy's shield on one side is gone you hear "Kazon Carrier, shield down: port". The game already tells you about your own shields.

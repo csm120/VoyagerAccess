@@ -286,6 +286,7 @@ local fresh_load = false
 -- Gone with the loop: the 4 s and 8 s quiet after a load and the "list
 -- held for two polls" wait. A load now reads the whole list at its first
 -- change after the loading screen.
+local relook_pending = false
 local function look()
     crumb.at("quest: look")
     -- At the main menu the game is left: the next game loaded may be another
@@ -324,13 +325,25 @@ local function look()
         return
     end
     local okd, talking = pcall(function() return require("dialogue").active() ~= nil end)
-    if (okd and talking) or require("combat").screen_up() then return end
     -- Nor over a cutscene or Q's voiced story: "Objective: The Long Way
     -- Home" talked over Q opening a Q Trial (Casey, 2026-10-15).
     local okc, scene = pcall(function()
         return require("dialogue").cutscene_playing() or require("story").active()
     end)
-    if okc and scene then return end
+    if (okd and talking) or require("combat").screen_up() or (okc and scene) then
+        -- Looked at again once it is over: a goal that changed during a
+        -- conversation ("One Small Step: Craft Shuttle Shield Adjustments")
+        -- was never said, as the tracker did not change again after it (VM,
+        -- 2026-10-22). One retry pending at a time, a second apart.
+        if not relook_pending then
+            relook_pending = true
+            ExecuteInGameThreadWithDelay(1000, function()
+                relook_pending = false
+                M.request_look()
+            end)
+        end
+        return
+    end
     local now, missions = M.objective()
     -- A side mission's countdown changes every cycle; only a change in the
     -- objectives themselves is announced (VM, 2026-10-14). Progress counts

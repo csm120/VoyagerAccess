@@ -993,6 +993,14 @@ local function track_unfocused_window()
             if mw and require("screen").shown(mw) then modal = p end
         end
     end
+    -- The away team setup's "unassigned slots" warning is a part of the
+    -- setup, not a window of its own: its Return and Continue were listed
+    -- with the slots and Start behind it ("Return, 5 of 6", and Up went to
+    -- start mission; VM, 2026-10-22). combat.lua finds it in any setup.
+    if not modal then
+        local okf, fp = pcall(function() return require("combat").fewer_heroes_path() end)
+        if okf and fp then modal = fp end
+    end
     if modal then windows = { modal } end
     if virtual then
         local w = resolve(virtual.window)
@@ -1868,9 +1876,22 @@ local function poll()
             choice_hidden = false
             local label = label_for(b, path)
             picked_choice, picked_label = nil, nil
-            print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
-            heard_choice = label and path or nil
-            if label then speech.say(label, true) end
+            -- A NEW set of choices can reuse the button that had focus: the
+            -- old focus was said ("Choice 2 of 2: Leave the ellipse") and the
+            -- game moved focus to its first choice 600 ms later ("Choice 1 of
+            -- 2"), the never-reproduced item of the open list (One Small
+            -- Step, VM, 2026-10-22). Off the first choice, wait for that move.
+            local function say_back()
+                if current ~= path then return end
+                print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
+                heard_choice = label and path or nil
+                if label then speech.say(label, true) end
+            end
+            if label and not label:find("^Choice 1 of") then
+                ExecuteInGameThreadWithDelay(800, function() pcall(say_back) end)
+            else
+                say_back()
+            end
         end
         return
     end
