@@ -972,6 +972,25 @@ local function on_set_state(slot, key, button)
         end
         local before = last_state[slot]
         last_state[slot] = key
+        -- When a room last got worse: switched off, damaged or without life
+        -- support (quest.lua: a goal that vanishes then, like the Holodeck's
+        -- training when it or its deck's Life Support went off, is on hold,
+        -- not done; VM, 2026-10-22). Recorded with a room window open too.
+        if before and before ~= key then
+            pcall(function()
+                for _, r in ipairs(list) do
+                    if not r.upper and r.hull:BP_GetSlotIndex() == slot then
+                        local t = r.hull:GetRoomType()
+                        local st = room_state(r.hull, raw_name(t))
+                        if st == "off" or st:find("^off,") or st:find("Damaged", 1, true) or st:find("no life support", 1, true)
+                            or (raw_name(t) == "None" and not deck_has_life(r.low or r.deck)) then
+                            M.state_lost_at = os.clock()
+                        end
+                        break
+                    end
+                end
+            end)
+        end
         if not before or before == key or not M.active() then return end
         -- A room window's own button says its change, and closing the window
         -- says the room again: Repair there was "Shield Generator,
@@ -984,6 +1003,10 @@ local function on_set_state(slot, key, button)
         for _, r in ipairs(list) do
             if not r.upper and r.hull:BP_GetSlotIndex() == slot then
                 local text = describe(r, false)
+                -- A bare name says no change: switching a deck's Life Support
+                -- on changed every room on it, and "Ruined Room" came four
+                -- times and "Empty building space" twice (VM, 2026-10-22).
+                if not text:find(",", 1, true) then return end
                 ExecuteInGameThreadWithDelay(100, function()
                     if os.clock() - room_closed_at < 1 then return end
                     print("[VoyagerAccess] ship: changed: " .. text .. "\n")

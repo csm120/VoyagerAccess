@@ -186,18 +186,31 @@ function M.changes(old, new)
     local new_m, new_g, new_s = index(new)
     local parts = {}
     local done, ended = {}, {}
+    local lost_in = {}   -- missions that lost a goal in this change
     for _, m in ipairs(old) do
         local key = bare(m.name)
         if not new_m[key] then
             ended[#ended + 1] = m.name ~= "" and m.name:gsub(", %d+ cycles? left", "") or table.concat(m.goals, ". ")
         else
             for _, g in ipairs(m.goals) do
-                if not new_g[key .. "\0" .. bare(g)] and not new_s[key .. "\0" .. shape(g)] then done[#done + 1] = (g:gsub("%s*%([%d,]+/[%d,]+%)", "")) end
+                if not new_g[key .. "\0" .. bare(g)] and not new_s[key .. "\0" .. shape(g)] then
+                    done[#done + 1] = (g:gsub("%s*%([%d,]+/[%d,]+%)", ""))
+                    lost_in[key] = true
+                end
             end
         end
     end
     local back = false
     local now = os.clock()
+    -- Or when a room has just got worse: switching the Holodeck, or its
+    -- deck's Life Support, off minutes after the training began brought back
+    -- "You need an active HOLO DECK" and the training was said as "Done"
+    -- (Dark Frontier, VM, 2026-10-22; the 20 s rule missed it, and after a
+    -- reload the requirement had never been seen done). A goal that finishes
+    -- by itself, like a research, comes with no room getting worse. look()
+    -- waits 300 ms first, as the room's change can come after the tracker's.
+    local okr, lost_at = pcall(function() return require("ship").state_lost_at end)
+    local room_lost = okr and type(lost_at) == "number" and math.abs(now - lost_at) < 2
     for _, m in ipairs(new) do
         local key = bare(m.name)
         for _, g in ipairs(m.goals) do
@@ -207,6 +220,12 @@ function M.changes(old, new)
             -- that finished just before it was said as "On hold" (Endgame,
             -- VM, 2026-10-19). The Holodeck flip-flop is a power toggle away.
             if not old_g[key .. "\0" .. bare(g)] and t and now - t < 20 then back = true end
+            -- Only where the mission that lost a goal gained one in its place
+            -- (the requirement back): a research finishing as some room went
+            -- off is still done (Fable review, 2026-10-22).
+            if room_lost and lost_in[key] and not old_g[key .. "\0" .. bare(g)] and not old_s[key .. "\0" .. shape(g)] then
+                back = true
+            end
         end
     end
     if #done > 0 then
@@ -322,8 +341,12 @@ local function look()
         print("[VoyagerAccess] objective: " .. now .. "\n")
         -- After the first reading, only what changed is said; the whole
         -- list is the first reading (and after a reload) and O.
-        local change = last_missions and M.changes(last_missions, missions)
-        speech.say(change or ("Objective: " .. now), false)
+        local before = last_missions
+        local said_now = now
+        ExecuteInGameThreadWithDelay(300, function()
+            local okc, change = pcall(function() return before and M.changes(before, missions) end)
+            speech.say((okc and change) or ("Objective: " .. said_now), false)
+        end)
         last = now
         write_last(now)
     end

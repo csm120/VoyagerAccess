@@ -2,6 +2,15 @@
 
 ## Thursday October 22nd 2026
 
+Version 0.3.73
+
+- New: in a battle you now hear what the bars show without pressing I. Each ship's hull is said as it drops past 75, 50, 25 and 10 percent, like "Kazon Carrier, hull 50%", and when the enemy's shield on one side is gone you hear "Kazon Carrier, shield down: port". The game already tells you about your own shields.
+- Fixed: opening Gamma from the pause menu during a conversation left the arrows silent, and Enter went on with the conversation behind it. Darker, Brighter and Confirm work there now.
+- Fixed: switching the Holodeck off, or its deck's Life Support, during the Dark Frontier training said "Done: Wait until the crew completes their simulation training". It wasn't done, so you now hear "On hold" with the goal that came back, and "Done" once the Holodeck is running again.
+- Fixed: switching a deck's Life Support on or off no longer reads out every ruined room and empty space on that deck.
+
+## Thursday October 22nd 2026
+
 Version 0.3.72
 
 - Fixed: in Q Trials, Leave Sector now takes you to the sector you heard and held Enter on. If you moved up and down the list first, the game could still have the other sector picked, and Voyager went there instead.

@@ -84,6 +84,7 @@ return {
     ["shields {s}"] = "シールド {s}",
     [" of "] = "、最大",
     ["hull {s}"] = "船体 {s}",
+    ["shield down: {s}"] = "シールド消失: {s}",
     ["{n} second"] = "{n}秒",
     ["{n} seconds"] = "{n}秒",
     ["ready"] = "準備完了",

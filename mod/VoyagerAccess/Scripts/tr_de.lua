@@ -81,6 +81,7 @@ return {
     ["shields {s}"] = "Schilde {s}",
     [" of "] = " von ",
     ["hull {s}"] = "Hülle {s}",
+    ["shield down: {s}"] = "Schild ausgefallen: {s}",
     ["{n} second"] = "{n} Sekunde",
     ["{n} seconds"] = "{n} Sekunden",
     ["ready"] = "bereit",

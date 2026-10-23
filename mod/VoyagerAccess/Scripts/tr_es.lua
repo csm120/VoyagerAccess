@@ -81,6 +81,7 @@ return {
     ["shields {s}"] = "escudos {s}",
     [" of "] = " de ",
     ["hull {s}"] = "casco {s}",
+    ["shield down: {s}"] = "escudo caído: {s}",
     ["{n} second"] = "{n} segundo",
     ["{n} seconds"] = "{n} segundos",
     ["ready"] = "lista",

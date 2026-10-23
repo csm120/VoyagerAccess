@@ -81,6 +81,7 @@ return {
     ["shields {s}"] = "护盾{s}",
     [" of "] = "，共",
     ["hull {s}"] = "舰体{s}",
+    ["shield down: {s}"] = "护盾失效：{s}",
     ["{n} second"] = "{n}秒",
     ["{n} seconds"] = "{n}秒",
     ["ready"] = "就绪",

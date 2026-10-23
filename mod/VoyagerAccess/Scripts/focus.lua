@@ -932,6 +932,21 @@ end
 local function pause_confirm_open()
     return open_confirm() ~= nil
 end
+-- The pause menu's Gamma window over a conversation: its buttons may never
+-- take focus (SetFocus on CONFIRM did nothing), the dialogue rule kept the
+-- button list away, the arrows were silent, and Enter went on with the
+-- conversation behind it (demo, Caretaker's ending, VM, 2026-10-22).
+-- Asked on every focus look, so the answer is kept for 300 ms (a FindAllOf
+-- each time was a steady cost; Fable review, 2026-10-22).
+local gamma_at, gamma_was = -100, false
+local function gamma_open()
+    if os.clock() - gamma_at < 0.3 then return gamma_was end
+    gamma_at, gamma_was = os.clock(), false
+    for _, w in ipairs(FindAllOf("WBP_GammaCorrection_C") or {}) do
+        if w:IsValid() and live(w) and require("screen").shown(w) then gamma_was = true break end
+    end
+    return gamma_was
+end
 
 -- Windows whose buttons never take keyboard focus: the pause menu's
 -- confirmation, and the Q Trials warning (while its Warning page shows).
@@ -955,7 +970,7 @@ local function track_unfocused_window()
     -- Enter from the message (2026-10-11).
     -- Except the pause menu's confirmation ("Exit to Main Menu"), which sits
     -- over the dialogue and whose buttons never take focus (2026-10-14).
-    if require("dialogue").active() and not pause_confirm_open() then
+    if require("dialogue").active() and not pause_confirm_open() and not gamma_open() then
         virtual = nil
         return
     end
@@ -1093,7 +1108,8 @@ function M.virtual_window_open()
 end
 
 function M.virtual_active()
-    if virtual and require("dialogue").active() and not is_confirm(virtual.window) then virtual = nil end
+    if virtual and require("dialogue").active() and not is_confirm(virtual.window)
+        and not virtual.window:find("WBP_GammaCorrection_C", 1, true) then virtual = nil end
     return virtual ~= nil
 end
 
@@ -1817,6 +1833,13 @@ local function poll()
             M.park_focus()
         end
     end
+    -- With Gamma open, focus left behind it (a dialogue choice under the
+    -- pause menu) does not count either: it dropped Gamma's button list on
+    -- every look, and the arrows moved the choices behind (VM, 2026-10-22).
+    if b and not (path_of(b) or ""):find("WBP_GammaCorrection_C", 1, true) and gamma_open() then
+        b = nil
+        current = nil
+    end
     crumb.at("focus: first run, radial")
     if not b then b = focus_first_run_screen() end
     if not b then
@@ -2357,6 +2380,7 @@ local function activate()
     -- (2026-10-14, full game).
     local over_dialogue = on_screen and (current:find("WBP_PauseMenu_C", 1, true)
         or current:find("WBP_SettingsWindow_C", 1, true) or current:find("WBP_GammaCorrection_C", 1, true))
+        or gamma_open()
     if dialogue.active() and not over_dialogue and not (on_screen and dialogue.contains(current)) then
         dialogue.continue()
         return

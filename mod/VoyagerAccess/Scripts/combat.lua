@@ -711,6 +711,68 @@ local function energy_hooks()
     end
 end
 
+-- Milestones a sighted player sees on the bars without asking: a ship's hull
+-- falling past 75, 50, 25 and 10 percent, and the enemy's shield on one side
+-- reaching zero (the game already says "Voyager Shield Down" for its own).
+-- Casey, 2026-10-22: in battle the full picture came only with I. Read from
+-- the panels' own texts; nothing the screen does not show. Each panel is
+-- tracked by the ship it names, so a new target starts quiet.
+local HULL_STEPS = { 75, 50, 25, 10 }
+local tracked = {}   -- "PlayerView"/"EnemyView" -> { name, step, shields }
+local function hull_step(pct)
+    local step = 0
+    for i, t in ipairs(HULL_STEPS) do if pct <= t then step = i end end
+    return step
+end
+local function milestones_poll(w)
+    if not w then return end
+    local WORD = { Front = "bow", Back = "aft", Left = "port", Right = "starboard" }
+    for _, key in ipairs({ "PlayerView", "EnemyView" }) do
+        pcall(function()
+            local view = w[key]
+            if not (view and view:IsValid() and screen.shown(view)) then return end
+            local name = title(plain(text_of(view.ShipNameText)))
+            -- By combatant, as target_poll: two "Kazon Raider"s would share
+            -- one record, and a Tab between them said a fall that had not
+            -- just happened (Fable review, 2026-10-22).
+            local okc, who = pcall(function()
+                local c = view.MyCombatant
+                return c and c:IsValid() and c:GetFName():ToString() or nil
+            end)
+            local id = (okc and who) or name
+            local cur, max = plain(text_of(view.T_HullIntegrity)):gsub(",", ""):match("(%d+)%s*/%s*(%d+)")
+            cur, max = tonumber(cur), tonumber(max)
+            if name == "" or not (cur and max and max > 0) then return end
+            local pct = math.floor(cur * 100 / max + 0.5)
+            local shields = {}
+            for side in pairs(WORD) do
+                local okw, sw = pcall(function() return view["Shield_" .. side] end)
+                shields[side] = okw and sw and sw:IsValid() and tonumber((plain(text_of(sw.TXT_SHIELD)):gsub(",", ""))) or nil
+            end
+            local t = tracked[key]
+            if not t or t.id ~= id then
+                tracked[key] = { id = id, name = name, step = hull_step(pct), shields = shields }
+                return
+            end
+            local step = hull_step(pct)
+            if step > t.step then
+                speech.say(name .. ", " .. require("tr").fill("hull {s}", pct .. "%"), false)
+            end
+            t.step = step
+            if key == "EnemyView" then
+                for side, v in pairs(shields) do
+                    local was = t.shields[side]
+                    if was and was > 0 and v == 0 then
+                        -- tr.word: bow | aft | port | starboard
+                        speech.say(name .. ", " .. require("tr").fill("shield down: {s}", require("tr").word(WORD[side])), false)
+                    end
+                end
+            end
+            t.shields = shields
+        end)
+    end
+end
+
 local function poll()
     M.setup_sync()
     -- When the setup was last up: focus.lua does not open Orders on the
@@ -719,6 +781,7 @@ local function poll()
     if not hooked and M.screen_up() then energy_hooks() end
     if not M.active() then
         said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil
+        tracked = {}
         -- The battle's first levels are set as it starts: not spoken.
         energy_quiet_until = os.time() + 3
         if was_active then
@@ -732,6 +795,7 @@ local function poll()
     target_poll(main())
     pause_poll(main())
     torpedo_poll(main())
+    milestones_poll(main())
     local goal = M.objective()
     if goal and goal ~= said_goal then
         said_goal = goal

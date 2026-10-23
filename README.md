@@ -108,7 +108,7 @@ Tech tree (from the Science Laboratory, or Research in the N list): Up and Down 
 
 Away missions: Up and Down Arrow move through the choices, the heroes for each and Confirm; each choice reads the skill it needs, its reward and its danger. Enter picks a hero or confirms. The result and the mission summary are read for you.
 
-Battles: Enter opens Orders, and the order wheel is a list (attack a system of the enemy ship, defend a side, repair, flee). I reads both ships, the enemies, your order, torpedoes, the heroes' abilities and the goal. The game's own keys work too: Space pauses, 1 to 3 use the heroes' abilities, Tab changes target, Shift fires a torpedo. Target changes, abilities becoming ready, and pauses are spoken as they happen.
+Battles: Enter opens Orders, and the order wheel is a list (attack a system of the enemy ship, defend a side, repair, flee). I reads both ships, the enemies, your order, torpedoes, the heroes' abilities and the goal. The game's own keys work too: Space pauses, 1 to 3 use the heroes' abilities, Tab changes target, Shift fires a torpedo. Target changes, abilities becoming ready, pauses, each ship's hull dropping past 75, 50, 25 and 10 percent, and an enemy shield side going down are spoken as they happen.
 
 Side mission requests read who is asking, what they want and the time limit, then the choices.
 
