@@ -69,7 +69,7 @@ function M.active()
 end
 
 local function title(s)
-    return (s:lower():gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end):gsub("U%.s%.s%.", "U.S.S."))
+    return (require("text").title(s):gsub("U%.s%.s%.", "U.S.S."))
 end
 
 local function shields(view)
@@ -169,9 +169,11 @@ function M.objective()
     return #out > 0 and table.concat(out, ". ") or nil
 end
 
+-- tr.fill: the line pass leaves a template this short alone, so "bereit in
+-- 1 second" was said in German (firefly82's review, 2026-10-23).
 local function seconds(t)
     local n = math.ceil(t)
-    return n .. (n == 1 and " second" or " seconds")
+    return require("tr").fill(n == 1 and "{n} second" or "{n} seconds", n)
 end
 
 -- The heroes' abilities on keys 1 to 3 (WBP_ExtAbility: Index, Ability
@@ -232,24 +234,48 @@ end
 function M.paused_text(w)
     w = w or main()
     if not w then return nil end
-    local prefix = path_of(w) .. "."
+    -- The full game names them TextBlock_69 and CombatPauseText, the demo
+    -- TextBlock and TextBlock_1 (VM, 2026-10-14: a Q Trial battle paused
+    -- without a word). Searching every TextBlock in the game for them took
+    -- 26 to 31 ms and 5.3 MB twice a second in battle, the size of hitch
+    -- that swallows key taps (firefly82's measurements, 2026-10-23). Only
+    -- CombatPauseText is a field; the heading is in the box two levels up
+    -- (VerticalBox_163: TextBlock_69, then CombatPauseText's row; VM,
+    -- 2026-10-23), so it is read from there.
     local by = {}
-    for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-        local tp = t:IsValid() and path_of(t)
-        if tp and tp:sub(1, #prefix) == prefix then
-            -- Found by its words: the full game names them TextBlock_69 and
-            -- CombatPauseText, the demo TextBlock and TextBlock_1 (VM,
-            -- 2026-10-14: a Q Trial battle paused without a word).
-            local name = tp:sub(#prefix + 1):match("^WidgetTree_%d+%.([%w_]+)$")
-            if name and screen.shown(t) then
-                local s = plain(text_of(t))
-                if s:lower():find("^combat is paused") then by.head = s
-                elseif s ~= "" and (name == "TextBlock_1" or name == "CombatPauseText") then by.detail = s
-                -- In another language, by the heading's own name (full game
-                -- TextBlock_69, demo TextBlock); "Combat is paused" is
-                -- English only (outside review, 2026-10-17).
-                elseif s ~= "" and (name == "TextBlock_69" or name == "TextBlock") and not require("language").english() then
-                    by.head = s
+    -- "Combat is paused" is English only; in another language the
+    -- heading's own name decides (outside review, 2026-10-17).
+    local function heading(t, name)
+        if not (t and t:IsValid() and t:IsA(StaticFindObject("/Script/UMG.TextBlock")) and screen.shown(t)) then return end
+        local s = plain(text_of(t))
+        if s ~= "" and (s:lower():find("^combat is paused") or ((name == "TextBlock_69" or name == "TextBlock") and not require("language").english())) then
+            by.head = by.head or s
+        end
+    end
+    local okd, d = pcall(function() return w.CombatPauseText end)
+    if okd and d and d:IsValid() then
+        if screen.shown(d) then
+            local s = plain(text_of(d))
+            if s ~= "" then by.detail = s end
+        end
+        pcall(function()
+            local box = d:GetParent():GetParent()
+            for i = 0, box:GetChildrenCount() - 1 do
+                local c = box:GetChildAt(i)
+                heading(c, c:GetFName():ToString())
+            end
+        end)
+    else
+        -- No field (the demo): the window's own tree, as before.
+        local prefix = path_of(w) .. "."
+        for _, t in ipairs(FindAllOf("TextBlock") or {}) do
+            local tp = t:IsValid() and path_of(t)
+            if tp and tp:sub(1, #prefix) == prefix then
+                local name = tp:sub(#prefix + 1):match("^WidgetTree_%d+%.([%w_]+)$")
+                if name and screen.shown(t) then
+                    local s = plain(text_of(t))
+                    if s ~= "" and (name == "TextBlock_1" or name == "CombatPauseText") then by.detail = s
+                    else heading(t, name) end
                 end
             end
         end
@@ -827,20 +853,35 @@ local function fewer_heroes_focus()
     -- Not the warning a slot's Enter raised, which focus.lua is closing.
     if os.clock() < (require("focus").quiet_start_warning_until or 0) then return end
     local scr = require("screen")
+    -- The warning is a named field of each setup (the battle setup's
+    -- HeroLoadout, and WBP_AwayMissionLoadout itself), with CloseButton and
+    -- AcceptButton. Searching every CommonButtonBase for it cost 2 to 5 ms
+    -- and up to 414 KB of garbage twice a second on every screen
+    -- (firefly82's measurements, 2026-10-23).
+    local function field(o, name)
+        local ok, v = pcall(function() return o[name] end)
+        return (ok and v and v:IsValid()) and v or nil
+    end
     local back, accept, cp = nil, nil, nil
-    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-        local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
-        if p and p:find("^/Engine/Transient%.") and p:find("%.FewerHeroesConfirmWidget%.") and scr.shown(b) then
-            local wp = p:match("^(.-%.FewerHeroesConfirmWidget)%.")
-            if not cp or wp == cp then
-                cp = wp
-                if p:find("%.CloseButton$") then back = b elseif p:find("%.AcceptButton$") then accept = b end
-            end
+    local holders = {}
+    local cw = main()
+    if cw then holders[#holders + 1] = field(cw, "HeroLoadout") end
+    for _, a in ipairs(FindAllOf("WBP_AwayMissionLoadout_C") or {}) do
+        if live(a) and scr.shown(a) then holders[#holders + 1] = a end
+    end
+    for _, h in ipairs(holders) do
+        local warn = field(h, "FewerHeroesConfirmWidget")
+        if not cp and warn and scr.shown(warn) then
+            local b, a = field(warn, "CloseButton"), field(warn, "AcceptButton")
+            if b and a and scr.shown(b) and scr.shown(a) then back, accept, cp = b, a, path_of(warn) end
         end
     end
     if not (back and accept) then return end
     warning_open = true
     warning_path = cp
+    -- Its message, if nothing has read it yet (the away setup's warning
+    -- is never one of popups' open windows; popups.read_now).
+    pcall(function() require("popups").read_now(cp) end)
     local cur = require("focus").current_path()
     if cur and cur:sub(1, #cp + 1) ~= cp .. "." then
         require("focus").park_focus()

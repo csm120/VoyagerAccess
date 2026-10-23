@@ -434,16 +434,39 @@ local function view_texts(view)
 end
 
 local function view_text(view, start, abort)
+    -- The name from the panel's own TechNameTextBlock: in German the
+    -- heading "Forschung" was taken as the name and the real one came after
+    -- the costs (firefly82's review, 2026-10-23). Texts before the name that
+    -- are not costs are the heading, in any language.
+    local field_name = ""
+    pcall(function()
+        local t = view.TechNameTextBlock
+        if t and t:IsValid() then field_name = (t:GetText():ToString():gsub("<[^>]*>", ""):gsub("^%s+", ""):gsub("%s+$", "")) end
+    end)
+    local texts = view_texts(view)
+    local at = nil
+    if field_name ~= "" then
+        for i, s in ipairs(texts) do if s == field_name then at = i break end end
+    end
     local name, costs, rest = nil, {}, {}
-    for _, s in ipairs(view_texts(view)) do
+    for i, s in ipairs(texts) do
         -- While researching: "16 remaining ...", "Researching ..."
         s = s:gsub("%s*%.%.%.$", "")
-        if s:lower() == "research" then
-        elseif not name then name = s
+        if at and i < at and not s:match("^%d+") then
+        elseif at and i == at then name = s
+        elseif not at and s:lower() == "research" then
+        elseif not name and not at then name = s
         elseif s:match("^%d+") then costs[#costs + 1] = s
         else rest[#rest + 1] = s end
     end
+    -- An unrevealed one shows "???"; the list calls it what it is.
+    if name and not name:find("[%w\128-\255]") then name = "Unknown technology" end
     local parts = { name or "Technology" }
+    -- The lock a sighted player sees on the panel (Locked_Image).
+    pcall(function()
+        local l = view.Locked_Image
+        if l and l:IsValid() and require("screen").shown(l) then parts[#parts + 1] = require("tr").word("Locked") end
+    end)
     if #costs > 0 then parts[#parts + 1] = table.concat(costs, ", ") end
     for _, s in ipairs(rest) do parts[#parts + 1] = s end
     parts[#parts + 1] = start and "Enter begins the research, Escape closes"

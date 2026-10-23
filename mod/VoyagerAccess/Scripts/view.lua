@@ -176,7 +176,7 @@ function M.nav_enter()
         speech.say(it[1] .. ", holding", true)
         b:HandleButtonPressed()
         local name = it[2]
-        ExecuteInGameThreadWithDelay(2500, function()
+        ExecuteInGameThreadWithDelay(require("screen").hold_ms(b), function()
             pcall(function()
                 local nb = find(name)
                 if nb then nb:HandleButtonReleased() end

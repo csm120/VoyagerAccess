@@ -51,6 +51,11 @@ local WINDOW_CLASSES = { "WBP_Dialogue_Window_C", "WBP_Dialogue_Window_SideView_
 -- makes them (NotifyOnNewObject) and hooked on the class that defines each
 -- event (ForEachFunction).
 local NATIVE_WINDOW = "/Script/STVoyager.STVDialogueWindow"
+
+-- Called once when the next FinishShowChoices has run (focus.lua's
+-- returning choices). Defined before the window events that run them.
+local choice_waiters = {}
+function M.after_choices(fn) choice_waiters[#choice_waiters + 1] = fn end
 local WINDOW_EVENTS = { ShowDialogue = "line", FinishShowingDialogueRow = "typed", FinishShowChoices = "choices",
     OnTriggerNextNode = "next", BP_OnActivated = "open", BP_OnDeactivated = "close", Destruct = "close",
     OnShowConsequences = "consequences_start", OnFinishedShowingConsequences = "consequences",
@@ -305,6 +310,15 @@ local function on_window(kind)
                     -- hooked (the first window of its kind) is said now; a
                     -- line said already is not said again.
                     pcall(say_shown_line, w)
+                    -- The game puts focus on the first choice inside
+                    -- FinishShowChoices, so it is in place now, one tick
+                    -- after the pre hook (firefly82's probe, 12 of 12 sets,
+                    -- 2026-10-23): whoever waited for that is told.
+                    if kind == "choices" then
+                        local waiting = choice_waiters
+                        choice_waiters = {}
+                        for _, fn in ipairs(waiting) do pcall(fn) end
+                    end
                     -- Enter during typing finished the line first; the
                     -- continue it asked for goes now that the line is done.
                     if kind == "typed" and continue_pending then

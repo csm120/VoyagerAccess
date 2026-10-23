@@ -562,9 +562,17 @@ function M.radial_focus(b, path)
             local nb = resolve(path)
             if not nb then return end
             local text = nil
+            local reason_only = nil   -- the hover added just the game's reason
             local okr, ring = pcall(require("construction").ring_text, nb)
             if okr and ring then
                 text = ring.text
+                -- Before the hover, no reason of the mod's own when the game's
+                -- will follow: every blocked choice was said twice with two
+                -- reasons, "Technologie fehlt" (the mod's) then "Fehlende
+                -- Technologie" (the centre's; firefly82's review, 2026-10-23).
+                if not hovered and ring_hooked and ring.why and not ring.why:find("^Missing resources") then
+                    text = text:gsub("%s*" .. ring.why:gsub("%p", "%%%0") .. "%.?", "", 1)
+                end
                 -- The centre's reason when it shows one. "Missing resources"
                 -- keeps the mod's, which names the short ones (a sighted
                 -- player sees those costs in red).
@@ -574,6 +582,9 @@ function M.radial_focus(b, path)
                     local ge = last_center_error and last_center_error:gsub("%.%s*$", "")
                     if ge and ge ~= "" then
                         radial_error[path] = ge
+                        -- The first reading left the mod's reason out, so the
+                        -- hover adds only the game's, not the whole room again.
+                        if ring.why and ring_hooked and radial_said[path] then reason_only = ge end
                         if ring.why then
                             text = text:gsub(ring.why:gsub("%p", "%%%0"), (ge:gsub("%%", "%%%%")), 1)
                         else
@@ -604,6 +615,10 @@ function M.radial_focus(b, path)
             if hovered and radial_said[path] == text then return end
             radial_said[path] = text
             print("[VoyagerAccess] radial: " .. (hovered and "hovered: " or "") .. text .. "\n")
+            if reason_only then
+                speech.say(reason_only, false)
+                return
+            end
             speech.say(text, true)
         end)
     end
@@ -629,6 +644,9 @@ function M.radial_focus(b, path)
     -- when the ring closes).
     local opening = ring_hooked and menu and ring_entered ~= menu
     ring_entered = menu
+    -- Opening says the hovered reading whole: an older reading of this
+    -- segment must not make it just the reason.
+    if opening then radial_said[path] = nil end
     if not opening then say_it(false) end
     if ring_hooked then ring_pending = { path = path, fn = function() say_it(true) end } end
     if opening then
@@ -1880,15 +1898,23 @@ local function poll()
             -- old focus was said ("Choice 2 of 2: Leave the ellipse") and the
             -- game moved focus to its first choice 600 ms later ("Choice 1 of
             -- 2"), the never-reproduced item of the open list (One Small
-            -- Step, VM, 2026-10-22). Off the first choice, wait for that move.
+            -- Step, VM, 2026-10-22). Off the first choice, wait for that move:
+            -- the game makes it inside FinishShowChoices, so the choice is
+            -- said when that has run (dialogue.after_choices), not after a
+            -- fixed 800 ms (firefly82's probe, 2026-10-23). 1500 ms bounds it
+            -- if no FinishShowChoices comes.
+            local done = false
             local function say_back()
+                if done then return end
+                done = true
                 if current ~= path then return end
                 print("[VoyagerAccess] focus: choices back: " .. tostring(label) .. "\n")
                 heard_choice = label and path or nil
                 if label then speech.say(label, true) end
             end
             if label and not label:find("^Choice 1 of") then
-                ExecuteInGameThreadWithDelay(800, function() pcall(say_back) end)
+                require("dialogue").after_choices(say_back)
+                ExecuteInGameThreadWithDelay(1500, function() pcall(say_back) end)
             else
                 say_back()
             end
@@ -2381,7 +2407,7 @@ local function activate()
                 speech.say("Holding", true)
                 target:HandleButtonPressed()
                 local held = path_of(target)
-                ExecuteInGameThreadWithDelay(2500, function()
+                ExecuteInGameThreadWithDelay(require("screen").hold_ms(target), function()
                     pcall(function()
                         local nb = resolve(held)
                         if nb then nb:HandleButtonReleased() end
@@ -2783,7 +2809,7 @@ local function activate()
             if exit_entry then pcall(function() b:NotifySelected() end) end
             speech.say("Holding", true)
             b:HandleButtonPressed()
-            ExecuteInGameThreadWithDelay(2500, function()
+            ExecuteInGameThreadWithDelay(require("screen").hold_ms(b), function()
                 pcall(function()
                     local nb = resolve(path)
                     -- Its own pcall: an error here must not skip the release.

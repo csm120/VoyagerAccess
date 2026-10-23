@@ -200,4 +200,15 @@ function M.texts()
     return items
 end
 
+-- How long to hold a hold button (bRequiresHold), in ms: the game's own
+-- GetRequiredHoldTime (0.5 s on Wait One Cycle, the away mission's Confirm
+-- and a major dialogue choice; firefly82's probe, 2026-10-23), with 300 ms
+-- so the hold has surely finished. The mod held 2.5 s everywhere. 2500 if
+-- the button cannot say.
+function M.hold_ms(b)
+    local ok, t = pcall(function() return b:GetRequiredHoldTime() end)
+    if ok and type(t) == "number" and t > 0 and t < 10 then return math.floor(t * 1000 + 300) end
+    return 2500
+end
+
 return M

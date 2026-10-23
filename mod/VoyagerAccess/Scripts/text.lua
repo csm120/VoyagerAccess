@@ -62,6 +62,53 @@ function M.icon_name(material)
     return id and unit(id) or nil
 end
 
+-- Title case for a name the game shows in capitals ("KAZON RAIDER" ->
+-- "Kazon Raider"), letter by letter in UTF-8: Lua's %a and lower() know
+-- only A to Z, so "Kazon-Aufklärer" was said "Kazon-AufkläRer", two words
+-- (firefly82's review, German game, 2026-10-23). Latin-1, Latin
+-- Extended-A (Polish) and Cyrillic letters are cased; other letters (CJK)
+-- pass through.
+local function lower_cp(c)
+    if (c >= 65 and c <= 90) or (c >= 0xC0 and c <= 0xDE and c ~= 0xD7) or (c >= 0x410 and c <= 0x42F) then return c + 32 end
+    if c >= 0x400 and c <= 0x40F then return c + 80 end
+    if c == 0x178 then return 0xFF end
+    if (c >= 0x100 and c <= 0x137) or (c >= 0x14A and c <= 0x177) then return c % 2 == 0 and c + 1 or c end
+    if (c >= 0x139 and c <= 0x148) or (c >= 0x179 and c <= 0x17E) then return c % 2 == 1 and c + 1 or c end
+    return c
+end
+local function upper_cp(c)
+    if (c >= 97 and c <= 122) or (c >= 0xE0 and c <= 0xFE and c ~= 0xF7) or (c >= 0x430 and c <= 0x44F) then return c - 32 end
+    if c >= 0x450 and c <= 0x45F then return c - 80 end
+    if c == 0xFF then return 0x178 end
+    if (c >= 0x100 and c <= 0x137) or (c >= 0x14A and c <= 0x177) then return c % 2 == 1 and c - 1 or c end
+    if (c >= 0x139 and c <= 0x148) or (c >= 0x179 and c <= 0x17E) then return c % 2 == 0 and c - 1 or c end
+    return c
+end
+local function is_letter(c)
+    if (c >= 65 and c <= 90) or (c >= 97 and c <= 122) then return true end
+    return c >= 0xC0 and c ~= 0xD7 and c ~= 0xF7 and not (c >= 0x2000 and c <= 0x206F) and not (c >= 0x3000 and c <= 0x303F)
+end
+function M.title(s)
+    if type(s) ~= "string" or s == "" then return s or "" end
+    local ok, out = pcall(function()
+        local parts, start = {}, true
+        for _, c in utf8.codes(s) do
+            if is_letter(c) then
+                local l = lower_cp(c)
+                parts[#parts + 1] = utf8.char(start and upper_cp(l) or l)
+                start = false
+            else
+                parts[#parts + 1] = utf8.char(c)
+                -- An apostrophe or a digit keeps the word going ("O'brien's", "3rd").
+                if c >= 48 and c <= 57 then start = false
+                elseif c ~= 39 and c ~= 0x2019 then start = true end
+            end
+        end
+        return table.concat(parts)
+    end)
+    return ok and out or s
+end
+
 local IMG = '<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'
 
 -- Second words of room and system names ("Warp Core", "Cargo Bay"): a line

@@ -2691,6 +2691,17 @@ function M.window_unread(p)
     return w ~= nil and w:IsValid() and screen.shown(w)
 end
 
+-- Reads a shown window that no event brings here: the away team setup's
+-- unassigned-slots warning is a named part of the setup, never in
+-- open_windows, so it was never read and focus.lua's list for it waited
+-- for that read and said nothing (Enter on "start mission" was silent,
+-- Profile 03 Dark Frontier, VM, 2026-10-23).
+function M.read_now(p)
+    if not M.window_unread(p) then return end
+    local ok, err = pcall(process, p, "change", true)
+    if not ok then print("[VoyagerAccess] popups read_now error: " .. tostring(err) .. "\n") end
+end
+
 -- True while a window of one of the classes in set (name -> true) is open
 -- or waiting to be read, and not read yet.
 function M.unread_of(set)

@@ -47,7 +47,7 @@ end
 -- [STELLAR CARTOGRAPHY] marks a highlighted name; read it as words.
 local function words(text)
     return (text:gsub("%[([^%]]+)%]", function(s)
-        return (s:lower():gsub("(%a)([%w']*)", function(a, b) return a:upper() .. b end))
+        return require("text").title(s)
     end))
 end
 

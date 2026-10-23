@@ -1,5 +1,19 @@
 # New in Voyager Access
 
+## Friday October 23rd 2026
+
+Version 0.3.75
+
+- Fixed: repairing, clearing debris, upgrading or demolishing a room from the ship view never worked, because the game only takes those keys when you hold them down. Rooms now say "Hold E: Repair", "Hold F: Upgrade" or "Hold T: Demolish", and holding the key for about a second does it. Switching power with E is still a quick tap.
+- Fixed: the away team's "You still have unassigned slots" warning had gone silent in 0.3.74, so Enter on Start mission seemed to do nothing. You hear the warning again, then Return and Continue.
+- Smoother battles: twice a second the mod searched every piece of text in the game just to find out whether the battle was paused, a stutter big enough to swallow a quick key press. It reads the pause from the battle screen itself now, and the unassigned slots warning the same way on every screen. firefly82 measured this one, thank you!
+- Fixed: Wait One Cycle, the away mission's Confirm and major dialogue choices are held as long as the game asks, about half a second, instead of two and a half.
+- Fixed: a room you can't build in the build ring was read twice, once with the mod's reason and once with the game's, and in German the two even used different words. You hear the room, then the game's reason, once.
+- Fixed: the research panel says "Locked" when a technology is locked, puts the technology's name first in every language (in German it started with "Forschung"), and calls an unrevealed one "Unknown technology" instead of question marks.
+- Fixed: names with letters like ä, é or Cyrillic letters aren't broken in two anymore, in battles and objectives. "Kazon-Aufklärer" used to come out with a capital R in the middle.
+- Fixed: a map point that holds two resources names both, the way the scan does, and resources are named in the game's language, so a German game says "Nahrung" instead of "Food".
+- Fixed: "ready in 1 second" in the battle's ability list was English in other languages.
+
 ## Thursday October 22nd 2026
 
 Version 0.3.74

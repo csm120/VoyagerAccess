@@ -1052,7 +1052,7 @@ function M.mission_enter()
         require("speech").say("Confirming", true)
         cb:HandleButtonPressed()
         local path = path_of(cb)
-        ExecuteInGameThreadWithDelay(2500, function()
+        ExecuteInGameThreadWithDelay(require("screen").hold_ms(cb), function()
             pcall(function()
                 local b = StaticFindObject(path)
                 if b and b:IsValid() then

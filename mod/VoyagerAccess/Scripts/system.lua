@@ -382,32 +382,26 @@ end
 -- scanned: the IDs exist before the scan and would give the game away.
 local function resources(poi)
     local found, seen = {}, {}
-    local es = nil
+    local text = require("text")
+    local function add(res)
+        if seen[res] then return end
+        seen[res] = true
+        -- The game's own word: "Klasse-H-Planet, Food" where the detail
+        -- window says "Nahrung" (firefly82's review, 2026-10-23).
+        found[#found + 1] = text.game_resource_name(res) or (res:gsub("(%l)(%u)", "%1 %2"))
+    end
     pcall(function()
         poi.EventIds:ForEach(function(_, e)
-            local name = e:get()
-            local id = name:ToString()
-            -- The number can be negative: "ResourceEvent_Generated_Duranium_-18"
-            -- was said as just "scanned" (German game, 2026-10-18).
-            local res = id:match("^ResourceEvent_Generated_(%a+)_%-?%d+$")
-            -- Two resources in one event ("CombinedResourceEvent_
-            -- ResourceEvent_Generated_Duranium_388_ResourceEvent_Generated_
-            -- Tritanium_318") were said as just "scanned". The map marker
-            -- shows one icon for it, the event's own (GetEventIconById,
-            -- MI_UI_Duranium_White), and the selection shows no other: that
-            -- one is said (map audit, Klasse-Y-Planet, 2026-10-21).
-            if not res and id:find("^CombinedResourceEvent_") then
-                es = es or FindFirstOf("STVEventSubsystem")
-                local oki, icon = pcall(function()
-                    local m = es:GetEventIconById(name)
-                    return m and m:IsValid() and m:GetFName():ToString() or nil
-                end)
-                res = oki and icon and icon:match("^MI_UI_(%a+)_White") or nil
-            end
-            if res and not seen[res] then
-                seen[res] = true
-                found[#found + 1] = (res:gsub("(%l)(%u)", "%1 %2"))
-            end
+            local id = e:get():ToString()
+            -- Every resource the id names. The number can be negative
+            -- ("ResourceEvent_Generated_Duranium_-18" was said as just
+            -- "scanned", German game, 2026-10-18). A combined event names
+            -- two ("CombinedResourceEvent_ResourceEvent_Generated_Duranium_
+            -- 388_ResourceEvent_Generated_Tritanium_318"), and the scan's
+            -- detail window shows both, where the list said only the marker's
+            -- one icon: "Duranium" for "Duranium; Tritanium" (firefly82's
+            -- review, 2026-10-23).
+            for res in id:gmatch("ResourceEvent_Generated_(%a+)_%-?%d+") do add(res) end
         end)
     end)
     return table.concat(found, require("tr").word(" and "))

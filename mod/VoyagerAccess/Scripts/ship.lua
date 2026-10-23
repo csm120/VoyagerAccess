@@ -462,6 +462,22 @@ local function key_for(a)
     key_cache[name] = found
     return found
 end
+-- True when the input action fires only on a held key: one of its Triggers
+-- is an InputTriggerHold (Upgrade and Demolish, game data, 2026-10-23).
+local hold_cache = {}
+local function held_action(a)
+    local name = a:GetFName():ToString()
+    if hold_cache[name] ~= nil then return hold_cache[name] end
+    local hold = false
+    local ok = pcall(function()
+        a.Triggers:ForEach(function(_, t)
+            local tr = t:get()
+            if tr and tr:IsValid() and tr:GetClass():GetFName():ToString():find("Hold", 1, true) then hold = true end
+        end)
+    end)
+    if ok then hold_cache[name] = hold end
+    return hold
+end
 local hover_waiters = {}   -- slot -> functions to run once it is hovered
 local hover_hooked = false
 -- The slot the pointer is being brought to, until the game says it is
@@ -586,17 +602,21 @@ end
 -- left mouse button (probe 2026-10-22: E for ExecuteRoomSpecific,
 -- RepairRoom, ClearDebris; F for UpgradeRoom; T for DemolishRoom;
 -- LeftMouseButton for OpenRadialMenu).
-local function action_line(desc, key)
+local function action_line(desc, key, hold)
     if not (desc and desc ~= "") then return nil end
     -- The left mouse button clicks the room, which the mod's Enter does.
     if key == "LeftMouseButton" then key = require("tr").word("Enter") end
+    -- Upgrade and Demolish take the key only held (InputTriggerHold, 0.66 s
+    -- in IA_SideView_UpgradeRoom and _DemolishRoom): F tapped on the
+    -- Holodeck did nothing, three times, after "F: Upgrade" (VM, 2026-10-23).
+    if key and hold then key = require("tr").fill("Hold {s}", key) end
     return key and (key .. ": " .. desc) or desc
 end
 local function quick_action_text()
     local a = hover_action
     if not a then return nil end
     local out = {}
-    local first = action_line(a.desc, a.key)
+    local first = action_line(a.desc, a.key, a.hold)
     if first then
         local costs = {}
         -- In English the game's id was said as it is: "1 BioNeuralGelPack" (demo,
@@ -615,7 +635,7 @@ local function quick_action_text()
         out[#out + 1] = first .. (#costs > 0 and (", " .. table.concat(costs, ", ")) or "")
     end
     for _, m in ipairs(a.more or {}) do
-        local line = action_line(m.desc, m.key)
+        local line = action_line(m.desc, m.key, m.hold)
         if line then out[#out + 1] = line end
     end
     if #out == 0 then return nil end
@@ -1069,6 +1089,7 @@ local function install_hover(path)
             if a and a:IsValid() then
                 action.desc = a.ActionDescription:ToString()
                 action.key = key_for(a)
+                action.hold = held_action(a)
             end
         end)
         pcall(function()
@@ -1085,7 +1106,7 @@ local function install_hover(path)
             extra:get():ForEach(function(_, e)
                 local a = e:get()
                 if a and a:IsValid() then
-                    action.more[#action.more + 1] = { desc = a.ActionDescription:ToString(), key = key_for(a) }
+                    action.more[#action.more + 1] = { desc = a.ActionDescription:ToString(), key = key_for(a), hold = held_action(a) }
                 end
             end)
         end)

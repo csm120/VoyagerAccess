@@ -17,7 +17,7 @@ local HELP = {
         .. "On choices, Up and Down move and Enter picks one.",
     ship = "Up and Down change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
         .. "Enter opens the room. V switches to the System Map. I says where you are; I twice lists the room's details. "
-        .. "E is the room's quick action, F upgrades it, T demolishes it.",
+        .. "E is the room's quick action. Hold F to upgrade it, or T to demolish it.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
         .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship.",
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room.",
