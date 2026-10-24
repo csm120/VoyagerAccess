@@ -2,6 +2,12 @@
 
 ## Friday October 23rd 2026
 
+Version 0.3.80
+
+- Quicker arrivals: when you set course, "Halfway" and "Arrived" now come from the game's own travel signals. You hear "Arrived" about a second after Voyager stops, where it used to take two or three, and I's "percent of the way" is the game's own number now. When the place you reach has an event, you still just hear the event. Thanks to firefly82 for pointing the way!
+
+## Friday October 23rd 2026
+
 Version 0.3.79
 
 These changes come from firefly82's review and the choices I made about it. The idea behind all of them: let the game do what the game does, and tell you what it did.

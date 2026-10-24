@@ -671,14 +671,52 @@ end
 -- to", and keeps watching for up to 30 minutes; L reports the progress and
 -- says when the ship is not moving.
 local travel = nil
+local travel_tick = nil
+
+-- The journey's own progress and end (firefly82's review, 2026-10-23):
+-- OnTravelProgress gives the share of the trip done, OnTravelCompleted
+-- comes when the ship stops. The distance watch below stays as the
+-- fallback for when the hooks do not fire.
+local travel_hooked = false
+local function hook_travel()
+    if travel_hooked then return end
+    local okp = pcall(RegisterHook, "/Script/STVoyager.STVJourneySubsystem:OnTravelProgress", function(_, p)
+        pcall(function()
+            if not travel then return end
+            if travel.progress == nil then print("[VoyagerAccess] course: progress event\n") end
+            travel.progress = p:get()
+        end)
+    end)
+    local okc = pcall(RegisterHook, "/Script/STVoyager.STVJourneySubsystem:OnTravelCompleted", function(_, e)
+        local event = false
+        pcall(function() event = e:get() and true or false end)
+        ExecuteInGameThread(function()
+            if not travel then return end
+            print("[VoyagerAccess] course: travel completed event (arrival event " .. tostring(event) .. ")\n")
+            travel.completed = true
+            travel.completed_at = os.clock()
+            -- The point's event window opens about 0.25 s after this, even
+            -- with the flag false (Class P planet's Frozen Borg Sphere, VM,
+            -- 2026-10-23, "Arrived" was said before it); a second later
+            -- the tick sees it and stays quiet.
+            local t = travel_tick
+            if t then ExecuteInGameThreadWithDelay(1000, t) end
+        end)
+    end)
+    travel_hooked = okp or okc
+    print("[VoyagerAccess] course: travel hooks " .. tostring(okp) .. "," .. tostring(okc) .. "\n")
+end
 
 local function watch_arrival(name, target, start_d)
+    pcall(hook_travel)
     watch_id = watch_id + 1
     local mine = watch_id
     local last, still, left, halfway = nil, 0, 1800, false
-    travel = { name = name, start_d = start_d, d = start_d, still = 0 }
-    local function tick()
-        if mine ~= watch_id then return end
+    travel = { name = name, start_d = start_d, d = start_d, still = 0, watch = mine }
+    local tick
+    tick = function(once)
+        -- Ended already (arrived, or a new course).
+        if mine ~= watch_id or not travel or travel.watch ~= mine then return end
         -- An event at the destination opened before the ship stopped, and
         -- "Halfway" and "Arrived" were then said over it (2026-10-14). The
         -- event says where you are; stop watching quietly.
@@ -696,7 +734,8 @@ local function watch_arrival(name, target, start_d)
         -- ship stops 900 from a point, so more than 1200 is still on the way.)
         if oke and event_open then
             local okd2, d2 = pcall(target_distance, target)
-            local far = okd2 and d2 and d2 > 1200
+            -- After the journey's own end it is the arrival event.
+            local far = okd2 and d2 and d2 > 1200 and not travel.completed
             if far then
                 if not travel.paused then
                     travel.paused = true
@@ -704,6 +743,7 @@ local function watch_arrival(name, target, start_d)
                 end
                 last, still = nil, 0
                 left = left - 1
+                if once then return end
                 if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
                 return
             end
@@ -734,6 +774,7 @@ local function watch_arrival(name, target, start_d)
             -- Harry Kim's arrival line, VM, 2026-10-16).
             if far and okt and trav == false and start_d and d3 < start_d - 50
                 and (d3 <= 2500 or d3 <= start_d * 0.1) then far = false end
+            if travel.completed then far = false end
             if not far then
                 travel = nil
                 print("[VoyagerAccess] course: conversation opened at " .. name .. "\n")
@@ -775,7 +816,8 @@ local function watch_arrival(name, target, start_d)
         -- were said over the battle setup (Q Trial, VM, 2026-10-14).
         local okb, battle = pcall(function() return require("combat").screen_up() end)
         battle = okb and battle
-        if still >= 2 and (not start_d or d <= start_d * 0.9 or hopped) then
+        local done = travel.completed and os.clock() - travel.completed_at >= 0.9
+        if done or (still >= 2 and (not start_d or d <= start_d * 0.9 or hopped)) then
             travel = nil
             print("[VoyagerAccess] course: arrived at " .. name .. (battle and " (in battle, not said)" or "") .. "\n")
             if not battle then speech.say("Arrived at " .. name, false) end
@@ -865,13 +907,18 @@ local function watch_arrival(name, target, start_d)
             if not busy then speech.say("Voyager did not move. It may already be at " .. name .. ".", false) end
             return
         end
-        if start_d and start_d > 0 and not halfway and d <= start_d / 2 then
+        -- The game's share of the trip when its hook gives one.
+        local past_half = travel.progress and travel.progress >= 0.5
+        if travel.progress == nil then past_half = start_d and start_d > 0 and d <= start_d / 2 end
+        if not halfway and past_half then
             halfway = true
             if not battle then speech.say("Halfway to " .. name, false) end
         end
         left = left - 1
+        if once then return end
         if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
     end
+    travel_tick = function() tick(true) end
     ExecuteInGameThreadWithDelay(1000, tick)
 end
 
@@ -879,8 +926,9 @@ end
 function M.travel_status()
     if not travel then return nil end
     local text = "Traveling to " .. travel.name
-    if travel.start_d and travel.start_d > 0 and travel.d then
-        local pct = math.floor((1 - travel.d / travel.start_d) * 100 + 0.5)
+    if travel.progress or (travel.start_d and travel.start_d > 0 and travel.d) then
+        local share = travel.progress or (1 - travel.d / travel.start_d)
+        local pct = math.floor(share * 100 + 0.5)
         text = text .. string.format(", %d percent of the way", math.max(0, math.min(100, pct)))
     end
     if travel.still >= 5 then text = text .. ", not moving" end
