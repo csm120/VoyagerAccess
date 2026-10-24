@@ -2,6 +2,12 @@
 
 ## Friday October 23rd 2026
 
+Version 0.3.77
+
+- Fixed: a few conversation lines never move on with Enter, like Zilis's "Whoops! That probably caused a few new scratches" in the Equinox chase. The mod is supposed to tell you after a few tries that Shift+Enter skips ahead, but right after a choice it stayed quiet, and you could press Enter forever. You hear the tip again now.
+
+## Friday October 23rd 2026
+
 Version 0.3.76
 
 - Fixed: 0.3.75 brought back an old annoyance in conversations. When a new set of choices came up, you could hear the second choice first and then the first one. Now you only hear the choice the game puts you on.

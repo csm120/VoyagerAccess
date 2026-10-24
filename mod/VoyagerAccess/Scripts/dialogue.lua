@@ -844,19 +844,27 @@ function M.continue()
     -- "Offer amends" then "Nevermind" in The Omega Directive, set it off),
     -- or with an away mission or another read-once window up (its result
     -- window has no focused button).
-    local elsewhere = false
+    local elsewhere, why = false, nil
     pcall(function()
         local cur = require("focus").current_path()
         local b = cur and StaticFindObject(cur)
-        elsewhere = (b ~= nil and b:IsValid() and screen.shown(b) and not M.contains(cur))
-            or M.is_choice(cur)
-            or require("awaymission").mission_active()
+        if b ~= nil and b:IsValid() and screen.shown(b) and not M.contains(cur) then why = "focus " .. tostring(cur:match("([^%.]+)$"))
+        -- Only a choice on screen: after a pick the mod's focus record
+        -- still names the hidden choice, every Enter on Zilis's stuck
+        -- "Whoops... HULL -3" was taken for a choice, and the hint below
+        -- never came (39 Enters, Equinox chase, VM, 2026-10-23).
+        elseif M.is_choice(cur) and b ~= nil and b:IsValid() and screen.shown(b) then why = "choice"
+        elseif require("awaymission").mission_active() then why = "away mission" end
+        elsewhere = why ~= nil
         if elsewhere then return end
         -- Map markers and room prompts are windows too and always up.
         for _, p in ipairs(require("popups").open_windows()) do
-            if not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("RoomPrompt", 1, true) then elsewhere = true end
+            if not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("RoomPrompt", 1, true) then
+                elsewhere, why = true, "window " .. tostring(p:match("([^%.]+)$"))
+            end
         end
     end)
+    if elsewhere then print("[VoyagerAccess] dialogue: Enter not counted for this line (" .. tostring(why) .. ")\n") end
     if elsewhere then
         stuck.line, stuck.count = nil, 0
     elseif line and line == stuck.line then
