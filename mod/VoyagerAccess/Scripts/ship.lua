@@ -183,7 +183,13 @@ local function room_state(h, raw)
             if raw == "None" and (kind == 5 or st:lower():find("^remov")) then return "just cleared" end
             -- Enter on the room finishes it (VM, 2026-10-19); the screen
             -- shows "Ready", which says as much to a sighted player.
-            return require("tr").fill("{s} done", require("tr").lower(st)) .. require("hints").text("done_enter", ", Enter finishes it")
+            -- The screen's own word for it, from the cycle text: "{s} done"
+            -- read "Wird repariert fertig" where the German screen shows
+            -- "Bereit" (firefly82, 2026-10-24). "done" only when that text
+            -- is empty.
+            local tr = require("tr")
+            local said = cy ~= "" and (tr.lower(st) .. ", " .. tr.lower(cy)) or tr.fill("{s} done", tr.lower(st))
+            return said .. require("hints").text("done_enter", ", Enter finishes it")
         end
         -- Paused work keeps its text ("removing, 3 cycles") but has no
         -- work team (VM, 2026-10-16: 0 teams paused, 1 after Resume).
@@ -512,15 +518,37 @@ local function hull_at(slot)
     return nil
 end
 
+-- True from a ForceCameraOnRoom until the game says the camera has
+-- stopped (camera_arrived): a hover that comes while it moves is a room
+-- passing under the pointer, not where it will rest.
+local camera_moving = false
+local camera_token = 0
+
+-- The game places every room the arrows reach: ForceCameraOnRoom centres
+-- it, as for a room off screen before. Whether a room could be pointed at
+-- where it was is not the mod's to judge from the screen: rooms at the top
+-- edge (y 6 and 42 of 768, centres inside the window) were never hovered,
+-- and eight in a row were said only by a 2 s fallback (2026-10-24, the
+-- player's choice of the game's camera that day). The pointer goes on the
+-- room now and again once the camera has stopped.
 local function point_at(hull)
     pcall(function()
         local slot = hull:BP_GetSlotIndex()
         target_slot = slot
         if hover_slot == slot then target_slot = nil return end
-        if aim(hull) == "off" then
-            print("[VoyagerAccess] ship: room off screen, camera to slot " .. slot .. "\n")
-            FindFirstOf("STVConstructionPawn"):ForceCameraOnRoom(slot)
-        end
+        camera_moving = true
+        -- Cleared by the game's zoom end, or after 1.5 s at the latest: a
+        -- move the event never reports (hook not installed, or no move
+        -- needed) left the flag on for the session, and every later hover
+        -- pulled the pointer back (Fable review, 2026-10-24).
+        camera_token = camera_token + 1
+        local mine = camera_token
+        ExecuteInGameThreadWithDelay(1500, function()
+            if camera_token == mine then camera_moving = false end
+        end)
+        print("[VoyagerAccess] ship: camera to slot " .. slot .. "\n")
+        FindFirstOf("STVConstructionPawn"):ForceCameraOnRoom(slot)
+        aim(hull)
     end)
 end
 
@@ -532,6 +560,7 @@ end
 -- game); the game's hover then confirms it. Before, nothing moved the
 -- pointer after the camera had arrived, and the room was never said.
 local function camera_arrived()
+    camera_moving = false
     if not target_slot then return end
     local h = hull_at(target_slot)
     if h then
@@ -544,7 +573,7 @@ end
 -- RemoveInfo): the pointer goes after the room again if it is not there.
 local function hover_changed()
     if not target_slot then return end
-    if hover_slot == target_slot then
+    if hover_slot == target_slot and not camera_moving then
         print("[VoyagerAccess] ship: pointer on slot " .. target_slot .. "\n")
         target_slot = nil
         return
@@ -554,12 +583,12 @@ local function hover_changed()
 end
 
 -- Runs fn once the game's info panel shows slot. Only the newest wish per
--- purpose counts (moving on to the next room drops the last one's). A room
--- the pointer never reaches (another ship's pawn, the pointer over a panel,
--- another screen size) would say nothing at all, so after HOVER_FALLBACK_MS
--- fn runs anyway: the room is said without the E text, and the details say
--- "No details shown" (review of firefly82's patch, 2026-10-21; 0.3.67 spoke
--- after 3 s). The camera's move takes about 0.47 s.
+-- purpose counts (moving on to the next room drops the last one's). The
+-- 2 s fallback was the cause of two-second waits at the top of the screen
+-- on 24 October; the game centres every room now (point_at), so the
+-- pointer reaches it and the fallback should never run. It stays as the
+-- bounded backstop the mod keeps behind every event (a room never hovered
+-- would otherwise say nothing at all), and logs when it does run.
 local HOVER_FALLBACK_MS = 2000
 local function when_hovered(slot, fn, purpose)
     purpose = purpose or "say"
@@ -582,8 +611,6 @@ local function when_hovered(slot, fn, purpose)
         local list = hover_waiters[slot]
         if not (list and list[purpose] == fn) then return end
         list[purpose] = nil
-        -- The pointer stops going after it too: later hover changes pulled
-        -- the pointer back to this room for good (GPT review, 2026-10-21).
         if target_slot == slot then target_slot = nil end
         print("[VoyagerAccess] ship: slot " .. slot .. " not hovered in " .. HOVER_FALLBACK_MS .. " ms, " .. purpose .. " anyway\n")
         pcall(fn)
@@ -679,6 +706,26 @@ local function select(r, with_deck, prefix)
         for _, list in pairs(hover_waiters) do list.say = nil end
         print("[VoyagerAccess] ship: " .. text .. "\n")
         speech.say(text, true)
+        return
+    end
+    -- The room, its deck and state are said at once, from the room's own
+    -- data (describe), and the actions ("E: ...") when the game's info
+    -- panel shows the room. Waiting for the panel left the ship view silent
+    -- while the camera moved: a next arrow within the wait dropped the line,
+    -- so at about one key a second nothing was said ("slot ... never
+    -- hovered for say"; firefly82's proposal, 2026-10-24). The actions
+    -- coming is still the sign that E acts on this room. Without the hover
+    -- hook, or with the room already hovered, it is one line as before.
+    if hover_hooked and hover_slot ~= slot then
+        print("[VoyagerAccess] ship: " .. text .. "\n")
+        speech.say(text, true)
+        when_hovered(slot, function()
+            local qa = (hover_slot == slot) and quick_action_text() or nil
+            if qa then
+                print("[VoyagerAccess] ship: actions: " .. qa .. "\n")
+                speech.say(qa, false)
+            end
+        end, "say")
         return
     end
     when_hovered(slot, function()
@@ -1176,7 +1223,12 @@ function M.install()
         -- Not toasts and map markers: they come and go on their own, have no
         -- button, and never moved the pointer.
         cls = cls or ""
-        if cls == "WBP_RoomManagementV2_C" then room_closed_at = os.clock() end
+        -- A ring too: Clear Debris from a ruined room's ring said "Ruined
+        -- room, removing" from the state hook and then the same again in
+        -- the view line after the ring closed (firefly82, 2026-10-23, five
+        -- times). The ring's focused button makes the view "other", so the
+        -- view line always follows a ring and says the new state.
+        if cls == "WBP_RoomManagementV2_C" or cls == "WBP_RadialMenu_C" then room_closed_at = os.clock() end
         if cls:find("Toast", 1, true) or cls:find("PoiEventWidget", 1, true) or cls:find("RoomPrompt", 1, true) then return end
         -- Not if the player has chosen another room meanwhile (select()
         -- makes a new selected table; GPT review, 2026-10-21).

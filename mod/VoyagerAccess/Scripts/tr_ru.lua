@@ -38,6 +38,9 @@ return {
     ["Recommended traits: {s}"] = "Рекомендованные черты: {s}",
     ["{n}: {s}"] = "{n}: {s}",
     ["{n} challenges. {s}"] = "Испытаний: {n}. {s}",
+    ["Recommended trait: {s}"] = "Рекомендованная черта: {s}",
+    ["Challenge {n} of {n}: {s}"] = "Испытание {n} из {n}: {s}",
+    ["Up from the first slot goes through the recommendations and challenges one at a time"] = "Стрелка вверх с первого места перебирает рекомендации и испытания по одному",
     ["Hero {n}"] = "Герой {n}",
     ["skill"] = "навык",
     ["resources"] = "ресурсы",
@@ -262,6 +265,8 @@ return {
     ["Collected"] = "Получено",
     ["Collected: {s}"] = "Получено: {s}",
     ["Crafting {s} started"] = "Начато изготовление: {s}",
+    ["Crafting {s} cancelled"] = "Изготовление отменено: {s}",
+    ["Crafting cancelled"] = "Изготовление отменено",
     ["Not possible"] = "Невозможно",
     ["Cannot leave for this sector yet. {s}"] = "Пока нельзя отправиться в этот сектор. {s}",
     ["Analysis started"] = "Анализ начат",
@@ -925,4 +930,6 @@ return {
     -- whatsnew.lua
     ["Version {s}. "] = "Версия {s}. ",
     ["What's new is not available"] = "Список нового недоступен",
+    ["Backspace closes the tree when no panel is open"] = "Backspace закрывает дерево, когда панель не открыта",
+    ["R repeats the item"] = "R повторяет пункт",
 }

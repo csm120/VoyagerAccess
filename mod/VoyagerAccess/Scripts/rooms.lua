@@ -209,7 +209,9 @@ function M.research_label(path)
     local name = path:match("([^%.]+)$")
     if path:find("WBP_ScienceLab_ResearchModule_C_%d+%.") and (name == "ResearchButton" or name == "AnalysisButton") then
         local by = texts_under(path)
-        local kind = name == "ResearchButton" and "Research" or "Analysis"
+        -- "Research" is looked up by name: it is off the line-wide pass
+        -- (tr.lua, firefly82, 2026-10-24).
+        local kind = name == "ResearchButton" and require("tr").word("Research") or "Analysis"
         local label = kind .. ": " .. (by.ResearchName or "")
         if by.CyclesText and by.CyclesText:match("%d") then
             local n = by.CyclesText:gsub("^#", ""):gsub("^0+(%d)", "%1")
@@ -299,18 +301,13 @@ end
 -- The Mess Hall's ration buttons (WBP_Button_SelectableServing): TitleText
 -- and a rich ContentText "<ColorNegative>-40</>" that the plain label left
 -- out, so both read "..., Morale" with no number (2026-10-14).
+-- Its texts and the ration module's come from those widgets' own trees
+-- (texts_under): searching every text in the game, under four class names
+-- and twice for the ration in use, cost 58 ms per arrow and 490 ms on the
+-- selected ration (timing log, Mess Hall, 2026-10-24).
 function M.serving_label(path)
     if not (path and path:find("WBP_Button_SelectableServing_C_%d+$")) then return nil end
-    local by = {}
-    local prefix = path .. "."
-    for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
-        for _, t in ipairs(FindAllOf(cls) or {}) do
-            local tp = t:IsValid() and path_of(t)
-            if tp and tp:sub(1, #prefix) == prefix and screen.shown(t) then
-                by[tp:match("([^%.]+)$")] = plain(text_of(t))
-            end
-        end
-    end
+    local by = texts_under(path)
     if not by.TitleText then return nil end
     local label = by.TitleText
     if by.ContentText and by.ContentText ~= "" then
@@ -322,21 +319,33 @@ function M.serving_label(path)
     local ok, sel = pcall(function() return b and b:IsValid() and b:GetSelected() end)
     if ok and sel then
         label = label .. ", selected"
-        -- One widget can be found under two class names: keep one text per
-        -- name, said description first, then per crew, then for all crew.
+        -- The ration module, one of the room window's own modules: said
+        -- description first, then per crew, then for all crew. Premium
+        -- rations show their cost instead of a description.
         local texts = {}
-        for _, cls in ipairs({ "TextBlock", "RichTextBlock", "CommonTextBlock", "CommonRichTextBlock" }) do
-            for _, t in ipairs(FindAllOf(cls) or {}) do
-                local tp = t:IsValid() and path_of(t)
-                -- Premium rations show their cost instead of a description.
-                local name = tp and tp:match("([^%.]+)$") or ""
+        local win = open_window()
+        local function from_module(m)
+            if m:GetClass():GetFName():ToString() ~= "WBP_MessHall_ServingSizeModule_C" then return end
+            local mp = path_of(m)
+            if not (mp and screen.shown(m)) then return end
+            local mt = texts_under(mp)
+            local names = {}
+            for name in pairs(mt) do names[#names + 1] = name end
+            table.sort(names)
+            for _, name in ipairs(names) do
                 local key = name:find("DescriptionText$") and 1 or (name == "FedCrewPerResourceText" and 2)
                     or (name == "RequiredResourceAmountForCrewText" and 3) or nil
-                if tp and key and not texts[key] and tp:find("WBP_MessHall_ServingSizeModule_C_%d+%.") and screen.shown(t) then
-                    local d = plain(text_of(t))
-                    if d ~= "" then texts[key] = d end
-                end
+                if key and not texts[key] and mt[name] ~= "" then texts[key] = mt[name] end
             end
+        end
+        -- USTVRoomManagementV2's module fields (as each_module below).
+        for _, field in ipairs({ "PowerModules", "RoomInteractionModules", "CrewModules" }) do
+            pcall(function()
+                win[field]:ForEach(function(_, e)
+                    local m = e:get()
+                    if m and m:IsValid() then pcall(from_module, m) end
+                end)
+            end)
         end
         for key = 1, 3 do
             if texts[key] then label = label .. ". " .. texts[key] end
@@ -480,7 +489,7 @@ function M.skills_of(sheet)
             local im = a.AttributeIcon
             if im and im:IsValid() then
                 local ro = im.Brush.ResourceObject
-                if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
+                if ro and ro:IsValid() then skill = require("text").skill_icon_name(ro:GetFName():ToString()) or skill end
             end
             -- The number shown (AttributeValue): an injured hero's is
             -- reduced, Joe Carey's Command 13 where CurrentValue said 26
@@ -1094,12 +1103,29 @@ function M.switch_tab(dir)
     -- said: focus had stayed on the ally the whole time, so nothing changed
     -- to speak. The item is said again when focus did not move.
     local okb, before = pcall(function() return require("focus").current_path() end)
-    M.tab_switched_at = os.clock()
-    if dir < 0 then w:SelectPreviousTab() else w:SelectNextTab() end
     local wp = path_of(w) .. "."
+    local tab_buttons = {}
     for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
         local p = b:IsValid() and path_of(b)
         if p and p:sub(1, #wp) == wp and p:find("TabButton", 1, true) and screen.shown(b) then
+            tab_buttons[#tab_buttons + 1] = b
+        end
+    end
+    -- A window with one tab (Life Support): Left and Right said
+    -- "Management tab" each time (firefly82, 2026-10-23). There is nothing
+    -- to switch to, so the focused button is said again, as Up and Down do
+    -- on a lone button (focus.lua say_if_alone).
+    if #tab_buttons == 1 then
+        local okl, label = pcall(function() return require("focus").current_label() end)
+        if okl and label and label ~= "" then
+            require("speech").say(label, true)
+            return true
+        end
+    end
+    M.tab_switched_at = os.clock()
+    if dir < 0 then w:SelectPreviousTab() else w:SelectNextTab() end
+    for _, b in ipairs(tab_buttons) do
+        do
             local ok, sel = pcall(function() return b:GetSelected() end)
             if ok and sel then
                 local name = plain(text_of(b.ButtonName))

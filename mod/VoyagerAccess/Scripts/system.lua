@@ -56,6 +56,14 @@ function M.install()
     local popups = require("popups")
     popups.on_widget("WBP_PoiEventWidget_C", add_map_widget)
     popups.on_widget("WBP_SolarSystemWorldSpaceWidget_C", add_map_widget)
+    -- The game's detail panel read after Enter selected a point (M.enter).
+    popups.on_read(function(p, cls)
+        if tostring(p):find("POIDetailView", 1, true) or tostring(cls):find("POIDetailView", 1, true) then
+            pcall(M.on_panel_read)
+        end
+    end)
+    -- Travel from the game's own signals (hooks installed once).
+    pcall(function() M.hook_travel() end)
 end
 
 -- The markers of one point, gone ones dropped.
@@ -597,6 +605,8 @@ end
 M.last_move = -100   -- os.clock() of the last Up or Down on the map (help.lua)
 function M.step(dir)
     crumb.at("system: step")
+    -- The inspect view has nothing to move through (M.inspect_view).
+    if M.inspect_view() then return speech.say("Backspace goes back.", true) end
     M.last_move = os.clock()
     local list = points()
     if #list == 0 then
@@ -613,6 +623,7 @@ end
 
 -- Home and End: the nearest and the farthest point.
 function M.edge(last)
+    if M.inspect_view() then return speech.say("Backspace goes back.", true) end
     local list = points()
     if #list == 0 then return end
     select(list, last and #list or 1)
@@ -623,7 +634,18 @@ end
 -- 2026-10-10). Set course puts the camera on the point, as gamepad hovering
 -- does, then fires the set-course input's own handlers: proven 2026-10-11,
 -- Voyager moved toward the selected Class P planet.
-local ACTIONS = { "Scan", "Set course" }
+-- Inspect is the panel's third button (InspectPOIButton, firefly82's review
+-- 6.3), listed when the game shows it for the selected point; its name is
+-- the game's own button text.
+local BASE_ACTIONS = { "Scan", "Set course" }
+local ACTIONS = BASE_ACTIONS
+local inspect_label = nil
+
+local function item_name(a)
+    if a == "Inspect" then return inspect_label or a end
+    -- tr.word: Scan
+    return require("tr").word(a)
+end
 
 function M.menu_open()
     return menu ~= nil
@@ -635,375 +657,180 @@ local function selected_point()
     return i and list[i] or nil
 end
 
--- Set course sometimes did nothing (Casey, 2026-10-11, not caught in a
--- log; it worked on the next try). The game has a silent travel error
--- (STVUserError_CanTravelSilent, SetCourseErrorSilent) next to the ones it
--- shows as toasts, and set course is a hold-to-charge input the mod fires
--- in one go. Cause not known yet, so: watch whether Voyager starts moving
--- or the pawn has a travel target, say so if neither happens within six
--- seconds, and log what the pawn had selected for the next diagnosis.
-local function short(o)
-    return (o and o:IsValid()) and o:GetFullName():match("([^%.]+)$") or "none"
+-- Set course sometimes did nothing (Casey, 2026-10-11): set course is a
+-- hold-to-charge input, and the mod fired it in one go. It is held now
+-- (set_course below); the game has a silent travel error
+-- (STVUserError_CanTravelSilent) next to the ones it shows as toasts, so a
+-- course that does not start is still said.
+
+-- Travel the way the game does it (outside review, 24 October 2026).
+-- The course is set as a player sets it: the pointer on the point (as in the
+-- ship view) and the game's own Set course input, IA_Sector_SetCourse,
+-- held; it takes a hold of 0.6 s (InputTriggerHold, one shot). The game
+-- then takes the point under the pointer, fills PoiSelectedForTravel itself
+-- and flies (probe r2, 24 October: with the pointer elsewhere it did
+-- nothing at all). What is said comes from the game: the ship starting to
+-- move (STVSectorPawn:OnShipMovementStarted), the journey's share of the
+-- trip (OnTravelProgress) and its end (OnTravelCompleted). No
+-- DeclareTravel, no distances, no second try behind the player's back.
+-- OnTravelCompleted's flag is no sign of an event: the point's event came
+-- with it false at five points in a row (24 October).
+local trip = nil      -- { name, path, progress, half }: the trip under way
+local pending = nil   -- { name, path }: a course the mod is setting now
+local waiting = nil   -- { name, path, busy, token }: after an arrival
+local set_course      -- below run(), which calls it
+
+local function busy_now()
+    for _, w in ipairs(require("popups").open_windows()) do
+        -- Map markers and room prompts are windows too and always up; a
+        -- point's detail panel holds nothing back either.
+        if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true)
+            and not w:find("DetailView", 1, true) then return true end
+    end
+    return require("dialogue").active() and true or false
 end
 
--- "Arrived at Shipwreck" once Voyager is there (Casey, 2026-10-11: arriving
--- where nothing opens said nothing). Voyager circles a point once it gets
--- there, so its position keeps changing but its distance does not (900 from
--- a Class Y planet for 30 s, 2026-10-11). Arrived means the distance to the
--- target held within 5 units for two checks a second apart and is clearly
--- less than at the start (the game can pause mid-flight for a message). The
--- watch gives up after five minutes; a new course replaces it.
-local watch_id = 0
-
-local function target_distance(target)
-    local v = voyager()
-    local a = v and v:K2_GetActorLocation()
-    local t = StaticFindObject(target)
-    local b = t and t:IsValid() and t:K2_GetActorLocation()
-    if not (a and b) then return nil end
-    return math.sqrt((a.X - b.X) ^ 2 + (a.Y - b.Y) ^ 2)
-end
-
--- The trip under way, for L: { name, start_d, d, still }. A trip took
--- several minutes in the VM (2026-10-14) and the watch gave up after five
--- without a word, so a long trip and a stalled game sounded the same
--- (Casey asked how to tell them apart). It now says "Under way", "Halfway
--- to", and keeps watching for up to 30 minutes; L reports the progress and
--- says when the ship is not moving.
-local travel = nil
-local travel_tick = nil
-
--- The journey's own progress and end (firefly82's review, 2026-10-23):
--- OnTravelProgress gives the share of the trip done, OnTravelCompleted
--- comes when the ship stops. The distance watch below stays as the
--- fallback for when the hooks do not fire.
-local travel_hooked = false
-local function hook_travel()
-    if travel_hooked then return end
-    local okp = pcall(RegisterHook, "/Script/STVoyager.STVJourneySubsystem:OnTravelProgress", function(_, p)
-        pcall(function()
-            if not travel then return end
-            if travel.progress == nil then print("[VoyagerAccess] course: progress event\n") end
-            travel.progress = p:get()
-        end)
+-- Whether the point at path has an event waiting (ESTVEventState 3,
+-- Activatable).
+local function event_waiting(path)
+    local a = StaticFindObject(path)
+    if not (a and a:IsValid()) then return false end
+    local c = poi_of(a)
+    local es = FindFirstOf("STVEventSubsystem")
+    if not (c and es and es:IsValid()) then return false end
+    local yes = false
+    c.EventIds:ForEach(function(_, e)
+        if es:GetEventStateById(e:get()) == 3 then yes = true end
     end)
-    local okc = pcall(RegisterHook, "/Script/STVoyager.STVJourneySubsystem:OnTravelCompleted", function(_, e)
-        local event = false
-        pcall(function() event = e:get() and true or false end)
-        ExecuteInGameThread(function()
-            if not travel then return end
-            print("[VoyagerAccess] course: travel completed event (arrival event " .. tostring(event) .. ")\n")
-            travel.completed = true
-            travel.completed_at = os.clock()
-            -- The point's event window opens about 0.25 s after this, even
-            -- with the flag false (Class P planet's Frozen Borg Sphere, VM,
-            -- 2026-10-23, "Arrived" was said before it); a second later
-            -- the tick sees it and stays quiet.
-            local t = travel_tick
-            if t then ExecuteInGameThreadWithDelay(1000, t) end
-        end)
-    end)
-    travel_hooked = okp or okc
-    print("[VoyagerAccess] course: travel hooks " .. tostring(okp) .. "," .. tostring(okc) .. "\n")
+    return yes
 end
 
--- After an arrival: a point whose event is still waiting (state 3) once
--- the windows that were up have closed did not open it, and that is said.
--- Also after a conversation that opened as the ship arrived: Lieutenant
--- Lani's damage report came at the Abandoned Borg Cube, the cube's own
--- event never opened, and nothing was said (VM, 2026-10-23).
-local function watch_waiting(name, target)
-    -- Checked once the other windows are closed: the mission
-    -- offer was still open 5 s after arriving at the Trading
-    -- Station, and nothing was said (Q Trial, VM, 2026-10-18).
-    local tries = 0
-    local my_watch = watch_id
-    local function busy_now()
-        for _, w in ipairs(require("popups").open_windows()) do
-            if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then return true end
-        end
-        return require("dialogue").active() and true or false
-    end
-    -- Only a window that was really up counts: Friendship One's
-    -- Class O planet keeps a waiting event that its scan starts,
-    -- and with nothing open the hint blamed "another window" and
-    -- sent the player away (VM, 2026-10-21).
-    local was_busy = false
-    pcall(function() was_busy = busy_now() end)
-    local function check()
-        tries = tries + 1
-        -- Not once a new course has been set.
-        if watch_id ~= my_watch then return end
-        pcall(function()
-            local a = StaticFindObject(target)
-            if not (a and a:IsValid()) then return end
-            if busy_now() then
-                was_busy = true
-                if tries < 150 then ExecuteInGameThreadWithDelay(2000, check) end
-                return
-            end
-            if not was_busy then return end
-            local es = FindFirstOf("STVEventSubsystem")
-            local waiting = false
-            for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
-                local o = c:IsValid() and c:GetOwner()
-                if o and o:IsValid() and o:GetFullName() == a:GetFullName() then
-                    c.EventIds:ForEach(function(_, e)
-                        if es:GetEventStateById(e:get()) == 3 then waiting = true end
-                    end)
-                end
-            end
-            if not waiting then return end
-            print("[VoyagerAccess] course: event waiting at " .. name .. " did not open\n")
-            -- After the view's own announcement: the window that
-            -- had just closed brought "System map. Graviton
-            -- Ellipse..." 0.8 s later, which cut the hint off
-            -- (VM, 2026-10-18).
-            ExecuteInGameThreadWithDelay(2000, function()
-                if watch_id ~= my_watch then return end
-                -- No cause: "because another window was up" was the
-                -- mod's guess, the game gives no reason (firefly82's
-                -- review; Casey, 2026-10-23).
-                speech.say("The event at " .. name .. " did not start. Set course to another point and back to start it.", false)
-            end)
-        end)
-    end
-    ExecuteInGameThreadWithDelay(4000, check)
-end
-
-local function watch_arrival(name, target, start_d)
-    pcall(hook_travel)
-    watch_id = watch_id + 1
-    local mine = watch_id
-    local last, still, left, halfway = nil, 0, 1800, false
-    travel = { name = name, start_d = start_d, d = start_d, still = 0, watch = mine }
-    local tick
-    tick = function(once)
-        -- Ended already (arrived, or a new course).
-        if mine ~= watch_id or not travel or travel.watch ~= mine then return end
-        -- An event at the destination opened before the ship stopped, and
-        -- "Halfway" and "Arrived" were then said over it (2026-10-14). The
-        -- event says where you are; stop watching quietly.
-        local oke, event_open = pcall(function()
-            for _, p in ipairs(require("popups").open_windows()) do
-                if p:find("WBP_POIMultipleChoice_C", 1, true) then return true end
-            end
-            return false
-        end)
-        -- An event can also open mid-trip ("Lost Starship" after "Halfway",
-        -- full game, VM, 2026-10-15), and the ship then arrived with nothing
-        -- said. While the ship is still well short of the target, the watch
-        -- waits out the event and carries on. (The journey reports "not
-        -- travelling" while the event is open, so distance decides; the
-        -- ship stops 900 from a point, so more than 1200 is still on the way.)
-        if oke and event_open then
-            local okd2, d2 = pcall(target_distance, target)
-            -- After the journey's own end it is the arrival event.
-            local far = okd2 and d2 and d2 > 1200 and not travel.completed
-            if far then
-                if not travel.paused then
-                    travel.paused = true
-                    print("[VoyagerAccess] course: event opened on the way to " .. name .. ", waiting\n")
-                end
-                last, still = nil, 0
-                left = left - 1
-                if once then return end
-                if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
-                return
-            end
-            travel = nil
-            print("[VoyagerAccess] course: event opened at " .. name .. "\n")
-            return
-        end
-        travel.paused = nil
-        -- A conversation on arrival ("Harry Kim: Captain, we reached our
-        -- destination. Orders?") came before "Arrived at", which was then
-        -- said over its choices (Casey's machine, 2026-10-15). The
-        -- conversation says where you are; stop quietly once the ship has
-        -- stopped and it is up.
-        local okd, talking = pcall(function() return require("dialogue").active() ~= nil end)
-        if okd and talking then
-            local okd3, d3 = pcall(target_distance, target)
-            local far = okd3 and d3 and d3 > 1200
-            -- A big planet's orbit is farther out: Avery III's arrival
-            -- conversation came at 1,598, and "Arrived" was said over it
-            -- (VM, 2026-10-16). A ship that is no longer travelling is there.
-            local okt, trav = pcall(function()
-                local j = FindFirstOf("STVJourneySubsystem")
-                return j and j:IsValid() and j:IsTravelling()
-            end)
-            -- Within a big planet's orbit range, not a call mid-trip.
-            -- On the Sector Map distances are far larger: within a tenth of
-            -- the trip counts too ("Arrived at System 4544.4" was said over
-            -- Harry Kim's arrival line, VM, 2026-10-16).
-            if far and okt and trav == false and start_d and d3 < start_d - 50
-                and (d3 <= 2500 or d3 <= start_d * 0.1) then far = false end
-            if travel.completed then far = false end
-            if not far then
-                travel = nil
-                print("[VoyagerAccess] course: conversation opened at " .. name .. "\n")
-                watch_waiting(name, target)
-                return
-            end
-        end
-        local ok, d = pcall(target_distance, target)
-        if not (ok and d) then travel = nil return end
-        if last and math.abs(d - last) <= 5 then still = still + 1 else still = 0 end
-        last = d
-        -- A mission offer (WBP_MultipleChoiceWidget) pauses the trip, and
-        -- the stopped ship was taken for an arrival: "Arrived" was said 5 s
-        -- into an 8-cycle trip (full game, VM, 2026-10-14). The game still
-        -- reports the trip as under way then.
-        local okj, moving = pcall(function()
-            local j = FindFirstOf("STVJourneySubsystem")
-            return j and j:IsValid() and j:IsTravelling()
-        end)
-        if okj and moving == true then still = 0 end
-        -- A short hop ends at about the distance it started from (Voyager
-        -- orbits a point some 900 out): from a Class H planet to the cloud
-        -- beside it, "Voyager did not move" was said after the trip (VM,
-        -- 2026-10-21). The game's own travelling flag, seen on and then
-        -- off, is an arrival too.
-        if okj and moving == true then travel.seen_moving = true end
-        local hopped = travel.seen_moving and okj and moving == false
-        -- The No Way Back warning stops the ship until it is answered:
-        -- "Arrived at Borg Cube Debris Field" was said while it waited for
-        -- YES (campaign sector 6, VM, 2026-10-17).
-        local okn, noway = pcall(function()
-            for _, w in ipairs(FindAllOf("WBP_NoWayBackWidget_C") or {}) do
-                if w:IsValid() and require("screen").shown(w) then return true end
-            end
-            return false
-        end)
-        if okn and noway then still = 0 end
-        travel.d, travel.still = d, still
-        -- A battle that interrupts the trip: "Halfway to" and "Arrived at"
-        -- were said over the battle setup (Q Trial, VM, 2026-10-14).
-        local okb, battle = pcall(function() return require("combat").screen_up() end)
-        battle = okb and battle
-        local done = travel.completed and os.clock() - travel.completed_at >= 0.9
-        if done or (still >= 2 and (not start_d or d <= start_d * 0.9 or hopped)) then
-            travel = nil
-            print("[VoyagerAccess] course: arrived at " .. name .. (battle and " (in battle, not said)" or "") .. "\n")
-            if not battle then speech.say("Arrived at " .. name, false) end
-            -- Arriving while another window is up (a mission offer that
-            -- came mid-trip) skips the point's own event: the Class Y
-            -- planet's opened only on a second visit (Q Trial, VM,
-            -- 2026-10-18; a forum player hit it after switching screens).
-            -- The point keeps a waiting event (Activatable) and nothing
-            -- opens. A sighted player sees no event either, so this only
-            -- says what happened and what the game wants.
-            if not battle then watch_waiting(name, target) end
-            return
-        end
-        -- No progress at all and the game not travelling: the trip ended at
-        -- once. Avery III (a story planet, Voyager already in its orbit
-        -- 1,598 from the centre) took the course and never moved, and I
-        -- said "0 percent of the way, not moving" for good (VM, 2026-10-16).
-        if still >= 4 and start_d and d > start_d * 0.9 and not (okj and moving == true) and not battle and not hopped then
-            travel = nil
-            print("[VoyagerAccess] course: no movement towards " .. name .. "\n")
-            -- Not over an arrival conversation or a window: it was said over
-            -- Avery III's "Send away team" choice (VM, 2026-10-16).
-            local busy = (okd and talking) or false
-            pcall(function()
-                for _, w in ipairs(require("popups").open_windows()) do
-                    -- Map markers are windows too and always up here.
-                    if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then busy = true end
-                end
-            end)
-            if not busy then speech.say("Voyager did not move. It may already be at " .. name .. ".", false) end
-            return
-        end
-        -- The game's share of the trip when its hook gives one.
-        local past_half = travel.progress and travel.progress >= 0.5
-        if travel.progress == nil then past_half = start_d and start_d > 0 and d <= start_d / 2 end
-        if not halfway and past_half then
-            halfway = true
-            if not battle then speech.say("Halfway to " .. name, false) end
-        end
-        left = left - 1
-        if once then return end
-        if left > 0 then ExecuteInGameThreadWithDelay(1000, tick) else travel = nil end
-    end
-    travel_tick = function() tick(true) end
-    ExecuteInGameThreadWithDelay(1000, tick)
-end
-
--- For L: "Traveling to Class E planet, 40 percent of the way", or nil.
-function M.travel_status()
-    if not travel then return nil end
-    local text = "Traveling to " .. travel.name
-    if travel.progress or (travel.start_d and travel.start_d > 0 and travel.d) then
-        local share = travel.progress or (1 - travel.d / travel.start_d)
-        local pct = math.floor(share * 100 + 0.5)
-        text = text .. string.format(", %d percent of the way", math.max(0, math.min(100, pct)))
-    end
-    if travel.still >= 5 then text = text .. ", not moving" end
-    return text
-end
-
-local fire_course   -- defined after run(); verify_course retries through it
-
--- Sets a course with STVJourneySubsystem:DeclareTravel(ship, point), when
--- CanTravel allows it. True when the call was made; it then checks that the
--- trip started, says "Under way" and watches for the arrival.
-function M.declare_travel(name, target, start_d)
-    local ok, started = pcall(function()
-        local j = FindFirstOf("STVJourneySubsystem")
-        local ship = voyager()
-        local poi = nil
-        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
-            if c:IsValid() and path_of(c):find("PersistentLevel", 1, true) then
-                local a = c:GetOwner()
-                if a and a:IsValid() and path_of(a) == target then poi = c end
-            end
-        end
-        if not (j and j:IsValid() and ship and poi) then return false end
-        if not j:CanTravel(ship, poi, {}) then return false end
-        print("[VoyagerAccess] course: DeclareTravel " .. name .. "\n")
-        j:DeclareTravel(ship, poi)
-        return true
-    end)
-    if not (ok and started) then
-        print("[VoyagerAccess] course: DeclareTravel not possible (" .. tostring(started) .. ")\n")
-        return false
-    end
+-- After an arrival the point's event can be left waiting. The game holds it
+-- back while a report is up and opens it when the report closes (energy
+-- loss reports at the Kazon hunter and the Vidiian interceptor, a
+-- construction report at a Class G planet, 24 October), but not when a
+-- second message follows the report or a decision is up (Talaxian freighter
+-- and Class L planet, 23 October; Class E planet twice, 24 October); there,
+-- as for a sighted player, only a trip away and back starts it. Looked at
+-- when the game says something changed (a window read or closed, a
+-- transition finished), not in a loop; each look waits 1.5 s once,
+-- because the game opens a held-back event within that second.
+local function look_waiting()
+    local w = waiting
+    if not w then return end
+    w.token = w.token + 1
+    local mine = w.token
     ExecuteInGameThreadWithDelay(1500, function()
+        if waiting ~= w or w.token ~= mine then return end
         pcall(function()
-            local j = FindFirstOf("STVJourneySubsystem")
-            local d = target_distance(target)
-            local moving = j and j:IsValid() and j:IsTravelling()
-            -- Only real movement counts: Avery III (a story planet, Voyager
-            -- 1,598 from its centre) took the call, did not move, and was
-            -- announced "Under way" because its distance drifted (VM,
-            -- 2026-10-16). Then the mouse route runs, which has its own
-            -- check and messages.
-            if moving or (d and start_d and d < start_d - 50) then
-                print("[VoyagerAccess] course: under way (DeclareTravel)\n")
-                speech.say("Under way to " .. name, false)
-                watch_arrival(name, target, start_d)
-            else
-                -- Not with a conversation or a window up: the arrival
-                -- conversation at a planet Voyager is already orbiting would
-                -- take the click (review, 2026-10-16).
-                local busy = false
-                pcall(function() busy = require("dialogue").active() ~= nil end)
-                pcall(function()
-                    for _, w in ipairs(require("popups").open_windows()) do
-                        if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then busy = true end
-                    end
-                end)
-                print(string.format("[VoyagerAccess] course: DeclareTravel did not move (d=%s, start=%s)%s\n", tostring(d), tostring(start_d), busy and ", a window is up" or ", trying the mouse"))
-                if busy then return end
-                fire_course(name, target, 1)
-            end
+            if busy_now() then w.busy = true return end
+            waiting = nil
+            -- Only after a window that was really up: Friendship One's Class O
+            -- planet keeps a waiting event that its scan starts (VM,
+            -- 2026-10-21).
+            if not (w.busy and event_waiting(w.path)) then return end
+            print("[VoyagerAccess] course: event waiting at " .. w.name .. " did not open\n")
+            speech.say("The event at " .. w.name .. " did not start. Set course to another point and back to start it.", false)
         end)
     end)
-    return true
 end
+
+local function battle_up()
+    local ok, up = pcall(function() return require("combat").screen_up() end)
+    return ok and up and true or false
+end
+
+-- The ship has started to move. Its target from the game; the mod's own
+-- name for it when the mod set the course.
+local function on_started()
+    local name, path = nil, nil
+    if pending then name, path = pending.name, pending.path end
+    pcall(function()
+        local pw = pawn()
+        local t = pw and pw.PoiSelectedForTravel
+        if t and t:IsValid() then
+            local a = t:GetOwner()
+            if a and a:IsValid() and path_of(a) ~= path then path, name = path_of(a), name_of(a) end
+        end
+    end)
+    pending, waiting = nil, nil
+    if not name then return end
+    trip = { name = name, path = path, progress = 0, half = false }
+    print("[VoyagerAccess] course: under way to " .. name .. "\n")
+    if not battle_up() then speech.say("Under way to " .. name, false) end
+end
+
+local function on_progress(share)
+    local t = trip
+    if not t then return end
+    t.progress = share
+    if t.half or share < 0.5 then return end
+    t.half = true
+    if not battle_up() then speech.say("Halfway to " .. t.name, false) end
+end
+
+-- The trip has ended. A point's event, a report or an arrival
+-- conversation can come right after; each is read when it comes and cuts
+-- this line off.
+local function on_completed()
+    local t = trip
+    trip = nil
+    if not t then return end
+    local battle = battle_up()
+    print("[VoyagerAccess] course: arrived at " .. t.name .. (battle and " (in battle, not said)" or "") .. "\n")
+    if battle then return end
+    speech.say("Arrived at " .. t.name, false)
+    waiting = { name = t.name, path = t.path, busy = false, token = 0 }
+    look_waiting()
+end
+
+-- Installed once (M.install). Hooks on the journey's and the pawn's native
+-- functions; probe r1 saw all of them fire on every trip (24 October).
+function M.hook_travel()
+    if M.travel_hooked then return end
+    M.travel_hooked = true
+    local P = "/Script/STVoyager.STVSectorPawn:"
+    local J = "/Script/STVoyager.STVJourneySubsystem:"
+    local ok1 = pcall(RegisterHook, P .. "OnShipMovementStarted", function()
+        ExecuteInGameThread(function() pcall(on_started) end)
+    end)
+    local ok2 = pcall(RegisterHook, J .. "OnTravelProgress", function(_, p)
+        local share = nil
+        pcall(function() share = p:get() end)
+        -- Every frame of a trip: only a number stored, said once at half.
+        if type(share) == "number" and trip and not trip.half and share >= 0.5 then
+            ExecuteInGameThread(function() pcall(on_progress, share) end)
+        elseif type(share) == "number" and trip then
+            trip.progress = share
+        end
+    end)
+    local ok3 = pcall(RegisterHook, J .. "OnTravelCompleted", function()
+        ExecuteInGameThread(function() pcall(on_completed) end)
+    end)
+    local ok4 = pcall(RegisterHook, J .. "OnStateTransitionFinished", function()
+        ExecuteInGameThread(function() pcall(look_waiting) end)
+    end)
+    local popups = require("popups")
+    -- A point's detail panel and its parts (WBP_POIDetailView_C,
+    -- WBP_PlanetDetailView_C, ...) are no window that holds an event back.
+    popups.on_read(function(_, cls)
+        if waiting and not tostring(cls):find("DetailView", 1, true) then waiting.busy = true end
+    end)
+    popups.on_close(function() pcall(look_waiting) end)
+    print(string.format("[VoyagerAccess] course: travel hooks %s %s %s %s\n", tostring(ok1), tostring(ok2), tostring(ok3), tostring(ok4)))
+end
+
+-- For L: "Traveling to Class E planet, 40 percent of the way", or nil. The
+-- share is the game's own (OnTravelProgress).
+function M.travel_status()
+    local t = trip
+    if not t then return nil end
+    local pct = math.floor((t.progress or 0) * 100 + 0.5)
+    return "Traveling to " .. t.name .. string.format(", %d percent of the way", math.max(0, math.min(100, pct)))
+end
+
 -- The path of the point the player's ship is at, "" while travelling, nil
--- when the ship cannot say (then the distances decide).
+-- when the ship cannot say (then the game decides when the course is set).
 local function ship_at_point()
     local out = nil
     pcall(function()
@@ -1040,88 +867,6 @@ local function already_at(name, actor)
     end)
     return text
 end
-local function verify_course(name, target, attempt)
-    local ship = voyager()
-    local start = ship and ship:K2_GetActorLocation()
-    if not start then return end
-    local x0, y0 = start.X, start.Y
-    local pw = pawn()
-    local ok0, d0 = pcall(target_distance, target)
-    local start_d = ok0 and d0 or nil
-    print(string.format("[VoyagerAccess] course: selected=%s travel=%s distance=%s\n",
-        short(pw and pw.SelectedActor), short(pw and pw.PoiSelectedForTravel), tostring(start_d)))
-    -- Under way means getting closer to the chosen point, not just moving.
-    -- (A stale SelectedActor, seen in Pawsi's log, does not redirect the
-    -- course: tested 2026-10-11 with Class P selected and Class Y chosen,
-    -- Voyager flew to Class Y.)
-    local function check(tries)
-        local ok, done = pcall(function()
-            -- Already there: Ocampa was 900 away and its dialogue opened at
-            -- once, and the mod said the course was not set and set it
-            -- again during the dialogue (2026-10-14). A dialogue or an
-            -- event opening means the trip is over.
-            if require("dialogue").active() then return "arrived" end
-            for _, p in ipairs(require("popups").open_windows()) do
-                if p:find("WBP_POIMultipleChoice_C", 1, true) then return "arrived" end
-            end
-            -- The game's own travel target, when it can be read: a getting-
-            -- closer test alone said "under way" while the planet's orbit
-            -- brought it nearer and no course was set (2026-10-14).
-            local q = pawn()
-            local t = q and q.PoiSelectedForTravel
-            local okt, owner = pcall(function()
-                if not (t and t:IsValid()) then return "" end
-                return path_of(t:GetOwner())
-            end)
-            if okt then return owner == target end
-            if start_d then
-                local d = target_distance(target)
-                return d ~= nil and d < start_d - 1
-            end
-            local v = voyager()
-            local at = v and v:K2_GetActorLocation()
-            return at ~= nil and ((at.X - x0) ^ 2 + (at.Y - y0) ^ 2) > 1
-        end)
-        if ok and done == "arrived" then
-            print("[VoyagerAccess] course: at " .. name .. " (dialogue or event)\n")
-            return
-        end
-        if ok and done then
-            print("[VoyagerAccess] course: under way\n")
-            speech.say("Under way to " .. name, false)
-            watch_arrival(name, target, start_d)
-            return
-        end
-        if tries > 1 then
-            ExecuteInGameThreadWithDelay(2000, function() check(tries - 1) end)
-            return
-        end
-        local q = pawn()
-        print(string.format("[VoyagerAccess] course: not set (selected=%s travel=%s, attempt %s)\n",
-            short(q and q.SelectedActor), short(q and q.PoiSelectedForTravel), tostring(attempt)))
-        -- Within arrival range (900, seen at Ocampa and at a Class Y planet
-        -- after its event): the game sets no course because Voyager is
-        -- there; "was not set" sent Casey round again (2026-10-14).
-        if start_d and start_d <= 1000 then
-            speech.say(already_at(name, target), false)
-            return
-        end
-        if attempt == 1 then
-            fire_course(name, target, 2)
-            return
-        end
-        -- Last: the journey's own DeclareTravel, with no mouse at all. A
-        -- forum player's game never picked up the point under the cursor
-        -- (2560x1600 at 100 percent, one screen, cursor exactly on the
-        -- point, "selected=none" every time, 2026-10-16); DeclareTravel
-        -- flew Voyager there with the cursor parked in a corner (demo, VM).
-        -- Only when the game's own CanTravel agrees.
-        if attempt == 2 and M.declare_travel(name, target, start_d) then return end
-        speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
-    end
-    ExecuteInGameThreadWithDelay(2000, function() check(3) end)
-end
-
 local function run(action, p)
     local pw = pawn()
     if not pw then return end
@@ -1184,55 +929,17 @@ local function run(action, p)
             end)
         end)
     else
-        -- The game's own travel call first, no mouse (Casey, 2026-10-16:
-        -- "why not do everything without the reliance on the mouse"). The
-        -- mouse route showed no confirmation of its own on a Sector Map trip
-        -- either, so nothing is skipped. When CanTravel says no, the mouse
-        -- route runs, so the game can show its own reason.
-        local d0 = target_distance(p.path)
         -- The ship says where it is: its CurrentPOI, while not travelling
-        -- (CurrentPOI already names the destination as a trip starts;
-        -- firefly82's probe, 2026-10-23). The distances below are the
-        -- fallback when the ship cannot be asked.
+        -- (firefly82's probe, 2026-10-23). Otherwise the game decides; a
+        -- course it does not take is said below.
         local here = ship_at_point()
-        -- Trusted only when it names a listed point (or none while travelling).
-        if here and here ~= "" then
-            local known = false
-            pcall(function() for _, q in ipairs(points()) do if q.path == here then known = true end end end)
-            if not known then here = nil end
-        end
-        if here ~= nil then
-            if here == p.path then
-                print("[VoyagerAccess] course: already at (the ship's CurrentPOI)\n")
-                speech.say(already_at(name, p.actor), true)
-                return
-            end
-            d0 = d0 and math.max(d0, 1001)
-        end
-        -- Only the point Voyager is really at: a Class H planet beside the
-        -- cloud Voyager had stopped at was "already at" too, and no course
-        -- could be set to it (Caretaker, VM, 2026-10-21).
-        local nearest = true
-        if d0 and d0 <= 1000 then
-            pcall(function()
-                for _, q in ipairs(points()) do
-                    if q.path ~= p.path then
-                        local dq = target_distance(q.path)
-                        if dq and dq < d0 then nearest = false end
-                    end
-                end
-            end)
-        end
-        if d0 and d0 <= 1000 and nearest then
-            -- Only this, not "Setting course for X" first (Caretaker, VM,
-            -- 2026-10-22).
+        if here and here ~= "" and here == p.path then
+            print("[VoyagerAccess] course: already at (the ship's CurrentPOI)\n")
             speech.say(already_at(name, p.actor), true)
             return
         end
         speech.say("Setting course for " .. name, true)
-        pcall(function() pw:SetFocusPoint(p.actor) end)   -- the camera follows, as before
-        if M.declare_travel(name, p.path, d0) then return end
-        fire_course(name, p.path, 1)
+        set_course(name, p.path)
     end
 end
 
@@ -1314,49 +1021,350 @@ local function on_screen(actor)
     return yes
 end
 
-fire_course = function(name, path, attempt, zooms)
+-- The game's Set course input held, as a player holds the mouse button or
+-- the gamepad's A on the point: injected every 20 ms for 0.8 s (the game
+-- wants 0.6 s), then ended by its handle and, as a second guard, by a step
+-- count (a loop without its handle ran on, probe 2026-10-20).
+local SET_COURSE = nil
+-- Injected on every game tick (a 1 ms loop runs once a tick), for 1 s: the
+-- game's hold trigger counts held time from tick to tick, and a 20 ms loop
+-- sent 10 injections over 0.8 s in the VM's low frame rate, so a tick
+-- without one could reset the hold; the game took no course on about 2 of
+-- 5 tries in the demo (2026-10-24).
+local HOLD_MS, STEP_MS = 1000, 1
+local function hold_set_course()
+    local sub = nil
+    for _, s in ipairs(FindAllOf("EnhancedInputLocalPlayerSubsystem") or {}) do
+        if s:IsValid() and path_of(s):find("^/Engine/Transient%.") then sub = s end
+    end
+    if not (SET_COURSE and SET_COURSE:IsValid()) then
+        SET_COURSE = nil
+        for _, ctx in ipairs(FindAllOf("InputMappingContext") or {}) do
+            if ctx:IsValid() and not ctx:GetFullName():find("Default__", 1, true) then
+                pcall(function()
+                    ctx.Mappings:ForEach(function(_, e)
+                        local a = e:get().Action
+                        if a and a:IsValid() and a:GetFName():ToString() == "IA_Sector_SetCourse" then SET_COURSE = a end
+                    end)
+                end)
+            end
+        end
+    end
+    if not (sub and SET_COURSE) then
+        print("[VoyagerAccess] course: no Set course input to hold\n")
+        return false
+    end
+    local action, n, sent, handle = SET_COURSE, 0, 0, nil
+    local started = os.clock()
+    handle = LoopInGameThreadWithDelay(STEP_MS, function()
+        n = n + 1
+        if os.clock() - started > (HOLD_MS + 200) / 1000 or n > 400 then
+            pcall(CancelDelayedAction, handle)
+            return
+        end
+        local ok = pcall(function() sub:InjectInputVectorForAction(action, { X = 1.0, Y = 0.0, Z = 0.0 }, {}, {}) end)
+        if ok then sent = sent + 1 end
+    end)
+    ExecuteInGameThreadWithDelay(HOLD_MS, function()
+        pcall(CancelDelayedAction, handle)
+        print("[VoyagerAccess] course: Set course held, " .. sent .. " of " .. n .. " steps sent\n")
+    end)
+    return true
+end
+
+-- The camera to the point (SetFocusPoint, as before), the pointer on it,
+-- then the hold. The camera glides for about 0.9 s and the map has no event
+-- for its end, so the pointer follows after that time. After a story scene
+-- the camera is held on Voyager (bForceFollow) and the point can be off
+-- screen: a sighted player zooms out, so does the mod (Sikaris, State of
+-- Flux, VM, 2026-10-15).
+-- Only the newest course request goes on through its delayed steps: a
+-- second point chosen within those 1.6 s would otherwise have both holds
+-- run, and the ship could take the first (GPT review, 2026-10-24).
+local course_token = 0
+set_course = function(name, path, zooms, tok, again)
+    zooms = zooms or 0
+    if not tok then course_token = course_token + 1 tok = course_token end
+    local function stale() return tok ~= course_token end
+    waiting = nil
     local q0 = pawn()
-    local actor = StaticFindObject(path)
-    if q0 and actor and actor:IsValid() then pcall(function() q0:SetFocusPoint(actor) end) end
-    speech.center_mouse()
-    ExecuteInGameThreadWithDelay(900, function()
+    local a0 = StaticFindObject(path)
+    if not (q0 and a0 and a0:IsValid()) then return end
+    if zooms == 0 then pcall(function() q0:SetFocusPoint(a0) end) end
+    ExecuteInGameThreadWithDelay(zooms == 0 and 900 or 600, function()
+        if stale() then return end
         pcall(function()
             local q = pawn()
-            if not q then return end
             local a = StaticFindObject(path)
-            -- After a story scene the camera is held on Voyager (bForceFollow)
-            -- and SetFocusPoint does not move it: Sikaris was below the
-            -- screen, the cursor went to the centre, hit Voyager, and no
-            -- course was set twice (State of Flux, VM, 2026-10-15). A sighted
-            -- player zooms out; so does the mod, until the point is on
-            -- screen (TargetZoom 29297 to 70000 brought Sikaris in).
-            zooms = zooms or 0
-            if a and a:IsValid() and zooms < 3 and on_screen(a) == false then
+            if not (q and a and a:IsValid()) then return end
+            if zooms < 3 and on_screen(a) == false then
                 local okz = pcall(function() q.TargetZoom = math.min((q.TargetZoom or 30000) * 2, 250000) end)
                 if okz then
                     print("[VoyagerAccess] course: zooming out, target off screen\n")
-                    ExecuteInGameThreadWithDelay(600, function() fire_course(name, path, attempt, zooms + 1) end)
+                    set_course(name, path, zooms + 1, tok, again)
                     return
                 end
             end
-            local click = attempt > 1
-            if a and a:IsValid() then aim_at(a, click) end
-            -- The helper's click takes about 150 ms (hover, press, release).
-            ExecuteInGameThreadWithDelay(click and 500 or 150, function()
-                pcall(function()
-                    local q2 = pawn()
-                    if not q2 then return end
-                    q2:OnSetCourseActionStarted({})
-                    q2:OnSetCourseActionTriggered({})
-                    verify_course(name, path, attempt)
+            aim_at(a, false)
+            -- The helper puts the pointer there within about 50 ms; the
+            -- game takes the course only with some time between the
+            -- pointer and the hold (0.15 s failed twice, 0.7 s worked in
+            -- probes r2 and c2, 24 October).
+            ExecuteInGameThreadWithDelay(700, function()
+                if stale() then return end
+                pending = { name = name, path = path }
+                if not hold_set_course() then
+                    pending = nil
+                    speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
+                    return
+                end
+                -- The ship starts within a second of the hold (probe r2). A
+                -- course the game did not take: when it gives a reason it
+                -- shows it as a message, which is read; the mod adds only
+                -- that nothing started, and nothing over a window.
+                ExecuteInGameThreadWithDelay(HOLD_MS + 1500, function()
+                    if not (pending and pending.path == path) then return end
+                    -- Moving with no start event (its hook did not register
+                    -- after a game patch): the trip is said from here, not
+                    -- "not set" while Voyager flies (Fable review, 2026-10-24).
+                    local moving = false
+                    pcall(function()
+                        local j = FindFirstOf("STVJourneySubsystem")
+                        moving = j and j:IsValid() and j:IsTravelling() and true or false
+                    end)
+                    if moving then
+                        print("[VoyagerAccess] course: travelling with no start event\n")
+                        return on_started()
+                    end
+                    pending = nil
+                    print("[VoyagerAccess] course: the game took no course for " .. name .. (again and ", second hold" or "") .. "\n")
+                    local busy = false
+                    pcall(function() busy = busy_now() end)
+                    -- One more aim and hold before the player hears it failed:
+                    -- the game sometimes took no course from a hold with the
+                    -- pointer on the point (demo, 1 of 2 tries; full game, 3
+                    -- tries in one session) and took the same course when
+                    -- asked again (VM, 2026-10-24). There is no game signal
+                    -- for "the point is under the pointer" to wait for.
+                    if not busy and not again and not stale() then
+                        return set_course(name, path, 3, tok, true)
+                    end
+                    if not busy then
+                        speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
+                    end
                 end)
             end)
         end)
     end)
 end
 
+-- One of the game's map inputs by name (IA_Sector_SelectPoi, ...), and the
+-- player's input subsystem, or nil.
+local ACTION_CACHE = {}
+local function input_action(name)
+    local sub = nil
+    for _, s in ipairs(FindAllOf("EnhancedInputLocalPlayerSubsystem") or {}) do
+        if s:IsValid() and path_of(s):find("^/Engine/Transient%.") then sub = s end
+    end
+    local a = ACTION_CACHE[name]
+    if not (a and a:IsValid()) then
+        a = nil
+        for _, ctx in ipairs(FindAllOf("InputMappingContext") or {}) do
+            if ctx:IsValid() and not ctx:GetFullName():find("Default__", 1, true) then
+                pcall(function()
+                    ctx.Mappings:ForEach(function(_, e)
+                        local x = e:get().Action
+                        if x and x:IsValid() and x:GetFName():ToString() == name then a = x end
+                    end)
+                end)
+            end
+        end
+        ACTION_CACHE[name] = a
+    end
+    if not (sub and a) then return nil end
+    return a, sub
+end
+
+-- One press of a game input that takes a tap (not a hold).
+local function tap(name)
+    local a, sub = input_action(name)
+    if not a then return false end
+    return pcall(function() sub:InjectInputVectorForAction(a, { X = 1.0, Y = 0.0, Z = 0.0 }, {}, {}) end)
+end
+
+-- Enter on a point selects it in the game first, as a click on it does
+-- (firefly82's probe a1, 24 October: the pointer on the point and the
+-- game's IA_Sector_SelectPoi once filled SelectedActor and opened the
+-- game's own detail panel, WBP_POIDetailView, with name, system, zone,
+-- resources and the Stellar Cartography hint). The mod's list never
+-- selected, so that panel was heard only once, at the scan; a sighted
+-- player sees it on every click. Not on every arrow: that would move the
+-- real pointer and read a panel on each key. The System Map only: the
+-- Sector Map has no select input (IMC_Sector_Map). The action list follows
+-- the panel; if no panel is read within 2 s, it opens anyway.
+local selecting = nil   -- { path, done, tapped }: a selection under way
+local function select_in_game(p, done)
+    if not context_active("IMC_System_Map") then return false end
+    local busy = true
+    pcall(function() busy = busy_now() end)
+    if busy then return false end
+    if not input_action("IA_Sector_SelectPoi") then return false end
+    local path = p.path
+    -- The panel may say the same as when it was last read (the same point
+    -- again): forgotten so that it is read, put back if nothing came.
+    local forgotten = require("popups").forget("POIDetailView")
+    local job = { path = path, done = done }
+    selecting = job
+    local function stale()
+        return selecting ~= job or selected ~= path or menu == nil
+    end
+    local function give_up()
+        if selecting == job then selecting = nil end
+        pcall(require("popups").restore, forgotten)
+    end
+    -- The camera glides to a point for about 0.9 s after an arrow
+    -- (SetFocusPoint in select); the pointer goes on the point after that.
+    local wait = math.max(0, 900 - math.floor((os.clock() - M.last_move) * 1000))
+    if on_screen(p.actor) == false then
+        local pw = pawn()
+        if pw then pcall(function() pw:SetFocusPoint(p.actor) end) end
+        wait = 900
+    end
+    ExecuteInGameThreadWithDelay(math.max(wait, 10), function()
+        if stale() then return give_up() end
+        local a = StaticFindObject(path)
+        if not (a and a:IsValid()) then give_up() return done(false) end
+        aim_at(a, false)
+        -- Time between the pointer and the input, as for set course (0.6 s
+        -- in probes a1 and r3b).
+        ExecuteInGameThreadWithDelay(600, function()
+            if stale() then return give_up() end
+            local ok = tap("IA_Sector_SelectPoi")
+            print("[VoyagerAccess] system: select in game " .. tostring(ok) .. "\n")
+            if not ok then give_up() return done(false) end
+            job.tapped = true
+            ExecuteInGameThreadWithDelay(2000, function()
+                if selecting ~= job then return end
+                print("[VoyagerAccess] system: no detail panel read after the selection\n")
+                -- Asked before give_up, which clears the job and so would
+                -- make stale() true (GPT review, 2026-10-24).
+                local still = not stale()
+                give_up()
+                if still then done(false) end
+            end)
+        end)
+    end)
+    return true
+end
+
+-- The game's detail panel was read (popups.on_read, M.install).
+local function on_panel_read()
+    local job = selecting
+    -- Only a read after the input: the panel of the point before could be
+    -- read again while the pointer moves.
+    if not (job and job.tapped) then return end
+    selecting = nil
+    if selected == job.path and menu ~= nil then job.done(true) end
+end
+M.on_panel_read = on_panel_read
+
+-- The game's Inspect button and its text, when the panel shows it shown and
+-- enabled for the point at path, the one the game has selected; else nil.
+local function inspect_button(path)
+    local out, label = nil, nil
+    pcall(function()
+        local pw = pawn()
+        local sel = pw and pw.SelectedActor
+        if not (sel and sel:IsValid() and path_of(sel) == path) then return end
+        local screen = require("screen")
+        for _, v in ipairs(FindAllOf("STVPOIDetailActionView") or {}) do
+            if v:IsValid() and path_of(v):find("^/Engine/Transient%.") and screen.shown(v) then
+                local b = v.InspectPOIButton
+                if b and b:IsValid() and screen.shown(b) and b:GetIsEnabled() then
+                    local t = ""
+                    pcall(function() t = require("popups").plain(b.ButtonText:GetText():ToString()) end)
+                    if t ~= "" then out, label = b, t end
+                end
+            end
+        end
+    end)
+    return out, label
+end
+
+local list_said = false   -- whether the open action list has said an item
+local function open_list(after_panel)
+    if menu == nil then return end
+    -- The panel's buttons as the game shows them now.
+    local p = selected_point()
+    local b, label = nil, nil
+    if p then b, label = inspect_button(p.path) end
+    if b then
+        ACTIONS, inspect_label = { BASE_ACTIONS[1], BASE_ACTIONS[2], "Inspect" }, label
+    else
+        ACTIONS = BASE_ACTIONS
+        if menu > #ACTIONS then menu = #ACTIONS end
+    end
+    if list_said then return end
+    list_said = true
+    -- After the panel, queued behind it; otherwise at once.
+    speech.say(item_name(ACTIONS[1]) .. ", 1 of " .. #ACTIONS, not after_panel)
+end
+
+-- Inspect opens the game's close view of the point (PoiViewPawn, input
+-- IMC_PoiView_Map: turn with the mouse or the right stick, zoom with the
+-- wheel, leave with the right mouse button or the gamepad's B; no keyboard
+-- key). Nothing there is text, so the mod says how to leave it, and
+-- Backspace leaves it with the game's own IA_PoiView_Cancel.
+function M.inspect_view()
+    return context_active("IMC_PoiView_Map")
+end
+
+local function inspect(p)
+    local b, label = inspect_button(p.path)
+    if not b then
+        speech.say(require("tr").fill("Not available: {s}", inspect_label or "Inspect"), true)
+        return
+    end
+    print("[VoyagerAccess] system: inspect " .. name_of(p.actor) .. "\n")
+    speech.say(label, true)
+    -- Pressed, released and clicked, as focus.lua clicks a button.
+    local ok = pcall(function()
+        b:HandleButtonPressed()
+        b:HandleButtonReleased()
+        b:HandleButtonClicked()
+    end)
+    if not ok then return end
+    ExecuteInGameThreadWithDelay(1500, function()
+        pcall(function()
+            if M.inspect_view() then
+                speech.say("Backspace goes back.", false)
+            else
+                print("[VoyagerAccess] system: no inspect view after the button\n")
+            end
+        end)
+    end)
+end
+
+-- Backspace in the inspect view (focus.lua): the game's cancel input.
+function M.inspect_close()
+    local ok, up = pcall(M.inspect_view)
+    if not (ok and up) then return false end
+    if not tap("IA_PoiView_Cancel") then return false end
+    ExecuteInGameThreadWithDelay(700, function()
+        pcall(function()
+            if M.inspect_view() then
+                print("[VoyagerAccess] system: inspect view still open after cancel\n")
+            else
+                speech.say("Closed", true)
+            end
+        end)
+    end)
+    return true
+end
+
 function M.enter()
     crumb.at("system: enter")
+    if M.inspect_view() then return speech.say("Backspace goes back.", true) end
     local p = selected_point()
     if not p then
         speech.say("Nothing selected." .. require("hints").text("map_updown", " Use Up and Down Arrow to choose a point of interest."), true)
@@ -1364,11 +1372,14 @@ function M.enter()
     end
     if not menu then
         menu = 1
-        speech.say(require("tr").word(ACTIONS[1]) .. ", 1 of " .. #ACTIONS, true)
+        list_said = false
+        ACTIONS = BASE_ACTIONS
+        if not select_in_game(p, open_list) then open_list(false) end
         return
     end
     local action = ACTIONS[menu]
     menu = nil
+    if action == "Inspect" then return inspect(p) end
     run(action, p)
 end
 
@@ -1385,22 +1396,23 @@ function M.where()
     end
     local travel = travel_time(p)
     local text = string.format("%s, %s%s, %s%d of %d", name, status(p), inside_text(p.actor), travel and (travel .. ", ") or "", i, #list)
-    if menu then text = text .. ". Action list open: " .. require("tr").word(ACTIONS[menu]) end
+    if menu then text = text .. ". Action list open: " .. item_name(ACTIONS[menu]) end
     return text
 end
 
 -- Up and Down inside the action list.
 function M.menu_step(dir)
     local i = menu + dir
+    list_said = true
     if not ACTIONS[i] then return end
     menu = i
-    -- tr.word: Scan
-    speech.say(require("tr").word(ACTIONS[i]) .. ", " .. i .. " of " .. #ACTIONS, true)
+    speech.say(item_name(ACTIONS[i]) .. ", " .. i .. " of " .. #ACTIONS, true)
 end
 
 function M.menu_edge(last)
+    list_said = true
     menu = last and #ACTIONS or 1
-    speech.say(require("tr").word(ACTIONS[menu]) .. ", " .. menu .. " of " .. #ACTIONS, true)
+    speech.say(item_name(ACTIONS[menu]) .. ", " .. menu .. " of " .. #ACTIONS, true)
 end
 
 function M.menu_close()

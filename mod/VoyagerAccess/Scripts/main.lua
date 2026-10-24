@@ -48,6 +48,17 @@ require("quest").install()
 require("help").install()
 require("resources").install()
 require("view").install()
+-- Development only (flag file "calls"): which game function brings an
+-- incoming call. It answered on 2026-10-24 (the count changes right after
+-- OnStateTransitionFinished or OnTravelCompleted), and its 13 hooks are no
+-- cost to put on every player (Fable review, 2026-10-24).
+do
+    local flag = io.open((os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\calls", "r")
+    if flag then
+        flag:close()
+        pcall(function() require("calllisten").install() end)
+    end
+end
 require("awaymission").install()
 require("whatsnew").install()
 require("hotkeys").install()

@@ -433,6 +433,52 @@ function M.hero_label(path)
     return text
 end
 
+-- What the team selection recommends and its challenges, in screen order:
+-- { rec = skill names, traits = trait texts, challenges = skill lists }.
+local function briefing(L)
+    local enum = StaticFindObject("/Script/STVoyager.ESTVHeroAttribute")
+    local rec = {}
+    pcall(function()
+        L.MissionInfo.RecommendedAttributes:ForEach(function(_, e)
+            local n = enum:GetNameByValue(e:get()):ToString():gsub("^ESTVHeroAttribute::", "")
+            rec[#rec + 1] = require("text").hero_attribute_name(e:get()) or n
+        end)
+    end)
+    local function order(w)
+        local parent = w:GetParent()
+        return (parent and parent:IsValid()) and parent:GetChildIndex(w) or 0
+    end
+    local traits = {}
+    for _, w in ipairs(FindAllOf("WBP_AwayMissionRecommendedTraits_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            local t = plain(text_of(w.Trait))
+            if t ~= "" then traits[#traits + 1] = { order = order(w), text = t } end
+        end
+    end
+    -- In the panel's order: FindAllOf can give widgets in reverse.
+    table.sort(traits, function(a, b) return a.order < b.order end)
+    for i, t in ipairs(traits) do traits[i] = t.text end
+    local challenges = {}
+    for _, w in ipairs(FindAllOf("WBP_AwayMissionChallengeSkills_C") or {}) do
+        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
+            local skills = {}
+            for i = 1, 3 do
+                local a = w["AttributeDisplay" .. i]
+                if a and a:IsValid() and screen.shown(a) then
+                    local im = a.AttributeIcon
+                    local ro = im and im:IsValid() and im.Brush.ResourceObject
+                    local s = ro and ro:IsValid() and require("text").skill_icon_name(ro:GetFName():ToString())
+                    if s then skills[#skills + 1] = s end
+                end
+            end
+            if #skills > 0 then challenges[#challenges + 1] = { order = order(w), text = table.concat(skills, ", ") } end
+        end
+    end
+    table.sort(challenges, function(a, b) return a.order < b.order end)
+    for i, c in ipairs(challenges) do challenges[i] = c.text end
+    return { rec = rec, traits = traits, challenges = challenges }
+end
+
 -- Read when the team selection opens: the mission, how many heroes it
 -- needs, what it recommends, and its challenges in screen order.
 function M.window_text()
@@ -447,48 +493,133 @@ function M.window_text()
     if ok and needed and needed > 0 then
         parts[#parts + 1] = string.format("Choose %d hero%s", needed, needed == 1 and "" or "es")
     end
-    local enum = StaticFindObject("/Script/STVoyager.ESTVHeroAttribute")
-    local rec = {}
-    pcall(function()
-        L.MissionInfo.RecommendedAttributes:ForEach(function(_, e)
-            local n = enum:GetNameByValue(e:get()):ToString():gsub("^ESTVHeroAttribute::", "")
-            rec[#rec + 1] = require("text").hero_attribute_name(e:get()) or n
-        end)
-    end)
-    if #rec > 0 then parts[#parts + 1] = "Recommended skills: " .. table.concat(rec, ", ") end
-    local traits = {}
-    for _, w in ipairs(FindAllOf("WBP_AwayMissionRecommendedTraits_C") or {}) do
-        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
-            local t = plain(text_of(w.Trait))
-            if t ~= "" then traits[#traits + 1] = t end
-        end
-    end
-    if #traits > 0 then parts[#parts + 1] = "Recommended traits: " .. table.concat(traits, ", ") end
-    local challenges = {}
-    for _, w in ipairs(FindAllOf("WBP_AwayMissionChallengeSkills_C") or {}) do
-        if w:IsValid() and path_of(w):find("^/Engine/Transient%.") and screen.shown(w) then
-            local skills = {}
-            for i = 1, 3 do
-                local a = w["AttributeDisplay" .. i]
-                if a and a:IsValid() and screen.shown(a) then
-                    local im = a.AttributeIcon
-                    local ro = im and im:IsValid() and im.Brush.ResourceObject
-                    local s = ro and ro:IsValid() and ro:GetFName():ToString():match("^MI_UI_(%a+)")
-                    if s then skills[#skills + 1] = s end
-                end
-            end
-            local parent = w:GetParent()
-            local order = (parent and parent:IsValid()) and parent:GetChildIndex(w) or #challenges
-            if #skills > 0 then challenges[#challenges + 1] = { order = order, text = table.concat(skills, ", ") } end
-        end
-    end
-    table.sort(challenges, function(a, b) return a.order < b.order end)
-    if #challenges > 0 then
+    local b = briefing(L)
+    if #b.rec > 0 then parts[#parts + 1] = "Recommended skills: " .. table.concat(b.rec, ", ") end
+    if #b.traits > 0 then parts[#parts + 1] = "Recommended traits: " .. table.concat(b.traits, ", ") end
+    if #b.challenges > 0 then
         local list = {}
-        for i, c in ipairs(challenges) do list[i] = i .. ": " .. c.text end
-        parts[#parts + 1] = #challenges .. " challenges. " .. table.concat(list, "; ")
+        for i, c in ipairs(b.challenges) do list[i] = i .. ": " .. c end
+        parts[#parts + 1] = #b.challenges .. " challenges. " .. table.concat(list, "; ")
+    end
+    if #b.rec + #b.traits + #b.challenges > 0 then
+        local hint = require("hints").text("briefing_up", "Up from the first slot goes through the recommendations and challenges one at a time")
+        if hint ~= "" then parts[#parts + 1] = hint end
     end
     return sentences(parts)
+end
+
+-- The same recommendations and challenges as lines above the first slot:
+-- the screen shows each trait and each challenge as its own box, and the
+-- opening text said them once only (firefly82's review, 2026-10-24). Up
+-- from the first slot goes into them, Up and Down move, Home goes to the
+-- first, and Down from the last (or End) goes back to the slots. The game
+-- keeps its focus on the first slot meanwhile; the game's own Down would
+-- move it to slot 2, so the mod puts it back without saying it. Any other
+-- key leaves the lines.
+local function briefing_lines(L)
+    local b = briefing(L)
+    local lines = {}
+    if #b.rec > 0 then lines[#lines + 1] = "Recommended skills: " .. table.concat(b.rec, ", ") .. "." end
+    for _, t in ipairs(b.traits) do lines[#lines + 1] = require("tr").fill("Recommended trait: {s}", t) .. "." end
+    for i, c in ipairs(b.challenges) do
+        lines[#lines + 1] = string.format("Challenge %d of %d: %s.", i, #b.challenges, c)
+    end
+    return lines
+end
+
+local brief = nil   -- { anchor = first slot's path, index = line, keys = key count }
+
+-- The away team's first shown slot button and its loadout, if path is it.
+local function first_slot(path)
+    if not (path and M.is_slot(path) and path:find("WBP_AwayMissionLoadout_C_%d+")) then return nil end
+    local L = loadout_of(path)
+    if not L then return nil end
+    local first = nil
+    pcall(function()
+        L.HeroPickers:ForEach(function(_, e)
+            local p = e:get()
+            if not first and slot_shown(p) then first = p end
+        end)
+    end)
+    local b = first and first.OpenSelectionButton
+    if b and b:IsValid() and path_of(b) == path then return L, b end
+    return nil
+end
+
+local function hold_anchor(b)
+    local f = require("focus")
+    f.hush_focus_until = os.clock() + 0.5
+    pcall(function() b:SetFocus() end)
+    local p = path_of(b)
+    ExecuteInGameThread(function()
+        pcall(function()
+            local nb = StaticFindObject(p)
+            if nb and nb:IsValid() then nb:SetFocus() end
+        end)
+    end)
+end
+
+-- Up (dir -1) or Down (1) on the team selection; true when it handled the key.
+-- A mod list open over the team selection (F1, Ctrl+F1, What's new, N, C,
+-- the ship's room list) has the arrows, not the briefing lines: they are
+-- asked for before those lists in focus.lua (Fable review, 2026-10-24).
+local function mod_list_open()
+    for _, m in ipairs({ "whatsnew", "hotkeys", "credits", "help" }) do
+        local ok, open = pcall(function() local x = require(m) return x.open and x.open() end)
+        if ok and open then return true end
+    end
+    local ok, open = pcall(function()
+        return require("ship").list_open() or require("resources").list_open() or require("view").nav_open()
+    end)
+    return ok and open and true or false
+end
+
+function M.briefing_step(path, dir)
+    if mod_list_open() then return false end
+    local count = require("keys").key_count or 0
+    if brief and (brief.anchor ~= path or count ~= brief.keys + 1) then brief = nil end
+    if not brief and dir > 0 then return false end
+    local L, b = first_slot(path)
+    if not L then brief = nil return false end
+    local lines = briefing_lines(L)
+    if #lines == 0 then brief = nil return false end
+    local i
+    if not brief then
+        i = #lines
+        brief = { anchor = path }
+    else
+        i = math.max(1, (brief.index or #lines) + dir)
+    end
+    hold_anchor(b)
+    if i > #lines then
+        brief = nil
+        local label = M.slot_label(path)
+        if label then require("speech").say(label, true) end
+        return true
+    end
+    brief.index, brief.keys = i, count
+    print("[VoyagerAccess] briefing: " .. lines[i] .. "\n")
+    require("speech").say(lines[i], true)
+    return true
+end
+
+-- Home and End while on the lines: Home the first line, End back to the
+-- slots' own End (Start Mission or the last slot). True when handled.
+function M.briefing_edge(path, last)
+    local count = require("keys").key_count or 0
+    if not (brief and brief.anchor == path and count == brief.keys + 1) then
+        brief = nil
+        return false
+    end
+    if last then brief = nil return false end
+    local L, b = first_slot(path)
+    if not L then brief = nil return false end
+    local lines = briefing_lines(L)
+    if #lines == 0 then brief = nil return false end
+    brief.index, brief.keys = 1, count
+    hold_anchor(b)
+    require("speech").say(lines[1], true)
+    return true
 end
 
 -- The mission itself (WBP_Dialogue_Window_AwayMission with
@@ -622,7 +753,7 @@ local function choice_skill(c)
     local skill = "skill"
     pcall(function()
         local ro = c.AttributeImage.Brush.ResourceObject
-        if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
+        if ro and ro:IsValid() then skill = require("text").skill_icon_name(ro:GetFName():ToString()) or skill end
     end)
     return skill, plain(text_of(c.AttributeAmount))
 end
@@ -806,6 +937,33 @@ local function choice_rewards(choice_path, cls)
     return table.concat(out, ", ")
 end
 
+-- A choice with lasting consequences has a golden outline, which a sighted
+-- player sees before choosing; only the game's "consequences" toast after
+-- Confirm said so (firefly82's review, 2026-10-24). The outline is the
+-- choice text's ImportantOverlay (WBP_Dialogue_Choice_AwayMission_Text in
+-- the widget dump; no other choice widget has one), and the native
+-- STVDialogueChoice:SetContent takes the answer node's bIsImportant (header
+-- dump of 2026-10-18). Not yet seen in play: an outline that is always
+-- shown would mark every choice, and the log line says when it is found.
+local function important(c)
+    local o = nil
+    pcall(function()
+        local x = c.RightButton.ImportantOverlay
+        if x and x:IsValid() then o = x end
+    end)
+    if not o then
+        -- Not a named member: by its path inside the choice.
+        local prefix = path_of(c) .. "."
+        for _, x in ipairs(FindAllOf("Overlay") or {}) do
+            local xp = x:IsValid() and path_of(x)
+            if xp and xp:sub(1, #prefix) == prefix and xp:find("%.ImportantOverlay$") then o = x end
+        end
+    end
+    if not (o and screen.shown(o)) then return false end
+    local okp, op = pcall(function() return o:GetRenderOpacity() end)
+    return not (okp and type(op) == "number" and op < 0.1)
+end
+
 local function item_label(it)
     -- Hooked while the mission is up, before a hero is picked.
     pcall(ensure_chance_hook)
@@ -834,6 +992,11 @@ local function item_label(it)
             end
         end)
         if level > 0 then label = label:gsub("%.?%s*$", "") .. ". Danger level " .. level .. " of 3." end
+        -- In the dialogue choices' words (dialogue.lua).
+        if important(c) then
+            print("[VoyagerAccess] mission: golden outline on " .. it.choice:match("([^%.]+)$") .. "\n")
+            label = label:gsub("%.?%s*$", "") .. ". Major decision."
+        end
         return string.format("Choice %d of %d: %s", it.n, it.of, label)
     elseif it.kind == "hero" then
         local h = StaticFindObject(it.hero)

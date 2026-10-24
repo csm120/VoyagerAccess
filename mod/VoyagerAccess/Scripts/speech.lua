@@ -53,7 +53,13 @@ local function split_words(text)
     end))
 end
 
-function M.say(text, interrupt)
+-- built: the line already has the mod's own words in the game's language
+-- (tr.fill and tr.word where it was made), around the game's own texts. The
+-- line pass (tr.apply) is skipped then: it runs every one of the table's
+-- phrases over the line, 36 to 77 ms for one new tech tree line (timing
+-- log, 2026-10-24), and over the game's texts as well, which it can change
+-- (German "die Betrieb" for the game's "die Operation", 2026-10-24).
+function M.say(text, interrupt, built)
     if type(text) ~= "string" then return end
     text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     -- Parts joined with ". " after text that already ended a sentence read
@@ -116,7 +122,7 @@ function M.say(text, interrupt)
     local okl, lang = pcall(require, "language")
     if not (okl and lang and lang.english) or lang.english() then
         text = split_words(text)
-    else
+    elseif not built then
         -- The mod's own words in the game's language (tr.lua).
         local okt, tr = pcall(require, "tr")
         if okt and tr then

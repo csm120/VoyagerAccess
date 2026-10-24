@@ -268,6 +268,13 @@ function M.say()
         speech.say("Closed", true)
         return
     end
+    -- Not over the tech tree: the list opened ("Torpedoes 0, 1 of 16") and
+    -- the arrows went on moving the tree under it (firefly82, 2026-10-23).
+    -- The player's choice: a full screen like the tree says so instead.
+    if require("techtree").showing() then
+        speech.say("Resources are not shown here", true)
+        return
+    end
     local parts = lines()
     if #parts == 0 then
         speech.say("Resources are not shown here", true)

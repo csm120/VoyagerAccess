@@ -187,9 +187,15 @@ local function say_line(w, speaker, line)
     -- The same when the speaker is only the field's own text, still the
     -- placeholder: Tuvok's "Repairs in progress." went without his name
     -- (demo, VM, 2026-10-22).
-    local row_who = (speaker and speaker ~= "" and plain(speaker) ~= PLACEHOLDER_SPEAKER) and plain(speaker) or nil
     local field_who = ""
     pcall(function() field_who = plain(sp:GetText():ToString()) end)
+    -- The name the window shows comes first, the row's only when the field
+    -- is empty: for role lines the row's CharacterName is a placeholder and
+    -- the game puts the real speaker in the field (firefly82, German game,
+    -- 2026-10-24: "Charaktername: Captain, wir naehern uns dem Wurmloch."
+    -- while DialogueSpeakerText showed "Harry Kim", four of four times).
+    if shows_speaker and field_who ~= "" and field_who ~= PLACEHOLDER_SPEAKER then speaker = field_who end
+    local row_who = (speaker and speaker ~= "" and plain(speaker) ~= PLACEHOLDER_SPEAKER) and plain(speaker) or nil
     local have_name = shows_speaker and (row_who ~= nil or (field_who ~= "" and field_who ~= PLACEHOLDER_SPEAKER))
     -- A field the shown window keeps hidden is no name to wait for.
     local field_vis = false
@@ -215,10 +221,9 @@ local function say_line(w, speaker, line)
                     if sp2 and sp2:IsValid() then
                         local okv, vis = pcall(function() return sp2:IsVisible() end)
                         shown = screen.shown(sp2) or (okv and vis)
-                        if not who then
-                            local t = plain(sp2:GetText():ToString())
-                            if t ~= "" and t ~= PLACEHOLDER_SPEAKER then who = t end
-                        end
+                        -- The shown field before the row's name, as above.
+                        local t = plain(sp2:GetText():ToString())
+                        if t ~= "" and t ~= PLACEHOLDER_SPEAKER then who = t end
                     end
                     if (shown and who) or tries <= 1 or not (w2 and w2:IsValid()) then
                         said = true
@@ -544,7 +549,7 @@ local function away_choice_label(c)
         local skill = "skill"
         pcall(function()
             local ro = c.AttributeImage.Brush.ResourceObject
-            if ro and ro:IsValid() then skill = ro:GetFName():ToString():match("^MI_UI_(%a+)") or skill end
+            if ro and ro:IsValid() then skill = require("text").skill_icon_name(ro:GetFName():ToString()) or skill end
         end)
         parts[#parts + 1] = "Needs " .. skill .. " " .. amount
     end
@@ -715,6 +720,9 @@ function M.speaker()
 end
 
 function M.repeat_line()
+    -- In the tech tree, its current item (or the open panel): R repeated the
+    -- build ring's last line there (firefly82, 2026-10-23).
+    if require("techtree").open() then return require("techtree").say_again() end
     -- R again within 5 seconds: one message further back each time.
     local again = os.time() - last_r <= 5
     last_r = os.time()

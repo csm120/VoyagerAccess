@@ -163,7 +163,39 @@ M.live = live
 -- tricobalt devices (forum report, 0.3.50, 2026-10-18).
 local picked_choice, picked_label = nil, nil
 
+local BUTTON_BASE = nil
+
+-- True when a button inside b's own tree has focus (the Incoming Calls
+-- button holds the call list; the innermost one is the focused button).
+local function focus_inside(b)
+    BUTTON_BASE = BUTTON_BASE or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+    local found = false
+    require("screen").walk(b, function(x, depth)
+        if found then return true end
+        if depth > 0 and x:IsA(BUTTON_BASE) and (x:HasKeyboardFocus() or x:HasFocusedDescendants()) then
+            found = true
+            return true
+        end
+        return false
+    end, { no_root_check = true })
+    return found
+end
+
 local function focused_button()
+    -- The button the mod already knows, first, read from that button
+    -- itself: when it still holds focus and no button inside it does, it is
+    -- the focused one. The search over every button in the game cost 5 to 6
+    -- ms and about 400 KB of Lua garbage on each look (454 buttons, System
+    -- Map; probe e2, 2026-10-24); checking the known one cost nothing
+    -- measurable. The search is left for when focus has moved.
+    local known = current and resolve(current)
+    if known and live(known) then
+        local ok, has = pcall(function() return known:HasKeyboardFocus() or known:HasFocusedDescendants() end)
+        if ok and has then
+            local okn, nested = pcall(focus_inside, known)
+            if okn and not nested then return known end
+        end
+    end
     local buttons = FindAllOf("CommonButtonBase")
     if not buttons then return nil end
     -- The innermost one: the incoming call list sits inside the Incoming
@@ -470,7 +502,8 @@ local function radial_details(menu)
     local op = {}
     if by.EnergyValue then op[#op + 1] = "energy " .. by.EnergyValue end
     if by.CrewValue then op[#op + 1] = require("tr").fill("crew {s}", by.CrewValue) end
-    if #op > 0 then parts[#parts + 1] = (by.OperationText or "Operation") .. ": " .. table.concat(op, ", ") end
+    -- "Operation" by name: it is off the line-wide pass (tr.lua, 2026-10-24).
+    if #op > 0 then parts[#parts + 1] = (by.OperationText or require("tr").word("Operation")) .. ": " .. table.concat(op, ", ") end
     local build = {}
     local okc, costs = pcall(function() return center and require("rooms").costs_under(center) or "" end)
     if okc and costs ~= "" then build[#build + 1] = costs end
@@ -842,16 +875,19 @@ local function say_virtual()
     speech.say(label, false)
 end
 
--- Called each poll when no button has real focus.
-local track_wait = 0
-
 -- After the game window loses and regains the foreground, a menu can be
 -- left with nothing focused, and the arrows do nothing (main menu,
 -- 2026-10-11). Put focus back on the last button that had it, if it is
 -- still on screen. Not in the ship view or System Map, where having no
--- focus is normal, and not during dialogue. Tried every second at most.
+-- focus is normal, and not during dialogue. Only on a look after the
+-- player's input: that is the case it is for (the arrows do nothing), and
+-- a look after a window event can come while a window closes, with its
+-- buttons still shown. It used to be "every tenth look" (once a second in
+-- the 100 ms loop), which with looks only on events would have waited ten
+-- key presses.
 local last_real = nil
-local restore_wait = 0
+local look_after_input = false   -- set by the input listener for the next look
+local input_look = false         -- the running look came after input
 
 -- A mod list (What's new, status) open over a focused menu: the game also
 -- gets Up and Down, so the menu moved with the list and both talked
@@ -875,9 +911,7 @@ restore_focus = function()
     -- 2026-10-18).
     local okw, warn = pcall(function() return require("combat").fewer_heroes_open() end)
     if okw and warn then return false end
-    restore_wait = restore_wait - 1
-    if restore_wait > 0 then return false end
-    restore_wait = 10
+    if not input_look then return false end
     local ctx = require("help").context()
     if ctx == "ship" or ctx == "system" or ctx == "dialogue" or ctx == "cutscene" or ctx == "story" then return false end
     local b = resolve(last_real)
@@ -992,10 +1026,11 @@ local function track_unfocused_window()
         virtual = nil
         return
     end
-    -- Every third poll (300 ms): finding the open windows scans many classes.
-    track_wait = track_wait - 1
-    if track_wait > 0 then return end
-    track_wait = 3
+    -- On each look (called when no button has real focus): the open windows
+    -- come from popups' event record now, not from a scan of many classes,
+    -- and looks come only with input and window events, so the old "every
+    -- third look" (300 ms in the 100 ms loop) would have held a window's
+    -- list back by two key presses.
     -- A confirmation inside a window goes first, alone: the away team's
     -- start warning's Return and Continue were mixed into a list of ten
     -- with the slots and heroes behind it (2026-10-14).
@@ -2130,12 +2165,17 @@ end
 -- tick (the game has taken the key by then), and only once however many
 -- ask before it runs.
 local check_queued = false
+local in_poll = false   -- a look's own SetFocus asks for no new look
 function M.request_check()
     if check_queued then return end
     check_queued = true
     ExecuteInGameThread(function()
         check_queued = false
+        in_poll = true
+        input_look, look_after_input = look_after_input, false
         local ok, err = pcall(poll)
+        in_poll = false
+        input_look = false
         if not ok then print("[VoyagerAccess] focus error: " .. tostring(err) .. "\n") end
     end)
 end
@@ -2149,25 +2189,29 @@ function M.reannounce()
     M.request_check()
 end
 
--- A look now and three more shortly after, for focus that moves a moment
--- after a key or a window event: the mod's own delayed SetFocus calls
--- (about 45 of them, dialogue's sector choices 200 ms after Down) and the
--- game's after an animation were never said once looks came only with
--- input (review of firefly82's patch, 2026-10-21). One-off looks, not a
--- loop; a newer request replaces the older one's pending looks.
+-- One look after an input or a window event. There used to be three more,
+-- 250, 700 and 1500 ms later, for focus that moves a moment after: timers
+-- hoping focus had moved by then. In five minutes of play they found a new
+-- focus once in 254 looks (probe e1, 2026-10-24): the first room window of
+-- the session, whose events were hooked a tick after it was made, so its
+-- opening was missed. popups.lua now hooks a new window class as its first
+-- widget is made. Focus the mod sets itself, also from delayed calls
+-- (dialogue's sector choices 200 ms after Down), is looked at through the
+-- game's own SetFocus functions (hooked in M.install). The name stays for
+-- its callers.
+-- One backstop look 1500 ms after the newest request, the bounded fallback
+-- the mod keeps behind every event: the main menu took focus after the
+-- performance screen's fade, later than 700 ms, with no event of its own
+-- found, and "CAMPAIGN, 1 of 7" was not said (VM, 2026-10-21). With the
+-- known button checked first, a look that finds nothing new costs little.
 local settle_token = 0
 function M.request_settle()
     settle_token = settle_token + 1
     local mine = settle_token
     M.request_check()
-    -- 1500: the main menu took focus after the performance screen's fade,
-    -- later than 700 ms, and "CAMPAIGN, 1 of 7" was not said (VM,
-    -- 2026-10-21).
-    for _, ms in ipairs({ 250, 700, 1500 }) do
-        ExecuteInGameThreadWithDelay(ms, function()
-            if settle_token == mine then M.request_check() end
-        end)
-    end
+    ExecuteInGameThreadWithDelay(1500, function()
+        if settle_token == mine then M.request_check() end
+    end)
 end
 
 -- The game binds no keyboard key to Accept (only Escape, to Cancel), so
@@ -2293,10 +2337,16 @@ local function open_panel_for(b)
     return nil
 end
 
+-- A click can move focus (a profile's click puts it on the save panel's
+-- Continue), and the mod's own click is an event the mod knows: one look
+-- on the next tick. The profile's click comes after the panel's fade, with
+-- no key or window event of its own, and its Continue went unsaid once the
+-- timed looks were gone (2026-10-24).
 function click(b)
     b:HandleButtonPressed()
     b:HandleButtonReleased()
     b:HandleButtonClicked()
+    M.request_check()
 end
 
 -- Runs fn once the animated switcher that get_switcher() returns has
@@ -2338,6 +2388,17 @@ local function when_switched(get_switcher, fn, what)
             go(fading() and "still fading after twice its duration, going on" or nil)
         end)
     end)
+end
+
+-- A look once a switcher the game is fading has reached its new page: the
+-- room window's pages (UCommonActivatableWidgetSwitcher) fade in, and the
+-- game puts focus on the new page only then, with no event of its own and
+-- not through SetFocus (the transporter room's first button and the
+-- Science Lab's after Left were found about 0.4 s later, the engine's fade
+-- length; logs of 2026-10-24). Same rule as the main menu's panels above:
+-- the game's own IsTransitionPlaying and TransitionDuration.
+function M.look_after_switch(get_switcher, what)
+    when_switched(get_switcher, function() M.request_check() end, what)
 end
 
 -- Clicks the main menu button at button_path once the panel the mod has just
@@ -2838,10 +2899,50 @@ local function activate()
         if b:GetClass():GetFName():ToString() == "WBP_RoomMgmt_Analyze_Button_C" then
             local started = before and before:find("^Unexplored") ~= nil
             local stopped = before and before:find("^Analysis") ~= nil
-            if started or stopped then
-                speech.say(started and "Analysis started" or "Analysis stopped", true)
+            if stopped then
+                speech.say("Analysis stopped", true)
                 return
             end
+            -- Started only if the game took it: with an analysis already
+            -- running, the mod said "Analysis started" and the game's own
+            -- message then said "Analysis already in progress" (VM,
+            -- 2026-10-24). The same button still unexplored half a second
+            -- later means it was refused, and the game's message says why.
+            if started then
+                ExecuteInGameThreadWithDelay(500, function()
+                    pcall(function()
+                        local now = resolve(path)
+                        local after = now and label_for(now, path)
+                        if after ~= before then speech.say("Analysis started", true) end
+                    end)
+                end)
+                return
+            end
+        end
+        -- The Workshop's crafting button cancels the craft under way (the
+        -- game's "Enter: cancel"), and the cancel went without a word: the
+        -- objective's item was never made (firefly82, German game,
+        -- 2026-10-24). Said as the start is, from the button's own label
+        -- once the game has applied it: no cycles left to count means the
+        -- craft is gone.
+        if path:find("WBP_Workshop_CraftModule_C_%d+%.") and path:find("%.CraftingButton$")
+            and before and before:find("%d+ cycles? left") then
+            -- The name from the label before the press ("Crafting: X, 7
+            -- cycles left"): read after the click, the game had already put
+            -- its empty text there, and "Crafting currently no crafting in
+            -- progress cancelled" was said (VM, 2026-10-24).
+            local item = before:match("^[^:]+:%s*(.-),%s*%d+ cycles? left")
+            if not item or item == "" then item = nil end
+            ExecuteInGameThreadWithDelay(900, function()
+                pcall(function()
+                    local now = resolve(path)
+                    local after = now and label_for(now, path)
+                    if not (after and after:find("%d+ cycles? left")) then
+                        speech.say(item and ("Crafting " .. item .. " cancelled") or "Crafting cancelled", true)
+                    end
+                end)
+            end)
+            return
         end
         -- Enter on an away team slot opens its hero picker, but the game
         -- also takes that Enter as "Start away mission" and puts up "You
@@ -3292,7 +3393,10 @@ function M.install()
         if ship.list_close() then return end
         if require("resources").close() then return end
         if require("view").nav_close() then return end
+        -- The map's inspect view has no keyboard key of its own (system.lua).
+        if system.inspect_close() then return end
         if map_mode() and system.menu_close() then return end
+        if require("techtree").open() then return require("techtree").back() end
         go_back()
     end)
     -- Escape is the game's (the pause menu, closing windows), but it also
@@ -3414,6 +3518,7 @@ function M.install()
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
         pcall(require("combat").energy_key)
+        if away.briefing_step(current, -1) then return end
         if require("qtrials").step(current, -1) then return end
         if require("popups").leave_sector_step(current, -1) then return end
         if require("rooms").trade_offer_step(current, -1) then return end
@@ -3436,6 +3541,7 @@ function M.install()
     end)
     keys.on("down", function()
         pcall(require("combat").energy_key)
+        if away.briefing_step(current, 1) then return end
         if require("qtrials").step(current, 1) then return end
         if require("popups").leave_sector_step(current, 1) then return end
         if require("rooms").trade_offer_step(current, 1) then return end
@@ -3500,6 +3606,7 @@ function M.install()
         if ship_mode() then return ship.edge(last) end
         if require("difficulty").edge(current, last) then return end
         if require("qtrials").edge(current, last) then return end
+        if away.briefing_edge(current, last) then return end
         if away.loadout_edge(current, last) then return end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end
@@ -3512,9 +3619,25 @@ function M.install()
     -- A look after every key and mouse button (keys.lua), and one now for
     -- whatever has focus as the mod starts; windows and dialogue ask for
     -- theirs (popups.lua, dialogue.lua). No loop.
-    keys.on_any(M.request_settle)
+    keys.on_any(function()
+        look_after_input = true
+        M.request_settle()
+    end)
+    -- Focus set through the game's own functions: the mod's 35 SetFocus
+    -- calls, many of them inside delayed calls, and any the game makes this
+    -- way. These hooks fired for each of the mod's calls (probe e1,
+    -- 2026-10-24); the game's own focus moves from keys and window
+    -- activation do not come through them, and are looked at after the key
+    -- or the window event. A pre hook: focus has moved on the next tick,
+    -- where the look runs.
+    local n_focus = 0
+    for _, fn in ipairs({ "SetFocus", "SetKeyboardFocus", "SetUserFocus" }) do
+        if pcall(RegisterHook, "/Script/UMG.Widget:" .. fn, function()
+            if not in_poll then M.request_check() end
+        end) then n_focus = n_focus + 1 end
+    end
     M.request_check()
-    print("[VoyagerAccess] focus: looks after input and window changes\n")
+    print("[VoyagerAccess] focus: looks after input, window changes and SetFocus (" .. n_focus .. " of 3 hooks)\n")
 end
 
 return M

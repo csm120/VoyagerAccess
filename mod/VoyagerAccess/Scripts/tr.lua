@@ -80,7 +80,14 @@ end
 -- one English word of five letters or more ("selected", "Damaged"), which
 -- the other languages' game texts do not use. Short words ("on", "off",
 -- "Tier") only through M.word: French game text has its own "on".
+-- Some long English words are in the game's own German texts all the same,
+-- and the pass changed them: "die Operation" became "die Betrieb", the tech
+-- tree's "Level 2" became "Stufe 2" (firefly82, 2026-10-24, checked against
+-- the game's German string tables: Operation in 10 texts, Level in room and
+-- tech names, Story and Research in one each). Those go through M.word only.
+local GAME_WORDS = { Operation = true, Level = true, Story = true, Research = true }
 local function line_safe(key)
+    if GAME_WORDS[key] then return false end
     local plain = key:gsub("{[ns]}", "")
     local words = select(2, plain:gsub("%a+", ""))
     if words >= 2 or (words == 1 and key:find("{n}", 1, true) ~= nil) then return true end

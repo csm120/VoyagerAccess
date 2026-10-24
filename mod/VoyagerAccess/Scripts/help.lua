@@ -42,7 +42,8 @@ local HELP = {
     -- menu keys (VM, 2026-10-21).
     techtree = "Up and Down move. Home and End go to the first and last. "
         .. "Left and Right switch category; past the last one is every technology from A to Z. "
-        .. "Enter opens the technology's panel, where Enter begins the research. Escape closes the panel, then the tree.",
+        .. "Enter opens the technology's panel, where Enter begins the research. Escape closes the panel, then the tree. "
+        .. "Backspace closes the tree when no panel is open. R repeats the item.",
     overview = "Left and Right switch tabs. Up and Down go through the tab line by line. "
         .. "Home and End go to the first and last. On the Heroes tab, Up and Down choose a hero. Escape closes the Overview.",
     none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. N lists the places to go, such as the Sector Map, the Overview and Research. "
@@ -310,7 +311,7 @@ function M.say_where()
         end
     end
     local out = {}
-    -- tr.word: Menu | Game
+    -- tr.word: Menu | Game | Story
     if parts[1] then parts[1] = require("tr").word(parts[1]) end
     for _, p in ipairs(parts) do
         if p and p ~= "" then out[#out + 1] = (p:gsub("%.%s*$", "")) end
@@ -517,6 +518,11 @@ function say_view(v)
     -- broke into the J room list (2026-10-14).
     if require("ship").list_open() or require("resources").list_open() or require("view").nav_open()
         or require("whatsnew").open() or require("hotkeys").open() then return end
+    -- Nor over the tech tree: opened from the Science Lab, the lab window's
+    -- closing asked for a view check, and "Ship view. Deck 5, Science Lab,
+    -- on" came over the tree (firefly82, 2026-10-23). The tree closing says
+    -- the view again (view_again).
+    if require("techtree").showing() then return end
     local here
     if v == "ship" then here = require("ship").where() or "No room selected"
     else here = require("system").where() or "Nothing selected" end

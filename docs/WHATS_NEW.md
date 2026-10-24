@@ -2,6 +2,26 @@
 
 ## Saturday October 24th 2026
 
+Version 0.3.82
+
+A lot of this one comes from firefly82's two latest reviews, and two of them came with patches I took nearly as they were. Thank you again!
+
+- Changed: Set course now works the way a sighted player sets it. The mod puts the pointer on the place and holds the game's own Set course, and "Under way", "Halfway" and "Arrived" come straight from the game. If the game doesn't take the course, you hear that it wasn't set, so you can try again.
+- New: Enter on a place on the System Map picks it in the game first, so you hear the game's own details for it (system, zone, resources, any mission note) before the Scan and Set course list. Before, you only heard those details once, when you scanned it.
+- Faster: moving around the ship, the Mess Hall's rations and the tech tree all answer the arrow keys quicker. Rooms at the top of the screen used to take two seconds to be said; now the room is said right away and its actions follow.
+- Fixed: a crew member speaking for their post sometimes came out as "Character Name:" instead of their name. Now you hear who's talking, like "Ensign Agram:".
+- Fixed: pressing Enter on a craft that's under way cancels it, and that used to happen without a word. Now you hear "Crafting ... cancelled".
+- Fixed: "Analysis started" was said even when the game refused, because another analysis was still running. Now it's only said when the analysis really starts.
+- Changed: in the tech tree, C says resources aren't shown there instead of opening a list behind the tree, R repeats where you are, and Backspace closes the tree. The ship view isn't read over the tree anymore.
+- Changed: in a room window with only one tab, Left and Right say the button you're on instead of the tab's name.
+- Changed: finished work on a room says "ready", like the screen does, instead of "done".
+- New: on the away team selection, Up from the first slot goes through the mission's recommended skills, traits and challenges, one line at a time. Away missions also use the game's own names for skills in every language, and a choice the game outlines in gold says "Major decision".
+- Fixed: the energy loss report read with full stops in the wrong places and said "energy" twice.
+- Fixed: in battle, the pause line sometimes added "Toggle Pause" at the end.
+- Changed: English players now hear the game's own names for resources and skills, the same as every other language.
+
+## Saturday October 24th 2026
+
 Version 0.3.81
 
 - Fixed: when a crew report came in just as Voyager arrived somewhere, the place's own event sometimes never opened, and you heard nothing about it. Now you hear "The event at ... did not start. Set course to another point and back to start it." I met this at an abandoned Borg cube, and going away and coming back did start it.

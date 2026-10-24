@@ -38,6 +38,9 @@ return {
     ["Recommended traits: {s}"] = "Zalecane cechy: {s}",
     ["{n}: {s}"] = "{n}: {s}",
     ["{n} challenges. {s}"] = "Wyzwania: {n}. {s}",
+    ["Recommended trait: {s}"] = "Zalecana cecha: {s}",
+    ["Challenge {n} of {n}: {s}"] = "Wyzwanie {n} z {n}: {s}",
+    ["Up from the first slot goes through the recommendations and challenges one at a time"] = "Strzałka w górę z pierwszego miejsca przechodzi po kolei przez zalecenia i wyzwania",
     ["Hero {n}"] = "Bohater {n}",
     ["skill"] = "umiejętność",
     ["resources"] = "zasobów",
@@ -262,6 +265,8 @@ return {
     ["Collected"] = "Zebrano",
     ["Collected: {s}"] = "Zebrano: {s}",
     ["Crafting {s} started"] = "Rozpoczęto produkcję: {s}",
+    ["Crafting {s} cancelled"] = "Anulowano produkcję: {s}",
+    ["Crafting cancelled"] = "Anulowano produkcję",
     ["Not possible"] = "Niemożliwe",
     ["Cannot leave for this sector yet. {s}"] = "Nie można jeszcze wyruszyć do tego sektora. {s}",
     ["Analysis started"] = "Analiza rozpoczęta",
@@ -925,4 +930,6 @@ return {
     -- whatsnew.lua
     ["Version {s}. "] = "Wersja {s}. ",
     ["What's new is not available"] = "Lista nowości jest niedostępna",
+    ["Backspace closes the tree when no panel is open"] = "Backspace zamyka drzewo, gdy żaden panel nie jest otwarty",
+    ["R repeats the item"] = "R powtarza element",
 }

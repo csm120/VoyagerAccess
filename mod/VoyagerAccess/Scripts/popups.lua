@@ -426,10 +426,21 @@ local function poi_detail(parts)
     if #rewards > 0 then
         out[#out + 1] = (by.ResourceEventNameTextBlock or "Resources") .. ": " .. table.concat(rewards, "; ")
     end
+    -- The ambush line ("Chance of ambush", "No chance of ambush" in the
+    -- game's General texts), shown under the rewards once Threat Assessment
+    -- Sensors are researched. It is AmbushText in the resource event view
+    -- (WBP_ResourceEventDetailView, collapsed AmbushContainer by default);
+    -- the scan plaque (WBP_ScanPlaqueEventView) is handed bShowAmbush and
+    -- bHasAmbush but has no element that shows them (widget and header
+    -- dumps, 2026-10-24). Only when shown (tree_parts reads shown texts),
+    -- and never the designer's placeholder "Ambush.......".
+    local ambush = by.AmbushText
+    if ambush and ambush:find("^Ambush%.%.") then ambush = nil end
+    if ambush then out[#out + 1] = ambush end
     if by.UpgradeText and not upgrade then out[#out + 1] = by.UpgradeText end
     -- Anything else the window shows, after the known parts.
     local known = { LocationNameTextBlock = true, SystemNameTextBlock = true, System_TextBLock = true,
-        ResourceEventNameTextBlock = true, UpgradeText = true }
+        ResourceEventNameTextBlock = true, UpgradeText = true, AmbushText = true }
     local extras = {}
     for _, p in ipairs(parts) do
         -- A stray "System" label is left over once the system is named.
@@ -450,6 +461,8 @@ local function poi_detail(parts)
     for _, p in ipairs(parts) do
         if p.name == "ResourceNameTextBlock" then names[#names + 1] = p.text end
     end
+    -- The ambush line too, as when it was read with the extras.
+    if ambush then names[#names + 1] = ambush end
     for _, e in ipairs(extras) do names[#names + 1] = e end
     if #names > 0 then pcall(function() require("system").note_found(table.concat(names, ", ")) end) end
     return table.concat(out, ". ")
@@ -682,7 +695,9 @@ local function ordered_texts(root, skip)
             local t = plain(txt)
             local name = w:GetFName():ToString()
             if t ~= "" and skip then
-                local keep = skip(name, t)
+                -- The raw text too, line breaks and all, for a reader that
+                -- needs them (energy_loss).
+                local keep = skip(name, t, txt)
                 if type(keep) == "string" then t = keep elseif keep then t = "" end
             end
             if t ~= "" then out[#out + 1] = t end
@@ -1230,18 +1245,49 @@ local function energy_loss(_, path)
     -- sentence. Only in that block: applied to every text it read "Phaser.
     -- Control. Room" (full game, VM, 2026-10-14). The deactivated rooms
     -- ("Phaser Control Room -9, Sickbay -7") say what energy each used.
-    local t = ordered_texts(w, function(name, s)
-        -- Except inside a name: "Warp. Core damaged" (ion storm, VM,
-        -- 2026-10-18).
+    -- Superseded 2026-10-24: the reason's lines were told apart by a capital
+    -- after a lowercase word, which in German also split its nouns:
+    -- "Deuterium erschöpft. Modus. Grau wird aktiviert" (firefly82,
+    -- 2026-10-23). Its real line breaks are used instead, from the raw text:
+    -- each line is a sentence.
+    local t = ordered_texts(w, function(name, s, raw)
         if name == "EnergyLossReason" then
-            return (s:gsub("(%l) (%u%l*)", function(a, word)
-                if require("text").name_tail(word) then return a .. " " .. word end
-                return a .. ". " .. word
-            end))
+            if type(raw) ~= "string" or not raw:find("\n", 1, true) then
+                -- No line break to go by: the old rule, in English only,
+                -- where nouns are not capitalized ("Warp Core" kept whole).
+                if not require("language").english() then return false end
+                return (s:gsub("(%l) (%u%l*)", function(a, word)
+                    if require("text").name_tail(word) then return a .. " " .. word end
+                    return a .. ". " .. word
+                end))
+            end
+            local lines = {}
+            for line in (raw .. "\n"):gmatch("(.-)\r?\n") do
+                local p = plain(line)
+                if p ~= "" then lines[#lines + 1] = (p:gsub("%.%s*$", "")) end
+            end
+            return #lines > 0 and table.concat(lines, ". ") or false
         end
         -- The shared clean-up (text.lua) may already have named the icon:
-        -- "9 energy energy" (VM, 2026-10-15).
-        if name == "RoomsLost" then return (s:gsub(" %-%s*(%d+)", " %1 energy"):gsub("energy energy", "energy")) end
+        -- "9 energy energy" (VM, 2026-10-15). The game's own word for energy,
+        -- and a word said twice after the number goes: German read "6
+        -- Energie Energie" (firefly82, 2026-10-23).
+        if name == "RoomsLost" then
+            local word = require("text").game_resource_name("Energy") or "energy"
+            local out = s:gsub(" %-%s*(%d+)", function(n) return " " .. n .. " " .. word end)
+            out = out:gsub("(%d) ([^%s,%.]+) ([^%s,%.]+)", function(n, a, b)
+                if a:lower() == b:lower() then return n .. " " .. a end
+            end)
+            return out
+        end
+        -- A label wrapped onto two lines is one label: "Max. aktivierbare.
+        -- War..." (firefly82, 2026-10-23), the shared clean-up having taken
+        -- the break for a new sentence. Only texts without a number, so a
+        -- list of rooms with their energy keeps its commas.
+        if type(raw) == "string" and raw:find("\n", 1, true) and not raw:find("%d") then
+            local joined = plain((raw:gsub("%s*\r?\n%s*", " ")))
+            if joined ~= "" then return joined end
+        end
         return false
     end)
     local out, rows = {}, {}
@@ -2827,6 +2873,13 @@ function M.install()
             end
         end
         if class_seen[name] == false then return end
+        -- A class not seen before is hooked now, as its first widget is
+        -- made: hooked on the next tick, the first room window of a session
+        -- had already been activated, its BP_OnActivated was missed, and
+        -- only a timed focus look found its focus 430 ms later (probe e1,
+        -- 2026-10-24). Its events run after this, when the game adds and
+        -- activates the widget.
+        if class_seen[name] == nil then pcall(hook_class, cls) end
         local okp, p = pcall(function() return path_of(o) end)
         if okp and p then made[p] = name end
         ExecuteInGameThread(function()
@@ -2873,6 +2926,11 @@ function M.install()
             if not (okp and p) then return end
             ExecuteInGameThread(function()
                 room_tab_seen[p] = true
+                -- The game focuses the new page once its fade is over
+                -- (focus.look_after_switch): on opening and on Left/Right.
+                pcall(function()
+                    require("focus").look_after_switch(function() return StaticFindObject(p).WidgetSwitcher end, "room tab")
+                end)
                 if room_wait[p] ~= "tab" then return end
                 room_wait[p] = nil
                 queue(p, "change", true)

@@ -101,13 +101,13 @@ Ship view:
 System Map and Sector Map:
 
 1. Up and Down Arrow move through the points of interest, or the star systems on the Sector Map. Each says whether it has been scanned and which resources it has.
-2. Enter opens a list of actions: Scan, or Set course. While you travel you hear when you are under way, halfway and arrived; I adds the trip's progress.
+2. Enter on the System Map picks the place in the game, so you hear the game's own details for it, then a list of actions: Scan, or Set course. On the Sector Map Enter goes straight to the list. Set course puts the pointer on the place and holds the game's own Set course, the way a mouse player does. While you travel you hear when you are under way, halfway and arrived; I adds the trip's progress.
 
 Point of interest events: each option reads its reward, its risk, and its chances of a good or bad outcome. Locked options are read when the event opens, and with R.
 
-Tech tree (from the Science Laboratory, or Research in the N list): Up and Down Arrow move through the tiers and technologies, Left and Right Arrow switch category, and Enter opens one, reading its cost and description; Enter again begins the research.
+Tech tree (from the Science Laboratory, or Research in the N list): Up and Down Arrow move through the tiers and technologies, Left and Right Arrow switch category, and Enter opens one, reading its cost and description; Enter again begins the research. R repeats where you are, Backspace closes the tree, and C tells you resources aren't shown there.
 
-Away missions: Up and Down Arrow move through the choices, the heroes for each and Confirm; each choice reads the skill it needs, its reward and its danger. Enter picks a hero or confirms. The result and the mission summary are read for you.
+Away missions: on the team selection, Up from the first slot goes through the recommended skills, traits and each challenge, one line at a time. Up and Down Arrow move through the choices, the heroes for each and Confirm; each choice reads the skill it needs, its reward and its danger, and a choice the game outlines in gold says "Major decision". Enter picks a hero or confirms. The result and the mission summary are read for you.
 
 Battles: Enter opens Orders, and the order wheel is a list (attack a system of the enemy ship, defend a side, repair, flee). I reads both ships, the enemies, your order, torpedoes, the heroes' abilities and the goal. The game's own keys work too: Space pauses, 1 to 3 use the heroes' abilities, Tab changes target, Shift fires a torpedo. Target changes, abilities becoming ready, pauses, each ship's hull dropping past 75, 50, 25 and 10 percent, and an enemy shield side going down are spoken as they happen.
 

@@ -80,6 +80,14 @@ end
 
 local nav_text   -- below; nav_where needs it (it was nil here, so I said nothing, 2026-10-21)
 
+-- An item's name in the game's language. "Research" is off the line-wide
+-- pass, which turned the game's own German texts into other words
+-- (firefly82, 2026-10-24), so it is looked up here, where the mod says it.
+local function label(it)
+    -- tr.word: Research
+    return require("tr").word(it[1])
+end
+
 -- For I (where am I) while N is open: it described the map behind the
 -- list (VM, 2026-10-14).
 function M.nav_where()
@@ -93,7 +101,7 @@ end
 -- (RoomPromptIndicator, a side mission icon and "1" on the Sector Map; the
 -- mod never said it, map parity audit, 2026-10-21).
 function nav_text(it)
-    local text = it[1]
+    local text = label(it)
     if it[2] == "ShowShipButton" then
         local bar = nav_bar()
         local okp, s = pcall(function() return require("ship").prompt_words(bar.RoomPromptIndicator) end)
@@ -165,7 +173,7 @@ function M.nav_enter()
     nav_items = nil
     local b = find(it[2])
     if not b then
-        speech.say(it[1] .. " is not available here", true)
+        speech.say(label(it) .. " is not available here", true)
         return
     end
     print("[VoyagerAccess] nav: " .. it[1] .. "\n")
@@ -173,7 +181,7 @@ function M.nav_enter()
     -- (2026-10-14). Hold it as the away mission Confirm is held.
     local ok, hold = pcall(function() return b.bRequiresHold end)
     if ok and hold then
-        speech.say(it[1] .. ", holding", true)
+        speech.say(label(it) .. ", holding", true)
         b:HandleButtonPressed()
         local name = it[2]
         ExecuteInGameThreadWithDelay(require("screen").hold_ms(b), function()
@@ -192,7 +200,7 @@ function M.nav_enter()
     -- The Sector map is named here, and help.lua then says only what is
     -- selected: "Sector map" came twice (VM, 2026-10-21).
     if it[2] == "ShowSectorButton" then M.nav_named, M.nav_named_at = "Sector map", os.clock() end
-    if it[2] ~= "ShowShipButton" and it[2] ~= "ShowSystemButton" then speech.say(it[1], true) end
+    if it[2] ~= "ShowShipButton" and it[2] ~= "ShowSystemButton" then speech.say(label(it), true) end
 end
 
 -- Left and Right switch the Overview's tabs, as in a room window; the new
@@ -445,6 +453,7 @@ local function check_calls(bar)
     end
     if waiting and not call_waiting then
         print("[VoyagerAccess] view: incoming call waiting\n")
+        pcall(function() require("calllisten").button_seen() end)
         speech.say("Incoming call." .. require("hints").text("call_n", " To answer, press N and choose Incoming calls."), false)
     end
     call_waiting = waiting

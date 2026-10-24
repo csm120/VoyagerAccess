@@ -628,7 +628,8 @@ function M.overview_plaque_label(b)
     -- silent after it (VM, 2026-10-17). EUINavigation Left 0, Right 1; Stop 3.
     pcall(function() b:SetNavigationRuleBase(0, 3); b:SetNavigationRuleBase(1, 3) end)
     -- Level and state first: the count goes after the first sentence.
-    return string.format("%s, %s: %s", level ~= "" and level or "Level", b.IsLocked and "not active" or "active", descr)
+    -- "Level" by name: it is off the line-wide pass (tr.lua, 2026-10-24).
+    return string.format("%s, %s: %s", level ~= "" and level or require("tr").word("Level"), b.IsLocked and "not active" or "active", descr)
 end
 
 return M

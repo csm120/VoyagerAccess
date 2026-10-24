@@ -231,6 +231,25 @@ end
 
 -- "Combat is paused! Complete Tutorial Steps to Continue" (or "Toggle
 -- Pause"): TextBlock and TextBlock_1 in the combat window's own tree.
+-- The message the game's last pause event named (ESTVCombatPauseState),
+-- set by the pause hook below; nil until the first one.
+local pause_message = nil
+local hint_text = "Toggle Pause"   -- the key hint's text; learned in the game's language
+-- A value of ESTVCombatPauseState by its name, from the game's enum.
+local pause_states = nil
+local function pause_state(name)
+    if not pause_states then
+        pause_states = {}
+        pcall(function()
+            StaticFindObject("/Script/STVoyager.ESTVCombatPauseState"):ForEachName(function(n, v)
+                local s = n:ToString()
+                pause_states[s:match("::(.+)$") or s] = v
+            end)
+        end)
+    end
+    return pause_states[name]
+end
+
 function M.paused_text(w)
     w = w or main()
     if not w then return nil end
@@ -282,7 +301,26 @@ function M.paused_text(w)
     end
     if not by.head then return nil end
     local s = by.head:gsub("!$", "")
-    if by.detail and by.detail ~= "Toggle Pause" then s = s .. ". " .. by.detail end
+    -- The line under the heading is the key hint ("Toggle Pause", German
+    -- "Pause umschalten") or a message the game puts there instead ("Finish
+    -- all tutorial steps to continue"). Which one, the game's pause event
+    -- says: OnCombatPauseChanged's OverwritePauseMessage
+    -- (ESTVCombatPauseState). The player's own Space came with None (0)
+    -- every time, the hint on screen (battle of 2026-10-24); Tutorial,
+    -- Offensive, Defensive and ChooseTarget name a message of their own. It
+    -- was decided on the English words, so every other language heard the
+    -- key hint on each pause. Not known yet (no pause event so far): said,
+    -- as the screen shows it.
+    local hint = pause_message ~= nil and (pause_message == pause_state("None") or pause_message == pause_state("TogglePause"))
+    -- The field's text on such a pause is the key hint in the game's
+    -- language; it is left out wherever it shows again. With Defensive (2)
+    -- the game kept "Toggle Pause" in the field and it was said (VM, an
+    -- enemy destroyed, 2026-10-24; firefly82's open point 6).
+    if hint and by.detail then hint_text = by.detail end
+    if by.detail and by.detail == hint_text then hint = true end
+    if by.detail and not hint then
+        s = s .. ". " .. by.detail
+    end
     return s
 end
 
@@ -813,10 +851,13 @@ local function ensure_pause_hook()
     local w = main()
     if not w then return end
     local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
-    pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function()
+    pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function(_, _, msg)
+        -- Which message the screen shows under the heading (paused_text).
+        local okm, m = pcall(function() return msg:get() end)
+        if okm and type(m) == "number" then pause_message = m end
         -- A pre callback: the pause text is shown on the next tick.
         ExecuteInGameThread(function()
-            print("[VoyagerAccess] combat: pause event\n")
+            print("[VoyagerAccess] combat: pause event, message " .. tostring(pause_message) .. "\n")
             pcall(function() if M.active() then pause_poll(main()) end end)
         end)
     end)

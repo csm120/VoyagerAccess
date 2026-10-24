@@ -90,7 +90,9 @@ follows them.
    work); hold F to upgrade it, or hold T to demolish it. The game takes
    repair, clear debris, upgrade and demolish only with the key held, about
    two thirds of a second; power and pause are a tap. Moving to a room
-   says each action the game offers there, with its key and cost, like
+   says the room, its deck and state at once; once the game's info panel
+   shows the room (the camera has reached it), it says each action the game
+   offers there, with its key and cost, like
    "E: Toggle Power", "Hold E: Repair", "Hold F: Upgrade" or "Enter: Build
    Room" on an empty space. Moving to a room puts the
    mouse pointer on it, and the camera goes to it when it is off screen.
@@ -98,7 +100,12 @@ follows them.
    panel shows when you point at the room (level, energy, crew, and what E
    does there and costs). Up, Down, Home and End move; Backspace closes it.
 6. System map: Up and Down through the points of interest, Home and End,
-   Enter opens the action list (Scan, Set course). The list keeps its order
+   Enter selects the point in the game, as a click on it does, so the game's
+   own detail panel opens and is read (name, system, zone, resources), then
+   opens the action list (Scan, Set course, and the panel's third button,
+   Inspect, under the game's own name when the game shows it). Inspect opens
+   the game's close view of the point, which has no text; Backspace leaves
+   it. The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds
    without a move). Set course says "Under way to", "Halfway to" and
    "Arrived at"; I adds the trip's progress and says "not moving" if the
@@ -126,7 +133,9 @@ follows them.
    its panel.
    Up, Down, Home, End move; Left and Right switch category; Enter opens the
    item's panel, which is read (costs, description, and whether Enter begins
-   the research); Escape closes the panel, then the tree.
+   the research); Escape closes the panel, then the tree. Backspace closes
+   the tree when no panel is open (with a panel open it says that Escape
+   closes the panel). R repeats the item (the game closes an open panel on R).
 9. Overview (N, Overview): Left and Right switch tabs, and each tab is read when it opens.
    Up and Down go through the open tab line by line, one row per item (a
    morale condition with its crew and max morale, a threshold with its
@@ -143,5 +152,8 @@ follows them.
    happen.
 11. Away team selection: once every slot is filled, the game starts the
     mission on Enter wherever focus is, and filled slots say "Team complete:
-    Enter starts the mission." Heroes in a mission choice say when they have
+    Enter starts the mission." Up from the first slot goes through the
+    mission's recommended skills, each recommended trait and each challenge
+    as lines; Up and Down move, Home goes to the first line, and Down from
+    the last line or End goes back to the slots. Heroes in a mission choice say when they have
     the trait the choice asks for ("has the Pilot trait").

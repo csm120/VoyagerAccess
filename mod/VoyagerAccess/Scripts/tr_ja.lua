@@ -38,6 +38,9 @@ return {
     ["Recommended traits: {s}"] = "推奨特性: {s}",
     ["{n}: {s}"] = "{n}: {s}",
     ["{n} challenges. {s}"] = "課題{n}件。{s}",
+    ["Recommended trait: {s}"] = "推奨特性: {s}",
+    ["Challenge {n} of {n}: {s}"] = "課題 {2}中{1}: {3}",
+    ["Up from the first slot goes through the recommendations and challenges one at a time"] = "最初のスロットから上矢印で、推奨と課題を1つずつ確認できます",
     ["Hero {n}"] = "ヒーロー{n}",
     ["skill"] = "スキル",
     ["resources"] = "資源",
@@ -262,6 +265,8 @@ return {
     ["Collected"] = "回収しました",
     ["Collected: {s}"] = "回収: {s}",
     ["Crafting {s} started"] = "{s}の製作を開始",
+    ["Crafting {s} cancelled"] = "{s}の製作を中止",
+    ["Crafting cancelled"] = "製作を中止",
     ["Not possible"] = "できません",
     ["Cannot leave for this sector yet. {s}"] = "この星域にはまだ出発できません。{s}",
     ["Analysis started"] = "解析を開始",
@@ -925,4 +930,6 @@ return {
     -- whatsnew.lua
     ["Version {s}. "] = "バージョン{s}。",
     ["What's new is not available"] = "新機能の情報がありません",
+    ["Backspace closes the tree when no panel is open"] = "パネルが開いていないとき、Backspaceでツリーを閉じます",
+    ["R repeats the item"] = "Rで項目を繰り返します",
 }

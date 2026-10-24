@@ -178,6 +178,13 @@ local function precursors_by_place(shown)
     return out
 end
 
+-- The list's lines are built in the game's language here, the mod's own
+-- words through tr.word and tr.fill, the game's names as they are, and said
+-- without the line pass (speech.say's built): a new line took 36 to 77 ms
+-- in that pass (timing log, 2026-10-24), and every line here is new, as it
+-- ends in its place in the list.
+local tr = require("tr")
+
 local function build()
     local items = {}
     local tiers = {}
@@ -191,7 +198,7 @@ local function build()
             local num = tonumber(n) or (#tiers + 1)
             tiers[#tiers + 1] = {
                 n = num, researched = w.bAlreadyResearched == true,
-                text = string.format("Tier %d, %s", num, state(w.bAlreadyResearched, w.bCanBeresearched, w.bCurrentResearch)),
+                text = tr.fill("Tier {n}, {s}", num, tr.word(state(w.bAlreadyResearched, w.bCanBeresearched, w.bCurrentResearch))),
                 button = path_of(w.TierButton),
             }
         end
@@ -212,17 +219,17 @@ local function build()
             local name = ""
             pcall(function() name = clean_name(w.TechName:ToString()) end)
             local obf = w.bObfuscate == true or name == ""
-            if obf then name = "Unknown technology" end
+            if obf then name = tr.word("Unknown technology") end
             -- Row 0 is the starting technologies, above the Tier 1 band;
             -- row N is tier N. "row + 1" called Hyperspanner tier 3 while it
             -- sits in the Tier 2 band (VM screenshot, 2026-10-15).
             local st = state(w.bAlreadyResearched, w.bCanBeresearchItem, w.bCurrentResearch)
-            local where = row == 0 and "starting technology" or ("tier " .. row)
+            local where = row == 0 and tr.word("starting technology") or tr.fill("tier {n}", row)
             -- A tech in a tier not yet researched is locked by that tier.
             if st == "locked" and row > 0 and tier_done[row] == false then st = "locked until its tier is researched" end
             techs[#techs + 1] = {
                 row = row, col = col, name = name, obf = obf,
-                text = string.format("%s, %s, %s", name, where, st),
+                text = string.format("%s, %s, %s", name, where, tr.word(st)),
                 button = path_of(w.RegularTechButton),
                 -- Shown as a style and an icon on the field (firefly82).
                 important = not obf and w.bImportant == true,
@@ -241,13 +248,13 @@ local function build()
             local s = shown[p]
             if s and s.obf then unknown = unknown + 1 elseif s then names[#names + 1] = s.name end
         end
-        if unknown > 0 then names[#names + 1] = unknown == 1 and "an unknown technology" or (unknown .. " unknown technologies") end
+        if unknown > 0 then names[#names + 1] = unknown == 1 and tr.word("an unknown technology") or tr.fill("{n} unknown technologies", unknown) end
         -- Filled here in the game's language: left to the line pass, its
         -- last slot took the rest of the line, and German said "baut auf
         -- Messe, 12 von 48 auf" (firefly82, 2026-10-21).
-        if #names > 0 then t.text = t.text .. require("tr").fill(", builds on {s}", table.concat(names, require("tr").word(" and "))) end
-        if t.important then t.text = t.text .. ", important" end
-        if t.feature then t.text = t.text .. ", unlocks a feature" end
+        if #names > 0 then t.text = t.text .. tr.fill(", builds on {s}", table.concat(names, tr.word(" and "))) end
+        if t.important then t.text = t.text .. tr.word(", important") end
+        if t.feature then t.text = t.text .. tr.word(", unlocks a feature") end
     end
     table.sort(techs, function(a, b)
         if a.row ~= b.row then return a.row < b.row end
@@ -260,18 +267,19 @@ local function build()
     for _, t in ipairs(techs) do
         if t.row > 0 then
             opens[t.row] = opens[t.row] or {}
-            table.insert(opens[t.row], (t.text:match("^(.-), tier %d+")))
+            table.insert(opens[t.row], t)
         end
     end
     for _, t in ipairs(tiers) do
         local names = opens[t.n]
         if names and #names > 0 then
             local known, unknown = {}, 0
-            for _, n in ipairs(names) do
-                if n == "Unknown technology" then unknown = unknown + 1 else known[#known + 1] = n end
+            -- By the field's own flag, not by the words said for it.
+            for _, x in ipairs(names) do
+                if x.obf then unknown = unknown + 1 else known[#known + 1] = x.name end
             end
-            if unknown > 0 then known[#known + 1] = unknown .. (unknown == 1 and " unknown technology" or " unknown technologies") end
-            t.text = string.format("%s, opens %d: %s", t.text, #names, table.concat(known, ", "))
+            if unknown > 0 then known[#known + 1] = tr.fill(unknown == 1 and "{n} unknown technology" or "{n} unknown technologies", unknown) end
+            t.text = t.text .. tr.fill(", opens {n}: {s}", #names, table.concat(known, ", "))
         end
     end
     for _, t in ipairs(techs) do items[#items + 1] = t end
@@ -280,11 +288,19 @@ end
 
 local function say(interrupt)
     local it = list.items[list.index]
-    if it then speech.say(string.format("%s, %d of %d", it.text, list.index, #list.items), interrupt) end
+    if it then speech.say(tr.fill("{s}, {n} of {n}", it.text, list.index, #list.items), interrupt, true) end
 end
 
 function M.open()
     return list ~= nil
+end
+
+-- The tree is up, read or not yet: the game's own state counts too, for the
+-- ticks between its opening and the list being built.
+function M.showing()
+    if list ~= nil then return true end
+    local ok, now = pcall(open_now)
+    return ok and now == true
 end
 
 -- For I (where am I): "Tech tree, Engineering. Small Battery Compartment,
@@ -656,6 +672,41 @@ local function az_enter()
     if not shown then building = false end
 end
 
+-- Backspace in the tree said "Nothing to go back to" while the keys list
+-- says Backspace goes back (firefly82, 2026-10-23). Without a panel it
+-- closes the tree with the tree's own back action, the one Escape falls
+-- back on (proven in the VM, 2026-10-21). With a panel open that action
+-- closes the tree as well, so the panel is left to the game's Escape and
+-- the key says so.
+function M.back()
+    if M.panel_open() then
+        speech.say("Escape closes the panel, then the tree.", true)
+        return
+    end
+    local v = tree_view()
+    if v and pcall(function() v:CallBackAction() end) then
+        print("[VoyagerAccess] techtree: back action on Backspace\n")
+        return
+    end
+    speech.say("Escape closes the panel, then the tree.", true)
+end
+
+-- R: the list's current item. The game closes an open panel on R, before
+-- this runs, and the close already says the item, so it is not said twice
+-- (VM, 2026-10-24: panel open before R, closed after, the item heard
+-- twice).
+local last_again = -100
+function M.say_again()
+    last_again = os.clock()
+    if os.clock() - panel_closed_at < 1 then return end
+    local ok, view, start, abort = pcall(selected_view)
+    if ok and view then
+        speech.say(view_text(view, start, abort), true)
+        return
+    end
+    if list and list.items[list.index] then say(true) end
+end
+
 function M.enter()
     if building then return end
     if list.az then return az_enter() end
@@ -775,7 +826,8 @@ local function poll()
             -- Closed (Escape): say where the list is again.
             view_said = nil
             panel_closed_at = os.clock()
-            say(true)
+            -- R has just said it (say_again, which can run first).
+            if os.clock() - last_again >= 1 then say(true) end
         end
     end
 end

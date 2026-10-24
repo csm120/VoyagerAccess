@@ -18,10 +18,11 @@ local UNITS = { BioNeuralGelPack = "bio-neural gel packs", SciencePoints = "scie
 -- A resource's name in the game's language, or nil: in German "-6 energy"
 -- and "5 crew" were English (firefly82's review, 2026-10-20). The game's
 -- STVResourceManager:GetResourceDisplayNameById ("Energy", "Crew",
--- "Bio-neural Gel Pack"; empty for an id it does not know).
+-- "Bio-neural Gel Pack"; empty for an id it does not know). In English
+-- too: there the mod's own UNITS words were used instead, so only English
+-- players heard the mod's names rather than the game's (2026-10-24). UNITS
+-- is left for an id the game does not name.
 function M.game_resource_name(id)
-    local okl, english = pcall(function() return require("language").english() end)
-    if not okl or english then return nil end
     local name = nil
     pcall(function()
         local s = FindFirstOf("STVResourceManager"):GetResourceDisplayNameById(id):ToString()
@@ -31,18 +32,31 @@ function M.game_resource_name(id)
 end
 
 -- A hero attribute's name as the game shows it (STVHeroManager's
--- GetHeroAttributeName), outside English; nil in English, where the
--- enum's own name is kept. "Aufgabe Medicine" was said in German (VM,
--- 2026-10-20).
+-- GetHeroAttributeName), in every language; nil only when the game gives
+-- none, and the enum's own name is used. "Aufgabe Medicine" was said in
+-- German (VM, 2026-10-20); English heard the enum's name, not the game's
+-- (2026-10-24).
 function M.hero_attribute_name(value)
-    local okl, english = pcall(function() return require("language").english() end)
-    if not okl or english then return nil end
     local name = nil
     pcall(function()
         local s = FindFirstOf("STVHeroManager"):GetHeroAttributeName(value):ToString()
         if s ~= "" then name = s end
     end)
     return name
+end
+
+-- A skill icon's material ("MI_UI_Science") as the game's own name for the
+-- skill, through hero_attribute_name; the icon's English word only when the
+-- game gives none, nil when the material names no skill word. The icon's
+-- word was said in German ("Benötigt Command 29", "kein Diplomacy";
+-- firefly82's review, 2026-10-24). ESTVHeroAttribute values from the
+-- header dump of 2026-10-18.
+local ATTRIBUTES = { Command = 0, Diplomacy = 1, Engineering = 2, Security = 3, Medicine = 4, Science = 5 }
+function M.skill_icon_name(material)
+    local word = type(material) == "string" and material:match("^MI_UI_(%a+)")
+    if not word then return nil end
+    local v = ATTRIBUTES[word]
+    return (v and M.hero_attribute_name(v)) or word
 end
 
 local function unit(id)
