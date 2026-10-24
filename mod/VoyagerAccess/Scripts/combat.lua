@@ -491,7 +491,7 @@ end
 -- Tab (the game's) changes the target: say the new one with its hull.
 local said_target = nil
 
-local function target_poll(w)
+local function target_poll(w, force)
     local ok, key, name, hull = pcall(function()
         local v = w.EnemyView
         local c = v.MyCombatant
@@ -500,7 +500,10 @@ local function target_poll(w)
         return k, title(plain(text_of(v.ShipNameText))), h
     end)
     if not ok or not key or name == "" then return end
-    if said_target and key ~= said_target then
+    -- force: the game's own OnSwitchedToEnemy (Tab), said even when the
+    -- target stays the same; one enemy left, two Tabs were silent
+    -- (firefly82's review, 2026-10-23).
+    if (said_target and key ~= said_target) or force then
         local text = "Target: " .. name .. (hull ~= "" and (", hull " .. hull) or "")
         print("[VoyagerAccess] combat: " .. text .. "\n")
         speech.say(text, true)
@@ -782,6 +785,7 @@ local function milestones_poll(w)
             end
             local step = hull_step(pct)
             if step > t.step then
+                print("[VoyagerAccess] combat: milestone " .. name .. " hull " .. pct .. "%\n")
                 speech.say(name .. ", " .. require("tr").fill("hull {s}", pct .. "%"), false)
             end
             t.step = step
@@ -799,8 +803,50 @@ local function milestones_poll(w)
     end
 end
 
+-- The combat window's own pause event (OnCombatPauseChanged on the
+-- Blueprint class, at once on every Space; firefly82's probe, 2026-10-23):
+-- the pause is said then, not on the loop's next run up to half a second
+-- later. Hooked on the live window's class when it first shows.
+local pause_hooked = false
+local function ensure_pause_hook()
+    if pause_hooked then return end
+    local w = main()
+    if not w then return end
+    local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
+    pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function()
+        -- A pre callback: the pause text is shown on the next tick.
+        ExecuteInGameThread(function()
+            print("[VoyagerAccess] combat: pause event\n")
+            pcall(function() if M.active() then pause_poll(main()) end end)
+        end)
+    end)
+    print("[VoyagerAccess] combat: pause hook " .. (pause_hooked and "installed" or "not installed") .. "\n")
+    -- The game's target change (Tab, or a new target after one is gone).
+    local ok_t = pcall(RegisterHook, cpath .. ":OnSwitchedToEnemy", function()
+        ExecuteInGameThread(function()
+            pcall(function() if M.active() then target_poll(main(), true) end end)
+        end)
+    end)
+    print("[VoyagerAccess] combat: target hook " .. (ok_t and "installed" or "not installed") .. "\n")
+    -- Hits: the hull text is up to date when these come, so a milestone is
+    -- said at the hit itself; the loop looked twice a second and skipped 50%
+    -- between "72%" and "23%" (firefly82's review, 2026-10-23). The loop
+    -- still runs as a backstop; milestones are said once each.
+    local n_hit = 0
+    for _, ev in ipairs({ "PlayerDamaged", "EnemyDamaged", "AllyDamaged" }) do
+        if pcall(RegisterHook, cpath .. ":" .. ev, function()
+            ExecuteInGameThread(function()
+                print("[VoyagerAccess] combat: " .. ev .. "\n")
+                pcall(function() if M.active() then milestones_poll(main()) end end)
+            end)
+        end) then n_hit = n_hit + 1 end
+    end
+    print("[VoyagerAccess] combat: hit hooks " .. n_hit .. " of 3\n")
+end
+
 local function poll()
     M.setup_sync()
+    pcall(ensure_pause_hook)
     -- When the setup was last up: focus.lua does not open Orders on the
     -- Enter that started the battle.
     if M.setup_up() then M.setup_last = os.time() end

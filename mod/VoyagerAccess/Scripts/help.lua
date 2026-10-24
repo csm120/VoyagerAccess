@@ -20,11 +20,13 @@ local HELP = {
         .. "E is the room's quick action. Hold F to upgrade it, or T to demolish it.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
         .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship.",
-    room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room.",
+    room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room. "
+        .. "Closing a hero list without choosing removes the hero.",
     event = "Up and Down move between the options. Where an option can take a hero, Left and Right choose one first. Enter picks the option. R reads the locked options.",
     mission = "Up and Down move through the choices, their heroes and Confirm. Home and End go to the first and last. "
         .. "Enter on a hero picks them for that choice, then Enter on its Confirm makes the choice. "
-        .. "A hero below the skill needed can still succeed. After a result, Enter continues and R repeats it.",
+        .. "A hero below the skill needed can still succeed. After a result, Enter continues and R repeats it. "
+        .. "Closing a hero list without choosing removes the hero.",
     settings = "Up and Down move between settings. Left and Right change the value. "
         .. "Home and End go to the first and last. Backspace goes back.",
     menu = "Up and Down move. Home and End go to the first and last. Enter selects. Backspace goes back.",

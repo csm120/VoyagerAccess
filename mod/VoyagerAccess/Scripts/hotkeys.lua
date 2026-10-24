@@ -12,7 +12,7 @@ local M = {}
 local GROUPS = {
     { "Everywhere", {
         "F1: the keys for the screen you are on",
-        "Control F1: this list of every key. Escape or Backspace closes it",
+        "Control F1: this list of every key. Backspace closes it",
         "I: where you are and what is selected",
         "O: your objective. In combat, the combat goal",
         "C: hull, resources, crew, energy, battery and morale, as a list. Enter on a line lists its details, as the game's tooltip shows them; Backspace goes back",
@@ -42,7 +42,7 @@ local GROUPS = {
         "Left and Right: move along the deck. Home and End: the ends of the deck",
         "Enter: open the room. On empty building space, the construction ring",
         "J: list of the ship's rooms with deck and state. Enter selects one, J or Backspace closes it",
-        "I twice: the room's details as a list, as the game shows them when pointing at the room: level, energy, crew, and what E does and costs. Backspace or Escape closes it",
+        "I twice: the room's details as a list, as the game shows them when pointing at the room: level, energy, crew, and what E does and costs. Backspace closes it",
         "In a room window: Up and Down move between buttons, Left and Right switch tabs, Escape closes it",
         "In a ring of actions: Up and Down move, Enter picks, Escape closes it",
         "E, the game's key: the room's quick action, such as power on or off, repair, clear debris, or pause work. It acts on the room you last heard: a room is said once the game has the pointer on it, with what E does there",

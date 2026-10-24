@@ -53,7 +53,7 @@ Every release is described in plain words in [What's new in Voyager Access](docs
 
 ## Keys
 
-Press F1 anywhere in the game to hear the keys for the screen you are on. Press Control+F1 for a list of every key, grouped by screen, which you move through with Up and Down Arrow; Escape or Backspace closes it.
+Press F1 anywhere in the game to hear the keys for the screen you are on. Press Control+F1 for a list of every key, grouped by screen, which you move through with Up and Down Arrow; Backspace closes it.
 
 Everywhere:
 
@@ -64,7 +64,7 @@ Everywhere:
 5. N: a list of places to go: ship, System Map, Sector Map, Overview, Research, and Wait one cycle.
 6. V: switch between the ship and the System Map.
 7. R: repeat the last line, tutorial or window.
-8. Escape: the game's own back and pause menu. It also closes any list Voyager Access opened.
+8. Escape: the game's own back and pause menu, just as for anyone else. Backspace closes a list Voyager Access opened without bringing up the pause menu.
 9. F12: check for a Voyager Access update now. If one is found, you hear that it is ready; press F12 again to restart the game and install it.
 10. Control+F12: what's new in Voyager Access.
 11. Backtick (the key left of 1): copy a troubleshooting report to the clipboard.
@@ -113,7 +113,7 @@ Battles: Enter opens Orders, and the order wheel is a list (attack a system of t
 
 Side mission requests read who is asking, what they want and the time limit, then the choices.
 
-Tutorials are read aloud and then closed for you. R repeats the last one.
+Tutorials are read aloud and stay open until you press Enter, so R can read them again. While one is open, the arrow keys remind you that Enter closes it.
 
 ## Uninstalling
 

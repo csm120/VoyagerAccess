@@ -2078,6 +2078,17 @@ end
 -- SetFocus on its Close button did not move focus, so Enter closes an open
 -- tutorial directly instead (focus.lua calls this first). Clicking Close
 -- this way is proven (it opened the next tutorial, 2026-10-10).
+-- A tutorial is on screen (keys.lua answers the arrows with how to close it).
+function M.tutorial_open()
+    for p, cls in pairs(open) do
+        if cls == "WBP_TutorialInfoWidget_C" then
+            local w = StaticFindObject(p)
+            if w and w:IsValid() and screen.shown(w) then return true end
+        end
+    end
+    return false
+end
+
 function M.close_tutorial()
     for p, cls in pairs(open) do
         if cls == "WBP_TutorialInfoWidget_C" then
@@ -2540,7 +2551,9 @@ local function process(p, kind, trust, retry)
                 end
             end
         end
-        ExecuteInGameThread(function() pcall(M.close_tutorial) end)
+        -- It stays open until Enter, as for a sighted player, who can read
+        -- it again while it is up; it used to close as soon as it was read
+        -- (firefly82's review; Casey chose this, 2026-10-23). R repeats it.
     end
     local texts = {}
     for _, s in ipairs(said) do if s then texts[#texts + 1] = s end end

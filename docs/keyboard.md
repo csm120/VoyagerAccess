@@ -19,9 +19,10 @@ follows them.
    Down are hard to find on laptops).
 4. Enter does the selected thing. Where a thing has more than one action,
    Enter opens a short list of its actions instead.
-5. Backspace goes back, or closes a list the mod opened. Escape also closes
-   a list the mod opened, and does the game's own Escape as well (the game
-   receives every key).
+5. Backspace goes back, or closes a list the mod opened. Escape is the
+   game's: it opens the pause menu where the game does. If a list the mod
+   opened is up, Escape closes it too, and the pause menu stays (Casey,
+   2026-10-23: the mod no longer clicks it away).
 6. F1 says the keys for the current screen. No "Press F1 for help" hint is
    spoken on screens (Casey, 2026-10-11: it repeated on every screen).
 7. O reads the current objective; C reads the resources (cargo) as a list,
@@ -35,10 +36,10 @@ follows them.
    example "Duranium 100, max 100".
 8. Never describe anything by color. A chance bar is read as its outcomes and
    their chances (excellent, good, average, bad, terrible), after the
-   rewards, worded "Good: 70% chance of a good outcome, 30% chance of a bad
-   outcome" (Casey, 2026-10-11). The one-word verdict is the sighted glance:
-   Good (65% or more on the good side, average counting half), Mixed, or Bad
-   (35% or less). A bar with one outcome is not read.
+   rewards, worded "70% chance of a good outcome, 30% chance of a bad
+   outcome" (Casey, 2026-10-11), rounded to fives. No summary word goes in
+   front: the bar has none (Casey, 2026-10-23). A bar with one outcome is
+   not read.
 9. A key the mod uses must be unbound in the game in that context
    (the game's own key bindings), because the game also receives it.
 10. Key hints the mod adds to a reading ("Left and Right choose another",
@@ -67,9 +68,10 @@ follows them.
 5. Ship view: Up and Down (or Page Up and Page Down) change deck, Left and
    Right move along it, Home and End go to the ends of the deck, Enter opens
    a room. In a room window: Up and Down through its buttons, Left and Right
-   switch tabs, Escape closes it (the game's own Escape). In a room's hero
-   list, Backspace closes the list and keeps the room's hero; the game's own
-   Escape empties the room's hero slot. Sickbay's Manage Patients tab reads
+   switch tabs, Escape closes it (the game's own Escape). Closing a room's
+   hero list without choosing, with Backspace or Escape, takes the hero out
+   of the room, as the game does; the mod says "removed" (Casey,
+   2026-10-23). Sickbay's Manage Patients tab reads
    each patient with their condition and the cycles to recover; a quarters
    room's Crew Info tab reads its inhabitants with their condition and
    where they work; the Bridge's
@@ -94,8 +96,7 @@ follows them.
    mouse pointer on it, and the camera goes to it when it is off screen.
    Press I twice for the room's details as a list: what the game's info
    panel shows when you point at the room (level, energy, crew, and what E
-   does there and costs). Up, Down, Home and End move; Backspace or Escape
-   closes it.
+   does there and costs). Up, Down, Home and End move; Backspace closes it.
 6. System map: Up and Down through the points of interest, Home and End,
    Enter opens the action list (Scan, Set course). The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds

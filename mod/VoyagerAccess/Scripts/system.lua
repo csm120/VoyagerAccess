@@ -835,7 +835,10 @@ local function watch_arrival(name, target, start_d)
                         -- (VM, 2026-10-18).
                         ExecuteInGameThreadWithDelay(2000, function()
                             if watch_id ~= my_watch then return end
-                            speech.say(name .. "'s event did not open, because another window was up when Voyager arrived. Set course to another point and back to start it.", false)
+                            -- No cause: "because another window was up" was the
+                            -- mod's guess, the game gives no reason (firefly82's
+                            -- review; Casey, 2026-10-23).
+                            speech.say("The event at " .. name .. " did not start. Set course to another point and back to start it.", false)
                         end)
                     end)
                 end

@@ -2,6 +2,19 @@
 
 ## Friday October 23rd 2026
 
+Version 0.3.79
+
+These changes come from firefly82's review and the choices I made about it. The idea behind all of them: let the game do what the game does, and tell you what it did.
+
+- Changed: tutorials stay open until you press Enter, so you can hear them again with R, the way a sighted player can read them again. If you press an arrow key while one is open, you'll hear "Tutorial open. Enter closes it, R repeats it."
+- Changed: Escape belongs to the game now. It opens the pause menu wherever the game does, even with one of Voyager Access's lists open. Use Backspace to close those lists without the pause menu.
+- Changed: when you close a hero list without picking anyone, the game takes that hero out, and the mod used to quietly put them back. Now it tells you what happened, like "Chakotay removed", and you choose.
+- Changed: event chances no longer start with "Good", "Mixed" or "Bad". The game's bar has no word on it, and the percentages already tell you.
+- Changed: when an arrival event doesn't start, you hear "The event at ... did not start. Set course to another point and back to start it." The old message guessed at a reason the game never gives.
+- Faster battles: pausing with Space, picking a target with Tab and the hull milestones are said the moment the game reacts. Tab also says your target when it stays the same, which used to be silent.
+
+## Friday October 23rd 2026
+
 Version 0.3.78
 
 - Faster events: when an event opens, you hear its options and their chances right away. The mod used to slide the mouse down the options for a few seconds to make the game show its numbers, and you heard nothing while it did. Now it just asks the game. Thanks again to firefly82, who found the way!

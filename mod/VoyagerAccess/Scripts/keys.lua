@@ -24,6 +24,8 @@ M.last_key_time = 0
 -- works (events.lua's chance sweep).
 M.key_count = 0
 
+local TUTORIAL_KEYS = { up = true, down = true, left = true, right = true, home = true, ["end"] = true }
+
 -- fn runs on the game thread; errors are logged with the key name.
 function M.on(name, fn)
     handlers[name] = fn
@@ -98,6 +100,15 @@ local function dispatch()
             -- firefly82's patch, 2026-10-21).
             if not command then M.key_count = M.key_count + 1 end
             local fn = handlers[name]
+            -- A tutorial stays open until Enter now (Casey, 2026-10-23):
+            -- the moving keys say so instead of acting behind it.
+            if fn and TUTORIAL_KEYS[name] then
+                local okt, up = pcall(function() return require("popups").tutorial_open() end)
+                if okt and up then
+                    fn = nil
+                    pcall(function() require("speech").say("Tutorial open. Enter closes it, R repeats it.", true) end)
+                end
+            end
             if fn then
                 crumb.at("key: " .. name)
                 local ok, err = pcall(fn)

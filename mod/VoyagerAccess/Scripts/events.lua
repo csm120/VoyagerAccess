@@ -332,8 +332,8 @@ function M.round_fives(weights)
     return out
 end
 
--- "Good: 70% chance of a good outcome, 30% chance of a bad
--- outcome", or nil. b is the option's button, for the game's own weights.
+-- "70% chance of a good outcome, 30% chance of a bad outcome",
+-- or nil. b is the option's button, for the game's own weights.
 -- With hero (skill and best, the option's highest usable skill), the bar
 -- the game shows while the mouse rests on that hero's portrait. The game
 -- works it out with GetHeroSkillAdjustedWeight, and its hover weights
@@ -395,20 +395,10 @@ local function chances(o, b, hero)
     -- no per-outcome amounts are read (Casey chose parity, 2026-10-11).
     if #list == 1 then return nil end
     local out = {}
-    -- The glance a sighted player gets from the bar ("mostly green"),
-    -- said before the numbers in the game's own words (Casey, 2026-10-11).
-    -- Excellent and good count as good, bad and terrible as bad, and
-    -- average as half of each.
-    local score = 0
-    for _, e in ipairs(list) do
-        local share = e.weight / total
-        if e.outcome <= 1 then score = score + share
-        elseif e.outcome == 2 then score = score + share / 2 end
-    end
-    score = math.floor(score * 100 + 0.5)
-    -- One word; the percentages after it give the detail ("likely" was
-    -- redundant with them, Casey 2026-10-11).
-    local verdict = score >= 65 and "Good" or score > 35 and "Mixed" or "Bad"
+    -- No summary word ("Good:", "Mixed:", "Bad:") in front any more: the
+    -- game's bar has no word on it, so it was the mod adding something a
+    -- sighted player does not get; the percentages say it (firefly82's
+    -- review; Casey, 2026-10-23).
     -- Rounded to fives, as the coloured bar gives them at a glance; exact
     -- figures like "26%" and "74%" read as more precise than anything a
     -- sighted player sees (Casey, 2026-10-19). The parts still add up to 100
@@ -422,8 +412,7 @@ local function chances(o, b, hero)
         -- tr.word: good | bad
         out[#out + 1] = string.format("%d%% chance of %s%s outcome", pct[i], article, require("tr").word(word))
     end
-    -- tr.word: Good | Bad
-    return require("tr").word(verdict) .. ": " .. table.concat(out, ", ")
+    return table.concat(out, ", ")
 end
 
 -- Rooms that improve an option. Each result's BonusWeight entries

@@ -2930,46 +2930,23 @@ end
 
 -- After Escape or Backspace leaves an away team or battle hero list: the
 -- game takes the slot's hero out when its list closes without a choice.
--- If the slot Enter opened is now empty, open it again and choose the same
--- hero, quietly, then say the slot.
+-- The mod used to open the slot again and choose the same hero; now it
+-- leaves what the game did and says it, "Joe Carey removed" before the slot
+-- ("..., empty"), and the player chooses (firefly82's review; Casey,
+-- 2026-10-23).
 function M.restore_slot_hero()
     local before = M.slot_before
     if not before then return end
-    -- Quiet from the key on: "Combat slot 1 of 3, empty" was said before
-    -- the hero came back.
     M.hush_focus_until = os.clock() + 1
     ExecuteInGameThreadWithDelay(500, function()
+        M.hush_focus_until = 0
         pcall(function()
             local away = require("awaymission")
             local okl, l = pcall(away.slot_label, before.path)
             if not (okl and type(l) == "string" and l:find("empty", 1, true)) then return end
             M.slot_before = nil
-            local slot = StaticFindObject(before.path)
-            if not (slot and slot:IsValid()) then return end
-            print("[VoyagerAccess] back: choosing " .. before.hero .. " again\n")
-            M.hush_focus_until = os.clock() + 3
-            click(slot)
-            ExecuteInGameThreadWithDelay(600, function()
-                pcall(function()
-                    for _, hb in ipairs(away.hero_buttons()) do
-                        local okn, nm = pcall(function() return hb.HeroPlaque.HeroNameText:GetText():ToString() end)
-                        if okn and hb:IsValid() and live(hb) and require("screen").shown(hb)
-                            and nm:match("^%s*(.-)%s*$") == before.hero then
-                            click(hb)
-                            break
-                        end
-                    end
-                end)
-                ExecuteInGameThreadWithDelay(600, function()
-                    M.hush_focus_until = 0
-                    pcall(function()
-                        local s = StaticFindObject(before.path)
-                        if s and s:IsValid() then s:SetFocus() end
-                        local okk, l2 = pcall(away.slot_label, before.path)
-                        speech.say(okk and l2 or before.hero, true)
-                    end)
-                end)
-            end)
+            print("[VoyagerAccess] back: " .. before.hero .. " removed from the slot\n")
+            speech.say(require("tr").fill("{s} removed", before.hero) .. ". " .. l, true)
         end)
     end)
 end
@@ -2993,50 +2970,24 @@ local function go_back()
                 local cls = w:GetClass():GetFName():ToString()
                 if cls:find("HeroPickerSelection_C$") then
                     -- Closing a room's list without a choice takes its hero
-                    -- out of the room, with the game's Escape too, and
-                    -- clicking that hero in the list takes him out as well:
-                    -- Neelix left the Mess Hall on Backspace (VM,
-                    -- 2026-10-15). The room has no close button. So the list
-                    -- is closed, opened again and the hero chosen again,
-                    -- quietly, and the slot is said at the end.
+                    -- out of the room, with the game's Escape too (Neelix
+                    -- left the Mess Hall on Backspace, VM, 2026-10-15). The
+                    -- mod used to open the list again and choose him again;
+                    -- now it does what the game does and says so, and the
+                    -- player chooses (firefly82's review; Casey, 2026-10-23).
                     local keep = cls:find("Room", 1, true) and M.room_hero_before
+                    -- Quiet until the line below: "Assign a hero" came twice,
+                    -- once from focus and once after "Chakotay removed" (demo).
+                    if keep then M.hush_focus_until = os.clock() + 0.6 end
                     w:CallBackAction()
                     if keep then
-                        print("[VoyagerAccess] back: choosing " .. keep .. " again\n")
-                        M.hush_focus_until = os.clock() + 4
-                        local function shown_slot()
-                            for _, sb in ipairs(FindAllOf("CommonButtonBase") or {}) do
-                                if sb:IsValid() and sb:GetFName():ToString() == "OpenSelectionButton" and live(sb)
-                                    and sb:GetFullName():find("WBP_HeroModule_C", 1, true) and require("screen").shown(sb) then
-                                    return sb
-                                end
-                            end
-                        end
-                        local function finish()
-                            M.hush_focus_until = 0
-                            local okl, l = pcall(M.current_label)
-                            speech.say(okl and l or ("Assigned hero: " .. keep), true)
-                        end
                         ExecuteInGameThreadWithDelay(400, function()
-                            local ok = pcall(function()
-                                local sb = shown_slot()
-                                if not sb then return finish() end
-                                click(sb)
-                                ExecuteInGameThreadWithDelay(500, function()
-                                    pcall(function()
-                                        for _, hb in ipairs(FindAllOf("WBP_RoomHeroSelectionButton_C") or {}) do
-                                            local okn, nm = pcall(function() return hb.HeroPlaque.HeroNameText:GetText():ToString() end)
-                                            if okn and hb:IsValid() and live(hb) and require("screen").shown(hb)
-                                                and nm:match("^%s*(.-)%s*$") == keep then
-                                                click(hb)
-                                                break
-                                            end
-                                        end
-                                    end)
-                                    ExecuteInGameThreadWithDelay(500, function() pcall(finish) end)
-                                end)
+                            M.hush_focus_until = 0
+                            pcall(function()
+                                local okl, l = pcall(M.current_label)
+                                local removed = require("tr").fill("{s} removed", keep)
+                                speech.say(removed .. ((okl and l) and (". " .. l) or ""), true)
                             end)
-                            if not ok then M.hush_focus_until = 0 end
                         end)
                     end
                     closed = true
@@ -3340,9 +3291,14 @@ function M.install()
     end
     keys.on("escape", function()
         last_nav = "go_in"
+        -- Escape is the game's: its pause menu opens as for anyone. A mod
+        -- list open at the time still closes, so the arrows go back to the
+        -- game, but the pause menu is no longer clicked away behind the
+        -- player's back; Backspace closes a mod list without it (firefly82's
+        -- review; Casey, 2026-10-23).
         local closed = require("whatsnew").close() or require("hotkeys").close() or ship.list_close() or require("resources").close()
             or require("view").nav_close() or (map_mode() and system.menu_close())
-        if closed then undo_pause() return end
+        if closed then return end
         -- The first Escape on the map closes a point's details panel, which
         -- a sighted player sees go; it was silent (VM, 2026-10-21).
         if map_mode() then
