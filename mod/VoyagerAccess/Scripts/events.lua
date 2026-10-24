@@ -162,9 +162,38 @@ local function uncaptured()
     return n
 end
 
+-- The weights the game uses, asked directly: each result's
+-- GetWeight(option button, outcome) gave exactly what the hover sweep
+-- collects (firefly82's probe: 38/27/25/15 and 77/30, where the base
+-- weights were 35/25/25/15 and 70/30; 2026-10-23). No pointer moves, no
+-- seconds of silent options, no focus to put back.
+local function weights_from_game()
+    for _, b in ipairs(FindAllOf("WBP_POISelectableOption_C") or {}) do
+        local okw, err = pcall(function()
+            if not (b:IsValid() and path_of(b):find("^/Engine/Transient%.") and require("screen").shown(b)) then return end
+            local key = key_of(b)
+            if captured[key] then return end
+            local o = option_for(b, text_of(b.ChoiceButton_Text))
+            if not (o and o:IsValid()) then error("no option for " .. text_of(b.ChoiceButton_Text):sub(1, 40)) end
+            local list = {}
+            for k, v in pairs(o:GetOptionResults()) do
+                local t = k:get()
+                local w = v:get():GetWeight(b, t)
+                if type(w) ~= "number" then error("no weight") end
+                list[#list + 1] = { outcome = t, weight = w }
+            end
+            -- An option with no outcomes ("Leave") is answered too, with
+            -- none: left out, it sent every event to the sweep (VM).
+            captured[key] = list
+        end)
+        if not okw then print("[VoyagerAccess] events: GetWeight failed: " .. tostring(err) .. "\n") end
+    end
+end
+
 -- Sweeps the mouse down the right-hand panel where the options are, then
 -- calls done(). Does nothing but call done() when every option has its
--- weights already.
+-- weights already: since 2026-10-23 they come from GetWeight first, and
+-- the sweep is only the fallback for an option it could not answer.
 local sweeping = false
 function M.sweeping_now() return sweeping end
 function M.sweep(done)
@@ -172,6 +201,14 @@ function M.sweep(done)
     -- would keep the old odds under the same button and wording.
     if not sweeping then captured, picked = {}, {} end
     pcall(ensure_nav_hook)
+    if not sweeping then
+        pcall(weights_from_game)
+        if uncaptured() == 0 then
+            print("[VoyagerAccess] events: chances from GetWeight, no sweep\n")
+            if done then done() end
+            return
+        end
+    end
     local ok = pcall(ensure_hook)
     if not (ok and hooked) or uncaptured() == 0 or sweeping then
         if done then done() end

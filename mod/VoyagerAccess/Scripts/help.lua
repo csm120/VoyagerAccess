@@ -596,18 +596,31 @@ function M.install()
     -- view is checked. The view after a load otherwise came only from the
     -- navigation bar's view event, and when that was not hooked the view was
     -- said at the first window after the load instead (VM, 2026-10-21).
+    -- The game says when a load ends: STVJourneySubsystem's
+    -- OnStateTransitionFinished comes at the end of every transition (a
+    -- load, ship and map, entering and leaving an event; firefly82's probe,
+    -- 2026-10-23), so the view is checked then. The look below stays as a
+    -- slower, bounded fallback.
+    local transition_hooked = pcall(RegisterHook, "/Script/STVoyager.STVJourneySubsystem:OnStateTransitionFinished", function()
+        ExecuteInGameThread(function()
+            print("[VoyagerAccess] help: transition finished\n")
+            pcall(M.view_check)
+        end)
+    end)
+    print("[VoyagerAccess] help: transition hook " .. (transition_hooked and "installed" or "not installed") .. "\n")
     local load_watch = 0
     popups.on_read(function(_, cls)
         if cls ~= "WBP_Loading_Screen_C" then return end
         load_watch = load_watch + 1
         local mine, tries = load_watch, 0
+        local every = transition_hooked and 3000 or 1000
         local function look()
             if load_watch ~= mine then return end
             tries = tries + 1
             if not leaving() then return M.view_check() end
-            if tries < 60 then ExecuteInGameThreadWithDelay(1000, look) end
+            if tries < 60000 / every then ExecuteInGameThreadWithDelay(every, look) end
         end
-        ExecuteInGameThreadWithDelay(1000, look)
+        ExecuteInGameThreadWithDelay(every, look)
     end)
     popups.on_close(function(_, cls)
         closed_class, closed_at = cls, os.clock()
