@@ -916,6 +916,13 @@ function M.skip()
     crumb.at("key: shift+enter")
     local w = M.active()
     if w then
+        -- A story card has nothing to skip to: the game's skip showed the
+        -- same card again, and it was read again (VM, 2026-10-21).
+        local okc, card = pcall(function() return w.WBP_Dialogue_Popup end)
+        if okc and card and card:IsValid() and screen.shown(card) then
+            speech.say("Enter continues.", true)
+            return
+        end
         print("[VoyagerAccess] dialogue: skip\n")
         speech.say("Skipping", true)
         w:SkipToNextChoiceTriggered()

@@ -86,7 +86,7 @@ Q Trials setup: the ship and its numbers are read when the setup opens, and Left
 Dialogue and cutscenes:
 
 1. Enter continues. When choices appear, Up and Down Arrow move between them and Enter picks one. A major decision, which the game wants held down, is held for you.
-2. Shift+Enter skips ahead in a dialogue, or skips a cutscene.
+2. Shift+Enter skips ahead in a dialogue, or skips a cutscene. A story card, like "Into the Badlands", has nothing to skip to, so there Shift+Enter just reminds you that Enter continues.
 3. Narration over a scene, like the start of a new campaign or a Q Trial, is read a line at a time. Shift+Enter skips it.
 
 Ship view:

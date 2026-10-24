@@ -707,6 +707,70 @@ local function hook_travel()
     print("[VoyagerAccess] course: travel hooks " .. tostring(okp) .. "," .. tostring(okc) .. "\n")
 end
 
+-- After an arrival: a point whose event is still waiting (state 3) once
+-- the windows that were up have closed did not open it, and that is said.
+-- Also after a conversation that opened as the ship arrived: Lieutenant
+-- Lani's damage report came at the Abandoned Borg Cube, the cube's own
+-- event never opened, and nothing was said (VM, 2026-10-23).
+local function watch_waiting(name, target)
+    -- Checked once the other windows are closed: the mission
+    -- offer was still open 5 s after arriving at the Trading
+    -- Station, and nothing was said (Q Trial, VM, 2026-10-18).
+    local tries = 0
+    local my_watch = watch_id
+    local function busy_now()
+        for _, w in ipairs(require("popups").open_windows()) do
+            if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then return true end
+        end
+        return require("dialogue").active() and true or false
+    end
+    -- Only a window that was really up counts: Friendship One's
+    -- Class O planet keeps a waiting event that its scan starts,
+    -- and with nothing open the hint blamed "another window" and
+    -- sent the player away (VM, 2026-10-21).
+    local was_busy = false
+    pcall(function() was_busy = busy_now() end)
+    local function check()
+        tries = tries + 1
+        -- Not once a new course has been set.
+        if watch_id ~= my_watch then return end
+        pcall(function()
+            local a = StaticFindObject(target)
+            if not (a and a:IsValid()) then return end
+            if busy_now() then
+                was_busy = true
+                if tries < 150 then ExecuteInGameThreadWithDelay(2000, check) end
+                return
+            end
+            if not was_busy then return end
+            local es = FindFirstOf("STVEventSubsystem")
+            local waiting = false
+            for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
+                local o = c:IsValid() and c:GetOwner()
+                if o and o:IsValid() and o:GetFullName() == a:GetFullName() then
+                    c.EventIds:ForEach(function(_, e)
+                        if es:GetEventStateById(e:get()) == 3 then waiting = true end
+                    end)
+                end
+            end
+            if not waiting then return end
+            print("[VoyagerAccess] course: event waiting at " .. name .. " did not open\n")
+            -- After the view's own announcement: the window that
+            -- had just closed brought "System map. Graviton
+            -- Ellipse..." 0.8 s later, which cut the hint off
+            -- (VM, 2026-10-18).
+            ExecuteInGameThreadWithDelay(2000, function()
+                if watch_id ~= my_watch then return end
+                -- No cause: "because another window was up" was the
+                -- mod's guess, the game gives no reason (firefly82's
+                -- review; Casey, 2026-10-23).
+                speech.say("The event at " .. name .. " did not start. Set course to another point and back to start it.", false)
+            end)
+        end)
+    end
+    ExecuteInGameThreadWithDelay(4000, check)
+end
+
 local function watch_arrival(name, target, start_d)
     pcall(hook_travel)
     watch_id = watch_id + 1
@@ -778,6 +842,7 @@ local function watch_arrival(name, target, start_d)
             if not far then
                 travel = nil
                 print("[VoyagerAccess] course: conversation opened at " .. name .. "\n")
+                watch_waiting(name, target)
                 return
             end
         end
@@ -828,64 +893,7 @@ local function watch_arrival(name, target, start_d)
             -- The point keeps a waiting event (Activatable) and nothing
             -- opens. A sighted player sees no event either, so this only
             -- says what happened and what the game wants.
-            if not battle then
-                -- Checked once the other windows are closed: the mission
-                -- offer was still open 5 s after arriving at the Trading
-                -- Station, and nothing was said (Q Trial, VM, 2026-10-18).
-                local tries = 0
-                local my_watch = watch_id
-                local function busy_now()
-                    for _, w in ipairs(require("popups").open_windows()) do
-                        if not w:find("WBP_PoiEventWidget_C", 1, true) and not w:find("RoomPrompt", 1, true) then return true end
-                    end
-                    return require("dialogue").active() and true or false
-                end
-                -- Only a window that was really up counts: Friendship One's
-                -- Class O planet keeps a waiting event that its scan starts,
-                -- and with nothing open the hint blamed "another window" and
-                -- sent the player away (VM, 2026-10-21).
-                local was_busy = false
-                pcall(function() was_busy = busy_now() end)
-                local function check()
-                    tries = tries + 1
-                    -- Not once a new course has been set.
-                    if watch_id ~= my_watch then return end
-                    pcall(function()
-                        local a = StaticFindObject(target)
-                        if not (a and a:IsValid()) then return end
-                        if busy_now() then
-                            was_busy = true
-                            if tries < 60 then ExecuteInGameThreadWithDelay(2000, check) end
-                            return
-                        end
-                        if not was_busy then return end
-                        local es = FindFirstOf("STVEventSubsystem")
-                        local waiting = false
-                        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
-                            local o = c:IsValid() and c:GetOwner()
-                            if o and o:IsValid() and o:GetFullName() == a:GetFullName() then
-                                c.EventIds:ForEach(function(_, e)
-                                    if es:GetEventStateById(e:get()) == 3 then waiting = true end
-                                end)
-                            end
-                        end
-                        if not waiting then return end
-                        print("[VoyagerAccess] course: event waiting at " .. name .. " did not open\n")
-                        -- After the view's own announcement: the window that
-                        -- had just closed brought "System map. Graviton
-                        -- Ellipse..." 0.8 s later, which cut the hint off
-                        -- (VM, 2026-10-18).
-                        ExecuteInGameThreadWithDelay(2000, function()
-                            if watch_id ~= my_watch then return end
-                            -- No cause: "because another window was up" was the
-                            -- mod's guess, the game gives no reason (firefly82's
-                            -- review; Casey, 2026-10-23).
-                            speech.say("The event at " .. name .. " did not start. Set course to another point and back to start it.", false)
-                        end)
-                    end)
-                end
-                ExecuteInGameThreadWithDelay(4000, check)
-            end
+            if not battle then watch_waiting(name, target) end
             return
         end
         -- No progress at all and the game not travelling: the trip ended at

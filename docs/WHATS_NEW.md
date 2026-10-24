@@ -1,5 +1,14 @@
 # New in Voyager Access
 
+## Saturday October 24th 2026
+
+Version 0.3.81
+
+- Fixed: when a crew report came in just as Voyager arrived somewhere, the place's own event sometimes never opened, and you heard nothing about it. Now you hear "The event at ... did not start. Set course to another point and back to start it." I met this at an abandoned Borg cube, and going away and coming back did start it.
+- Fixed: a window with only one button, like the Final Warning card, said nothing when you pressed Up, Down, Home or End. Now it says the button again.
+- Changed: F1 now mentions N, the list of places to go, in the ship view and on the System Map.
+- Changed: Shift+Enter on a story card, like "Into the Badlands", used to show the same card again and read it all over. Now it tells you Enter continues.
+
 ## Friday October 23rd 2026
 
 Version 0.3.80

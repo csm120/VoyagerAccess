@@ -315,6 +315,7 @@ return {
     ["O reads your objective."] = "O lee tu objetivo.",
     ["C reads resources, energy and morale."] = "C lee los recursos, la energía y la moral.",
     ["V switches between the ship and the System Map."] = "V cambia entre la nave y el mapa del sistema.",
+    ["N lists the places to go, such as the Sector Map, the Overview and Research."] = "N enumera los lugares a los que ir, como el mapa del sector, el resumen y la investigación.",
     ["I says where you are."] = "I dice dónde estás.",
     ["R repeats the last line; R again goes further back."] = "R repite la última línea; R otra vez retrocede más.",
     ["Ctrl+F12 lists what is new in Voyager Access."] = "Control F12 lista las novedades de Voyager Access.",

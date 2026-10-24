@@ -332,6 +332,7 @@ return {
     ["O reads your objective."] = "Oで目標を読み上げます。",
     ["C reads resources, energy and morale."] = "Cで資源、エネルギー、士気を読み上げます。",
     ["V switches between the ship and the System Map."] = "Vで艦内と星系図を切り替えます。",
+    ["N lists the places to go, such as the Sector Map, the Overview and Research."] = "Nで移動先の一覧を開きます。星域図、概要、研究などがあります。",
     ["I says where you are."] = "Iで現在地を読み上げます。",
     ["R repeats the last line; R again goes further back."] = "Rで最後の行を繰り返し、もう一度押すとさらに前に戻ります。",
     ["Ctrl+F12 lists what is new in Voyager Access."] = "Ctrl+F12でVoyager Accessの新機能を一覧にします。",

@@ -16,10 +16,10 @@ local HELP = {
     dialogue = "Enter continues. Shift+Enter skips to the choices. R repeats the last line. "
         .. "On choices, Up and Down move and Enter picks one.",
     ship = "Up and Down change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
-        .. "Enter opens the room. V switches to the System Map. I says where you are; I twice lists the room's details. "
+        .. "Enter opens the room. V switches to the System Map. N lists the places to go, such as the Sector Map, the Overview and Research. I says where you are; I twice lists the room's details. "
         .. "E is the room's quick action. Hold F to upgrade it, or T to demolish it.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
-        .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship.",
+        .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship. N lists the places to go, such as the Sector Map, the Overview and Research.",
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room. "
         .. "Closing a hero list without choosing removes the hero.",
     event = "Up and Down move between the options. Where an option can take a hero, Left and Right choose one first. Enter picks the option. R reads the locked options.",
@@ -45,7 +45,7 @@ local HELP = {
         .. "Enter opens the technology's panel, where Enter begins the research. Escape closes the panel, then the tree.",
     overview = "Left and Right switch tabs. Up and Down go through the tab line by line. "
         .. "Home and End go to the first and last. On the Heroes tab, Up and Down choose a hero. Escape closes the Overview.",
-    none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. "
+    none = "O reads your objective. C reads resources, energy and morale. V switches between the ship and the System Map. N lists the places to go, such as the Sector Map, the Overview and Research. "
         .. "I says where you are. R repeats the last line; R again goes further back. Ctrl+F12 lists what is new in Voyager Access.",
 }
 

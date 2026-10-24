@@ -3113,11 +3113,40 @@ M.label_of = label_of
 -- the focused button's own list (Casey: every list goes to its top and
 -- bottom with Home and End, 2026-10-10). Settings headings are skipped.
 local BUTTON = nil
+
+-- A window with one button (the "Final Warning" mission card) gives the
+-- arrows and Home nowhere to go, so focus never changed and nothing was
+-- said (VM, 2026-10-23). When focus has stayed on a button that is alone
+-- in its list, it is said again, as a sighted player still sees it.
+local function say_if_alone()
+    local before = current
+    if not before then return end
+    ExecuteInGameThreadWithDelay(300, function()
+        if current ~= before then return end
+        pcall(function()
+            local b = resolve(current)
+            if not (b and require("screen").shown(b)) then return end
+            if groups[current] and #groups[current] > 1 then return end
+            BUTTON = BUTTON or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+            local list, n = b:GetParent(), 0
+            for i = 0, list:GetChildrenCount() - 1 do
+                local row = list:GetChildAt(i)
+                if row and row:IsValid() and row:IsA(BUTTON) and require("screen").shown(row) then n = n + 1 end
+            end
+            if n > 1 then return end
+            local okl, l = pcall(M.current_label)
+            if okl and type(l) == "string" and l ~= "" then speech.say(l, true) end
+        end)
+    end)
+end
+M.say_if_alone = say_if_alone
+
 local function edge(last)
     crumb.at("key: home/end")
     local b = resolve(current)
     if not b then return end
     if require("dialogue").choice_edge(current, last) then return end
+    say_if_alone()
     BUTTON = BUTTON or StaticFindObject("/Script/CommonUI.CommonButtonBase")
     -- A button with no button siblings (Confirm below the Q Modifier
     -- cards, which live outside the window; Home and End did nothing, VM,
@@ -3403,7 +3432,7 @@ function M.install()
         elseif require("dialogue").choice_step(current, -1) then last_dir = -1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
-        else last_dir = -1 last_nav = "arrow" end
+        else last_dir = -1 last_nav = "arrow" say_if_alone() end
     end)
     keys.on("down", function()
         pcall(require("combat").energy_key)
@@ -3425,7 +3454,7 @@ function M.install()
         elseif require("dialogue").choice_step(current, 1) then last_dir = 1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
-        else last_dir = 1 last_nav = "arrow" end
+        else last_dir = 1 last_nav = "arrow" say_if_alone() end
     end)
     local rooms = require("rooms")
     keys.on("left", function()

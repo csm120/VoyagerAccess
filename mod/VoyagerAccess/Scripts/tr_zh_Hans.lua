@@ -315,6 +315,7 @@ return {
     ["O reads your objective."] = "按O读出你的目标。",
     ["C reads resources, energy and morale."] = "按C读出资源、能量和士气。",
     ["V switches between the ship and the System Map."] = "按V在星舰和星系图之间切换。",
+    ["N lists the places to go, such as the Sector Map, the Overview and Research."] = "按N列出可前往的位置，例如星区图、总览和研究。",
     ["I says where you are."] = "按I说出当前位置。",
     ["R repeats the last line; R again goes further back."] = "按R重复上一行；再按R继续往前。",
     ["Ctrl+F12 lists what is new in Voyager Access."] = "按Ctrl F12列出Voyager Access的新内容。",

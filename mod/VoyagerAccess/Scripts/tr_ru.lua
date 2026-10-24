@@ -332,6 +332,7 @@ return {
     ["O reads your objective."] = "O читает ваше задание.",
     ["C reads resources, energy and morale."] = "C читает ресурсы, энергию и настрой.",
     ["V switches between the ship and the System Map."] = "V переключает между кораблем и картой системы.",
+    ["N lists the places to go, such as the Sector Map, the Overview and Research."] = "N открывает список мест для перехода, например карту сектора, обзор и исследование.",
     ["I says where you are."] = "I сообщает, где вы находитесь.",
     ["R repeats the last line; R again goes further back."] = "R повторяет последнюю строку; повторное R возвращается дальше назад.",
     ["Ctrl+F12 lists what is new in Voyager Access."] = "Ctrl плюс F12 показывает, что нового в Voyager Access.",
