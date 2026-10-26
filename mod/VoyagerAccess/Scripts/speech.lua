@@ -30,6 +30,18 @@ local hold_until = 0
 -- read with interrupt and cleared the ordinary hold, so the tutorial was
 -- cut off, and tutorials close themselves (forum player, 2026-10-16).
 local protect_until = 0
+-- What the mod said by itself (queued, or a window read; not a key's own
+-- answer) is held until about when it has been said, at 14 characters a
+-- second, and a key ends that: an interrupting line in that time queues.
+-- Casey's log of 2026-10-26 had nine lines cut off with no key pressed:
+-- "Done: ... Objective: ..." by the view line after a conversation, a scan
+-- result by a hail, "Arrived at" by the event window. in_story and in_long:
+-- say_story or say_long is speaking now (os.clock, seconds).
+local self_until, in_story, in_long = 0, false, false
+-- The lines said by themselves in the last 1.5 s, { at, text }
+-- (say_protected); in_protected: say_protected is speaking now;
+-- released_at: the last key (release).
+local self_lines, in_protected, released_at = {}, false, -100
 local last_text, last_at = nil, -100
 
 -- Words the game writes run together, which some synthesizers say as one
@@ -61,6 +73,7 @@ end
 -- (German "die Betrieb" for the game's "die Operation", 2026-10-24).
 function M.say(text, interrupt, built)
     if type(text) ~= "string" then return end
+    local asked = interrupt
     text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     -- Parts joined with ". " after text that already ended a sentence read
     -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
@@ -134,7 +147,12 @@ function M.say(text, interrupt, built)
     -- Development sweep for labels with no words (unread.lua).
     local unread = package.loaded["unread"]
     if unread and unread.on then pcall(unread.check_spoken, text) end
-    if interrupt and (os.time() < hold_until or os.time() < protect_until) then interrupt = false end
+    -- A key's answer can come up to a few hundred ms after the key (combat
+    -- energy, 60 to 300 ms): within 0.6 s of the key it is not held back by
+    -- something said by itself in between (GPT review, 2026-10-26).
+    local key_answer = interrupt and os.clock() - released_at < 0.6
+    if interrupt and (os.time() < hold_until or os.time() < protect_until
+        or (os.clock() < self_until and not key_answer)) then interrupt = false end
     -- The same line queued again right after itself is dropped: the demo's
     -- first event option was read twice in a row (VM, 2026-10-15). A key
     -- press repeating a line interrupts, and is still said.
@@ -146,12 +164,37 @@ function M.say(text, interrupt, built)
     if not interrupt and last_text and #text >= 12 and #last_text > #text and os.clock() - last_at < 3
         and last_text:sub(-#text) == text then return end
     last_text, last_at = text, os.clock()
+    -- Only what came by itself (sent queued, or a window read): a key's own
+    -- answer, said with interrupt, is cut by the next line as before. A
+    -- line asked to interrupt but queued here came by itself too (a view
+    -- line, a conversation line behind a scan result).
+    if not interrupt or in_long then
+        local now = os.clock()
+        self_until = math.max(self_until, now) + #text / 14
+        if not in_protected then
+            -- The last 1.5 s only, line by line: an hour with no key would
+            -- otherwise keep every line.
+            local kept = {}
+            for _, l in ipairs(self_lines) do
+                if now - l.at < 1.5 then kept[#kept + 1] = l end
+            end
+            kept[#kept + 1] = { at = now, text = text }
+            self_lines = kept
+        end
+    end
     write("a", (interrupt and "I|" or "Q|") .. text .. "\n")
 end
 
+-- A conversation line interrupts the line before it, but not what the mod
+-- said by itself that is still being said (self_until): a hail right after
+-- a scan cut off its result ("Shipwreck. System. 9,840.0", "Resources.
+-- Deuterium. unknown", "Found Deuterium", then "Tom Paris: Let's grab the
+-- deuterium then"; Casey's speech.txt, 2026-10-26). It queues behind it.
 function M.say_story(text)
     hold_until = 0
-    M.say(text, true)
+    in_story = true
+    pcall(M.say, text, true)
+    in_story = false
     hold_until = os.time() + HOLD_SECONDS
 end
 
@@ -163,7 +206,9 @@ function M.say_long(text, interrupt)
     if type(text) ~= "string" or text == "" then return end
     local _, words = text:gsub("%S+", "")
     if interrupt then hold_until = 0 end
-    M.say(text, interrupt == true)
+    in_long = true
+    pcall(M.say, text, interrupt == true)
+    in_long = false
     hold_until = math.max(hold_until, os.time() + math.min(30, math.ceil(words / 3)))
 end
 
@@ -171,9 +216,40 @@ end
 -- until a key is pressed. A time estimate cannot know how fast a screen
 -- reader speaks, and tutorials close themselves (firefly82, 2026-10-18), so
 -- what comes after it queues behind it instead; ten minutes is only a cap.
+-- But a tutorial that opens over a window just read (within 1.5 s, no key
+-- between) is said first and the window's lines again after it, as a
+-- sighted player sees the tutorial in front: the Transporter Room tutorial
+-- came 15 s late, after the whole away briefing, and held the keys
+-- meanwhile (Casey's NVDA log, 2026-10-26). Its title and text come in one
+-- tick, so the window's lines follow on the next.
+-- Not while an earlier tutorial is still protected: it stays first.
+local requeue, requeue_gen = nil, 0
 function M.say_protected(text)
     if type(text) ~= "string" or text == "" then return end
-    M.say(text, false)
+    local recent = false
+    for _, l in ipairs(self_lines) do
+        if os.clock() - l.at < 1.5 then recent = true end
+    end
+    local first = not requeue and recent and os.time() >= protect_until
+    in_protected = true
+    if first then
+        requeue = self_lines
+        self_lines = {}
+        hold_until, self_until = 0, 0
+        pcall(M.say, text, true)
+        local gen = requeue_gen
+        ExecuteInGameThread(function()
+            -- A key in between (release) drops the lines: the player has
+            -- moved on, and the window may be gone.
+            if gen ~= requeue_gen then return end
+            local again = requeue or {}
+            requeue = nil
+            for _, l in ipairs(again) do write("a", "Q|" .. l.text .. "\n") end
+        end)
+    else
+        pcall(M.say, text, false)
+    end
+    in_protected = false
     protect_until = math.max(protect_until, os.time() + 600)
 end
 
@@ -181,6 +257,10 @@ end
 function M.release()
     hold_until = 0
     protect_until = 0
+    self_until = 0
+    self_lines = {}
+    requeue, requeue_gen = nil, requeue_gen + 1
+    released_at = os.clock()
 end
 
 -- Asks the helper for a real left click at screen pixel (x, y).

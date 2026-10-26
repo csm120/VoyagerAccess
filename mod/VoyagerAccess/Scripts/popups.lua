@@ -967,30 +967,72 @@ local function log_multitab(_, path)
 end
 
 -- Left and Right on an open multitab log. True when handled.
-function M.log_tab(dir)
-    for _, w in ipairs(FindAllOf("WBP_LogEventWidget_Multitab_C") or {}) do
-        local wp = w:IsValid() and path_of(w)
-        if wp and wp:find("^/Engine/Transient%.") and screen.shown(w) then
-            local want = dir < 0 and "PreviousTabButton" or "NextTabButton"
-            for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-                local bp = b:IsValid() and path_of(b)
-                if bp and bp:sub(1, #wp + 1) == wp .. "." and bp:find("%." .. want .. "$") then
-                    b:HandleButtonPressed()
-                    b:HandleButtonReleased()
-                    b:HandleButtonClicked()
-                end
-            end
-            ExecuteInGameThreadWithDelay(300, function()
-                pcall(function()
-                    local t = log_multitab(nil, wp)
-                    last_text[wp] = t
-                    speech.say_long(t, true)
-                end)
+-- The log is the shown one of the windows popups records (open_of), and the
+-- tab is switched by the log's own RequestPreviousTab/RequestNextTab
+-- (USTVLogEventWidget, header dump), not by searching every button in the
+-- game for its Previous/NextTabButton. The new tab is read when the game
+-- reports it, OnTabSelected (the same class's event), not 300 ms later.
+local log_tab_hooked = {}   -- class path -> hooked (true/false)
+local log_tab_wait = nil    -- { path, key }: the log whose tab the player switched, until the next key
+local function say_log(wp)
+    local t = log_multitab(nil, wp)
+    last_text[wp] = t
+    speech.say_long(t, true)
+end
+local function hook_log_tab(w)
+    local cp = path_of(w:GetClass())
+    if log_tab_hooked[cp] ~= nil then return log_tab_hooked[cp] end
+    local fp = cp .. ":OnTabSelected"
+    local ok = false
+    if StaticFindObject(fp) then
+        ok = pcall(RegisterHook, fp, function(ctx)
+            local okp, p = pcall(function() return path_of(ctx:get()) end)
+            if not okp then return end
+            -- A pre hook: the tab is shown on the next tick.
+            ExecuteInGameThread(function()
+                local lw = log_tab_wait
+                if not (lw and lw.path == p) then return end
+                log_tab_wait = nil
+                if require("keys").key_count ~= lw.key then return end
+                pcall(say_log, p)
             end)
-            return true
-        end
+        end)
     end
-    return false
+    log_tab_hooked[cp] = ok
+    print("[VoyagerAccess] popups: log tab event " .. (ok and "hooked" or "not hooked") .. "\n")
+    return ok
+end
+function M.log_tab(dir)
+    local w, wp = M.open_of({ WBP_LogEventWidget_Multitab_C = true })
+    if not w then return false end
+    local hooked = hook_log_tab(w)
+    local mine = { path = wp, key = require("keys").key_count }
+    log_tab_wait = hooked and mine or nil
+    local ok = pcall(function()
+        if dir < 0 then w:RequestPreviousTab() else w:RequestNextTab() end
+    end)
+    if not ok then
+        log_tab_wait = nil
+        print("[VoyagerAccess] popups: log tab switch failed\n")
+        return true
+    end
+    -- Without the event: read after 300 ms as before, and the log says so.
+    if not hooked then
+        print("[VoyagerAccess] popups: log tab read without its event\n")
+        ExecuteInGameThreadWithDelay(300, function()
+            if require("keys").key_count == mine.key then pcall(say_log, wp) end
+        end)
+        return true
+    end
+    -- The bounded fallback behind the event: none in 600 ms, read then.
+    ExecuteInGameThreadWithDelay(600, function()
+        if log_tab_wait ~= mine then return end
+        log_tab_wait = nil
+        if require("keys").key_count ~= mine.key then return end
+        print("[VoyagerAccess] popups: no log tab event in 600 ms, read now\n")
+        pcall(say_log, wp)
+    end)
+    return true
 end
 
 -- Auto Resolve's window (WBP_CombatAutoResolve, Q Trials ambush, VM,
@@ -2489,6 +2531,7 @@ local CHANGE_RETRY_MS = { 60, 120, 250, 500, 1000 }   -- after a read that said 
 local room_wait = {}   -- path -> "tab" or "modules": a room window waiting for that game event
 local room_hooked = false   -- OnLoadedModuleClasses is hooked (M.install)
 local room_tab_hooked = false   -- the room window's tab switcher event is hooked (M.install)
+function M.room_tab_event() return room_tab_hooked end
 local room_tab_seen = {}   -- path -> true: the game has set this showing's tab
 local card_active = {}   -- path -> true: an info card seen activated this showing (closed_card)
 -- retry: how many of those looks this is (nil for the event itself).
@@ -2969,8 +3012,13 @@ function M.install()
                 room_tab_seen[p] = true
                 -- The game focuses the new page once its fade is over
                 -- (focus.look_after_switch): on opening and on Left/Right.
+                -- A tab the player switched to is read then too, after the
+                -- look (rooms.tab_shown).
                 pcall(function()
-                    require("focus").look_after_switch(function() return StaticFindObject(p).WidgetSwitcher end, "room tab")
+                    require("focus").after_switch(function() return StaticFindObject(p).WidgetSwitcher end, function()
+                        require("focus").request_check()
+                        ExecuteInGameThread(function() pcall(require("rooms").tab_shown, p) end)
+                    end, "room tab")
                 end)
                 if room_wait[p] ~= "tab" then return end
                 room_wait[p] = nil

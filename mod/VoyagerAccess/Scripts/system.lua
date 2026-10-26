@@ -1082,6 +1082,47 @@ end
 -- second point chosen within those 1.6 s would otherwise have both holds
 -- run, and the ship could take the first (GPT review, 2026-10-24).
 local course_token = 0
+-- STVJourneySubsystem:DeclareTravel(ship, point) flies Voyager with the
+-- trip's usual events (OnShipMovementStarted says "Under way" from pending)
+-- and leaves the pawn's PoiSelectedForTravel empty. True when the call was
+-- made; "not set" is said if Voyager is not travelling 1.5 s later.
+local function declare_travel(name, path)
+    local ok, made = pcall(function()
+        local j = FindFirstOf("STVJourneySubsystem")
+        local ship = voyager()
+        local poi = nil
+        for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
+            if c:IsValid() and path_of(c):find("PersistentLevel", 1, true) then
+                local a = c:GetOwner()
+                if a and a:IsValid() and path_of(a) == path then poi = c end
+            end
+        end
+        if not (j and j:IsValid() and ship and poi) then return false end
+        if not j:CanTravel(ship, poi, {}) then return false end
+        pending = { name = name, path = path }
+        print("[VoyagerAccess] course: DeclareTravel " .. name .. "\n")
+        j:DeclareTravel(ship, poi)
+        return true
+    end)
+    if not (ok and made) then
+        pending = nil
+        print("[VoyagerAccess] course: DeclareTravel not possible (" .. tostring(made) .. ")\n")
+        return false
+    end
+    ExecuteInGameThreadWithDelay(1500, function()
+        if not (pending and pending.path == path) then return end
+        local moving = false
+        pcall(function()
+            local j = FindFirstOf("STVJourneySubsystem")
+            moving = j and j:IsValid() and j:IsTravelling() and true or false
+        end)
+        if moving then return on_started() end
+        pending = nil
+        print("[VoyagerAccess] course: DeclareTravel did not move\n")
+        speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
+    end)
+    return true
+end
 set_course = function(name, path, zooms, tok, again)
     zooms = zooms or 0
     if not tok then course_token = course_token + 1 tok = course_token end
@@ -1115,6 +1156,7 @@ set_course = function(name, path, zooms, tok, again)
                 pending = { name = name, path = path }
                 if not hold_set_course() then
                     pending = nil
+                    if declare_travel(name, path) then return end
                     speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
                     return
                 end
@@ -1149,6 +1191,13 @@ set_course = function(name, path, zooms, tok, again)
                     if not busy and not again and not stale() then
                         return set_course(name, path, 3, tok, true)
                     end
+                    -- The last fallback, when both holds were not taken:
+                    -- the journey's own DeclareTravel, only when its
+                    -- CanTravel agrees. Five holds in a row were not taken
+                    -- for the Shipwreck beside the Array (Casey's machine,
+                    -- sector 1, 2026-10-26); 0.3.81 and before had this
+                    -- step (forum player whose game never took the pointer).
+                    if not busy and not stale() and declare_travel(name, path) then return end
                     if not busy then
                         speech.say("The course for " .. name .. " was not set. Press Enter and choose Set course again.", false)
                     end
@@ -1306,8 +1355,10 @@ local function open_list(after_panel)
     end
     if list_said then return end
     list_said = true
-    -- After the panel, queued behind it; otherwise at once.
-    speech.say(item_name(ACTIONS[1]) .. ", 1 of " .. #ACTIONS, not after_panel)
+    -- After the panel, queued behind it; otherwise at once. "Menu" first:
+    -- Enter on a point gave no sign that a list had opened (Casey,
+    -- 2026-10-26); the game shows its buttons beside the panel.
+    speech.say(require("tr").word("Menu") .. ". " .. item_name(ACTIONS[1]) .. ", 1 of " .. #ACTIONS, not after_panel)
 end
 
 -- Inspect opens the game's close view of the point (PoiViewPawn, input

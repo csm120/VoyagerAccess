@@ -329,10 +329,8 @@ function M.enter(b, label)
     ExecuteInGameThreadWithDelay(300, function()
         pcall(function()
             for _ = 1, 3 do
-                local open = nil
-                for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-                    if w:IsValid() and require("screen").shown(w) then open = w end
-                end
+                -- The ring from popups' record of open windows, not a search.
+                local open = require("popups").open_of({ WBP_RadialMenu_C = true })
                 if not open then break end
                 open:GoBackToLastMenu()
             end

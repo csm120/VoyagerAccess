@@ -559,9 +559,18 @@ local ring_pending = nil  -- { path, fn }: the segment waiting for its hover
 local ring_hooked = false
 -- The ring focus last came into, until that ring closes (radial_focus).
 local ring_entered = nil
+-- A battle order chosen in the ring, said when the ring closes
+-- (confirm_order): { text, key }.
+local order_wait = nil
 pcall(function()
-    require("popups").on_close(function(_, cls)
-        if cls == "WBP_RadialMenu_C" then ring_entered = nil end
+    require("popups").on_close(function(p, cls)
+        -- The class is nil for a ring popups only saw as new, never shown
+        -- (Fable review, 2026-10-26): the path names it then.
+        if cls ~= "WBP_RadialMenu_C" and not (cls == nil and tostring(p):find("WBP_RadialMenu_C", 1, true)) then return end
+        ring_entered = nil
+        local w = order_wait
+        order_wait = nil
+        if w and require("keys").key_count == w.key then speech.say(w.text, false) end
     end)
 end)
 -- segment path -> the ring centre's own error text (the game's words, in its
@@ -1266,14 +1275,35 @@ confirm_order = function(b, path, said)
         if not said then said = label_for(b, path) end
         local name = said and said:match("^([^,%.]+)")
         if not name or name:find("^Back") then return end
-        ExecuteInGameThreadWithDelay(900, function()
+        -- Said when the game closes the ring (popups' close event for
+        -- WBP_RadialMenu_C, M.install), only until the next key: a submenu
+        -- keeps the ring open and nothing is said. It replaces a look 900
+        -- ms after Enter for a ring still on screen.
+        -- An offensive segment is the enemy system to aim at: "Warp Core
+        -- ordered" read oddly (VM, 2026-10-17).
+        local text = cls == "WBP_RadialButtonCombatOffensive_C" and ("Targeting " .. name) or (name .. " ordered")
+        -- The game takes its own Enter before the mod reads it, so the ring
+        -- may already be closed: its state (IsActivated, a
+        -- GXCommonActivatableWidget) says so now.
+        local okr, ring = pcall(function()
+            return require("popups").open_of({ WBP_RadialMenu_C = true }, function(w) return w:IsActivated() == true end)
+        end)
+        if okr and not ring then
+            order_wait = nil
+            speech.say(text, false)
+            return
+        end
+        local mine = { text = text, key = require("keys").key_count }
+        order_wait = mine
+        -- The bounded fallback behind the close event: if it has not come in
+        -- 1.5 s and no ring is on screen, the order is said as before.
+        ExecuteInGameThreadWithDelay(1500, function()
             pcall(function()
-                for _, m in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-                    if m:IsValid() and path_of(m):find("^/Engine/Transient%.") and require("screen").shown(m) then return end
-                end
-                -- An offensive segment is the enemy system to aim at: "Warp
-                -- Core ordered" read oddly (VM, 2026-10-17).
-                speech.say(cls == "WBP_RadialButtonCombatOffensive_C" and ("Targeting " .. name) or (name .. " ordered"), false)
+                if order_wait ~= mine or require("keys").key_count ~= mine.key then return end
+                order_wait = nil
+                if require("popups").open_of({ WBP_RadialMenu_C = true }) then return end
+                print("[VoyagerAccess] order: no ring close in 1.5 s, said from the look\n")
+                speech.say(text, false)
             end)
         end)
     end)
@@ -2466,6 +2496,11 @@ function M.look_after_switch(get_switcher, what)
     when_switched(get_switcher, function() M.request_check() end, what)
 end
 
+-- The same for other parts (rooms.lua reads a room tab's page then).
+function M.after_switch(get_switcher, fn, what)
+    when_switched(get_switcher, fn, what)
+end
+
 -- Clicks the main menu button at button_path once the panel the mod has just
 -- opened is up (when_switched on the menu's ContentPanel).
 local function click_when_panel_up(menu_path, button_path)
@@ -2527,7 +2562,15 @@ local function room_report(event, owner, flag, name)
     if not (w and w.event == event and w.owner == owner) then return end
     if require("keys").key_count ~= w.key then room_wait = nil return end
     print("[VoyagerAccess] room report: " .. event .. " " .. tostring(flag) .. " " .. tostring(name) .. "\n")
-    if event == "OnUpdateCraftingReport" and flag == false then
+    if event == "OnUpdateCraftingReport" and w.start then
+        -- A blueprint chosen: started when the report names it as crafting.
+        -- One the game refuses (a craft under way) leaves the report on the
+        -- running one, so nothing is said and the game's message says why.
+        if flag == true and name and name ~= "" and name == w.name then
+            room_wait = nil
+            speech.say("Crafting " .. name .. " started", true)
+        end
+    elseif event == "OnUpdateCraftingReport" and flag == false then
         room_wait = nil
         speech.say(w.name and ("Crafting " .. w.name .. " cancelled") or "Crafting cancelled", true)
     elseif event == "OnFillCurrentAnalysis" and flag == true and name == w.name then
@@ -2538,7 +2581,7 @@ local function room_report(event, owner, flag, name)
         speech.say("Analysis started", true)
     end
 end
-local function arm_room_report(b, event, name)
+local function arm_room_report(b, event, name, start)
     local owner, fp = owner_with_event(b, event)
     if not owner then
         print("[VoyagerAccess] room report: no " .. event .. " above " .. tostring(current) .. "\n")
@@ -2557,15 +2600,15 @@ local function arm_room_report(b, event, name)
         print("[VoyagerAccess] room report: " .. fp .. (room_hooks[fp] and " hooked" or " not hooked") .. "\n")
     end
     if not room_hooks[fp] then return false end
-    room_wait = { event = event, owner = path_of(owner), key = require("keys").key_count, name = name }
+    room_wait = { event = event, owner = path_of(owner), key = require("keys").key_count, name = name, start = start }
     return true
 end
 -- The bounded fallback behind the report: with no module or hook found, the
 -- button's label is read again after delay ms as before; with the report
 -- awaited and not come in 1.5 s, the same (GPT review, 2026-10-25). Either
 -- way only while no other key has come.
-local function wait_room_report(b, event, name, fallback, delay)
-    local okw, armed = pcall(arm_room_report, b, event, name)
+local function wait_room_report(b, event, name, fallback, delay, start)
+    local okw, armed = pcall(arm_room_report, b, event, name, start)
     armed = okw and armed
     local mine, key = armed and room_wait or nil, require("keys").key_count
     ExecuteInGameThreadWithDelay(armed and 1500 or delay, function()
@@ -2873,15 +2916,25 @@ local function activate()
     end
     confirm_order(b, current, radial_said[current])
     -- A Workshop blueprint: say that crafting began, as an analysis says
-    -- "Analysis started" (it said nothing, VM, 2026-10-17).
+    -- "Analysis started" (it said nothing, VM, 2026-10-17). From the game's
+    -- report to the Workshop (OnUpdateCraftingReport, room_report), armed
+    -- before the click; it replaces a look 900 ms after the click. The
+    -- bounded fallback (wait_room_report): no matching report in 1.5 s, or
+    -- no hook, and the Workshop's craft is compared with the one before, as
+    -- before.
     if b:GetClass():GetFName():ToString() == "WBP_ItemButton_C" then
+        local okn, by = pcall(function() return require("rooms").texts_under(current) end)
+        local item = okn and by and by.ItemName or nil
         local before = require("rooms").crafting_now()
-        ExecuteInGameThreadWithDelay(900, function()
-            pcall(function()
-                local now = require("rooms").crafting_now()
-                if now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
-            end)
-        end)
+        local function look()
+            local now = require("rooms").crafting_now()
+            if now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
+        end
+        if item and item ~= "" then
+            wait_room_report(b, "OnUpdateCraftingReport", item, look, 900, true)
+        else
+            ExecuteInGameThreadWithDelay(900, function() pcall(look) end)
+        end
     end
     if b:GetClass():GetFName():ToString() == "WBP_RadialButton_C" then
         -- A segment the game has locked (bLocked): Clear Debris with no life
@@ -3347,11 +3400,11 @@ local function go_back()
     -- In a ring (the build ring's room page), up one level as its Back
     -- button does: Backspace said "Nothing to go back to" there (VM,
     -- 2026-10-16). From the top level this closes the ring.
-    for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-        if w:IsValid() and require("screen").shown(w) and pcall(function() w:GoBackToLastMenu() end) then
-            print("[VoyagerAccess] back: radial up one level\n")
-            return
-        end
+    -- The ring from popups' record of open windows, not a search.
+    local ring = require("popups").open_of({ WBP_RadialMenu_C = true })
+    if ring and pcall(function() ring:GoBackToLastMenu() end) then
+        print("[VoyagerAccess] back: radial up one level\n")
+        return
     end
     speech.say("Nothing to go back to", true)
 end
@@ -3509,8 +3562,16 @@ function M.context()
     return is_setting(b) and "settings" or "menu"
 end
 
+-- A map detail panel Escape is closing: { paths = set, key } (M.install).
+local details_wait = nil
 function M.install()
     local keys = require("keys")
+    require("popups").on_close(function(p)
+        local w = details_wait
+        if not (w and w.paths[p]) then return end
+        details_wait = nil
+        if keys.key_count == w.key then speech.say("Closed", true) end
+    end)
     local ship = require("ship")
     -- In the ship view the arrows and Enter walk the rooms, unless a
     -- dialogue or an on-screen menu button has focus.
@@ -3589,9 +3650,11 @@ function M.install()
         local tries = 0
         local function check()
             tries = tries + 1
-            for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-                if b:IsValid() and b:GetFName():ToString() == "ResumeButton" and live(b)
-                    and b:GetFullName():find("WBP_PauseMenu_C", 1, true) and require("screen").shown(b) then
+            -- The pause menu's own ResumeButton (USTVPauseMenu, header
+            -- dump), not a search of every button in the game for it.
+            for _, m in ipairs(FindAllOf("WBP_PauseMenu_C") or {}) do
+                local okb, b = pcall(function() return m.ResumeButton end)
+                if okb and b and b:IsValid() and live(b) and require("screen").shown(b) then
                     print("[VoyagerAccess] escape: closing the pause menu it opened\n")
                     click(b)
                     return
@@ -3621,13 +3684,25 @@ function M.install()
                 if wp:find("POIDetailView", 1, true) or wp:find("PlanetDetailView", 1, true)
                     or wp:find("ShipDetailView", 1, true) then details[#details + 1] = wp end
             end
+            -- Said when the game hides it (popups' close event, from the
+            -- panel's HideDetailView/OnHideEvent), until the next key; it
+            -- replaces a look 300 ms after Escape.
             if #details > 0 then
-                ExecuteInGameThreadWithDelay(300, function()
+                local set = {}
+                for _, wp in ipairs(details) do set[wp] = true end
+                local mine = { paths = set, key = keys.key_count }
+                details_wait = mine
+                -- The bounded fallback behind the hide event: none in 1 s,
+                -- and the panels are looked at as before.
+                ExecuteInGameThreadWithDelay(1000, function()
                     pcall(function()
+                        if details_wait ~= mine or keys.key_count ~= mine.key then return end
+                        details_wait = nil
                         for _, wp in ipairs(details) do
                             local w = StaticFindObject(wp)
                             if w and w:IsValid() and require("screen").shown(w) then return end
                         end
+                        print("[VoyagerAccess] escape: no detail view hide in 1 s, said from the look\n")
                         speech.say("Closed", true)
                     end)
                 end)
@@ -3638,10 +3713,10 @@ function M.install()
         -- focus on that button, and the game's Escape left it open ("Clear
         -- Debris. No available work team", Q Trial, VM, 2026-10-16). If a
         -- ring is still up shortly after Escape, its back action closes it.
+        -- The ring from popups' record of open windows, not a search.
         local rings = {}
-        for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-            if w:IsValid() and require("screen").shown(w) then rings[#rings + 1] = path_of(w) end
-        end
+        local _, ring_path = require("popups").open_of({ WBP_RadialMenu_C = true })
+        if ring_path then rings[1] = ring_path end
         if #rings > 0 then
             ExecuteInGameThreadWithDelay(400, function()
                 for _, p in ipairs(rings) do

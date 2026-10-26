@@ -101,7 +101,7 @@ Ship view:
 System Map and Sector Map:
 
 1. Up and Down Arrow move through the points of interest, or the star systems on the Sector Map. Each says whether it has been scanned and which resources it has.
-2. Enter on the System Map picks the place in the game, so you hear the game's own details for it, then a list of actions: Scan, or Set course. On the Sector Map Enter goes straight to the list. Set course puts the pointer on the place and holds the game's own Set course, the way a mouse player does. While you travel you hear when you are under way, halfway and arrived; I adds the trip's progress.
+2. Enter on the System Map picks the place in the game, so you hear the game's own details for it, then "Menu" and a list of actions: Scan, or Set course. On the Sector Map Enter goes straight to the list. Set course puts the pointer on the place and holds the game's own Set course, the way a mouse player does; if the game doesn't take it after two tries, the mod asks the game to fly there directly. While you travel you hear when you are under way, halfway and arrived; I adds the trip's progress.
 
 Point of interest events: each option reads its reward, its risk, and its chances of a good or bad outcome. Locked options are read when the event opens, and with R.
 
@@ -113,7 +113,9 @@ Battles: Enter opens Orders, and the order wheel is a list (attack a system of t
 
 Side mission requests read who is asking, what they want and the time limit, then the choices.
 
-Tutorials are read aloud and stay open until you press Enter, so R can read them again. While one is open, the arrow keys remind you that Enter closes it.
+Tutorials are read aloud and stay open until you press Enter, so R can read them again. While one is open, the arrow keys remind you that Enter closes it. A tutorial that opens on top of a window is read first, then the window behind it.
+
+What the mod says on its own (a scan result, an objective, a conversation that starts by itself) isn't cut off by the next thing it says on its own; any key you press still cuts it off.
 
 ## Uninstalling
 

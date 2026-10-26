@@ -86,6 +86,13 @@ local function dispatch()
         -- it only counts as input for the listeners (focus looks then).
         if logged or name == "seen" then
             if logged then print("[VoyagerAccess] input " .. logged .. "\n") end
+            -- A game key (Tab, E, a mouse button) is the player moving on
+            -- too: what the mod said by itself no longer holds the next
+            -- line back (speech.lua; GPT review, 2026-10-26).
+            if (name == "seen" or not name:match("^log:%S+ helper: ")) and not released then
+                require("speech").release()
+                released = true
+            end
         else
             if not released and not command then
                 require("speech").release()

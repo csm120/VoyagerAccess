@@ -1,5 +1,20 @@
 # New in Voyager Access
 
+## Monday October 26th 2026
+
+Version 0.3.84
+
+Half of this is firefly82's newest review and patch, and the other half came from my own play this morning, NVDA log and all.
+
+- Fixed: things the mod says on its own were getting cut off by the next thing it said on its own. A scan result was cut off by Tom Paris's hail, "Done: ... Objective: ..." by the view line after a conversation, and "Arrived at" by the event that opened. Now each one waits until the one before it has had time to be said. Any key you press still cuts it off, the same as before.
+- Fixed: a tutorial that opens on top of a window was read last. The Transporter Room tutorial came about 15 seconds late, after the whole away briefing, and it was holding the keys the whole time. Now the tutorial is read first, then the window behind it.
+- New: Enter on a place on the System Map says "Menu" before Scan, so you know the list of actions has opened.
+- Fixed: sometimes the game wouldn't take Set course for a place, even when you tried five times in a row (the Shipwreck beside the Array). When the game still hasn't taken it after the second try, the mod now asks the game to fly there directly.
+- Fixed: Left and Right in a room with one tab, like Life Support, still said "Management tab". firefly82 found why: two arrow buttons were being counted as tabs. Now you hear the button you're on.
+- Changed: a room tab's page is read when the game has really switched to it, in every language, not just English. Left and Right in a personal log switch its tabs through the log itself.
+- Changed: "Crafting ... started", a battle order, and "Closed" on the System Map now come from the game's own signals. Each one still has a fallback if the signal never comes.
+- Changed: in the Q Trials setup, the modifier or challenge you chose is said first, then the slot the game moves to. Before, the slot cut it off.
+
 ## Sunday October 25th 2026
 
 Version 0.3.83

@@ -1094,6 +1094,39 @@ function M.trade_offer_step(path, dir)
     return false
 end
 
+-- The page of the tab the player has just switched to, read once the game
+-- has switched (switch_tab arms it; popups.lua calls M.tab_shown). Each
+-- reader is asked and the one whose page is shown answers: by the game's
+-- widgets, not the tab's name, so every language works alike (the English
+-- name check before missed every other language; outside review,
+-- 2026-10-17). Read after the fade, the page left behind no longer counts as
+-- shown (it did just after leaving it; review, 2026-10-15).
+-- Only until the next key: a window closed before its switch must not have
+-- its next opening read as a tab switch.
+local tab_read = nil   -- { window, before = focused path before the key, key }
+function M.tab_shown(window)
+    local r = tab_read
+    if not (r and r.window == window) then return end
+    tab_read = nil
+    if require("keys").key_count ~= r.key then return end
+    local t = nil
+    for _, f in ipairs({ M.patients_text, M.trading_text, M.crew_text, M.biolab_text,
+            M.workteams_text, M.allies_text }) do
+        local okf, s = pcall(f)
+        if okf and s then t = s break end
+    end
+    if t then require("speech").say(t, false) end
+    -- Back on the Bridge's Combat Allies tab only "Combat Allies tab" was
+    -- said: focus had stayed on the ally (see switch_tab).
+    pcall(function()
+        local f = require("focus")
+        local label = f.current_label()
+        if r.before and f.current_path() == r.before and label and label ~= "" then
+            require("speech").say(label, false)
+        end
+    end)
+end
+
 -- Left and Right in a room window switch its tabs (Management, Warp Core,
 -- Heroes); the game only does that with a controller. The room window's own
 -- SelectPreviousTab and SelectNextTab are UFunctions. The selected tab is
@@ -1105,12 +1138,32 @@ function M.switch_tab(dir)
     -- said: focus had stayed on the ally the whole time, so nothing changed
     -- to speak. The item is said again when focus did not move.
     local okb, before = pcall(function() return require("focus").current_path() end)
-    local wp = path_of(w) .. "."
+    -- The window's own tab buttons (USTVRoomManagementV2: PowerTabButton,
+    -- RoomInteractionTabButton, CrewTabButton; header dump), the shown ones;
+    -- not a search of every button in the game for "TabButton" in its path,
+    -- which also took Previous/NextTabButton (always shown, probe
+    -- 2026-10-26), so a one-tab room never counted as one. ActiveTabButton
+    -- is not a tab of its own: it points at the selected one (same probe),
+    -- and counted, it made Stellar Cartography's one tab two.
     local tab_buttons = {}
-    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-        local p = b:IsValid() and path_of(b)
-        if p and p:sub(1, #wp) == wp and p:find("TabButton", 1, true) and screen.shown(b) then
-            tab_buttons[#tab_buttons + 1] = b
+    for _, f in ipairs({ "PowerTabButton", "RoomInteractionTabButton", "CrewTabButton" }) do
+        local okb2, b = pcall(function() return w[f] end)
+        if okb2 and b and b:IsValid() and screen.shown(b) then tab_buttons[#tab_buttons + 1] = b end
+    end
+    -- A window without those fields (an older build, such as the demo's,
+    -- is not in the dump): the buttons under it named like a tab, without
+    -- the arrows and ActiveTabButton.
+    if #tab_buttons == 0 then
+        local wp = path_of(w) .. "."
+        print("[VoyagerAccess] rooms: no tab fields, tabs by name\n")
+        for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
+            local p = b:IsValid() and path_of(b)
+            local n = p and p:match("([%w_]+)$") or ""
+            if p and p:sub(1, #wp) == wp and n:find("TabButton", 1, true)
+                and not n:find("^PreviousTabButton") and not n:find("^NextTabButton")
+                and not n:find("^ActiveTabButton") and screen.shown(b) then
+                tab_buttons[#tab_buttons + 1] = b
+            end
         end
     end
     -- A window with one tab (Life Support): Left and Right said
@@ -1133,41 +1186,26 @@ function M.switch_tab(dir)
                 local name = plain(text_of(b.ButtonName))
                 name = (name ~= "" and name or require("tr").word("Tab")):gsub("^%l", string.upper)
                 require("speech").say(require("tr").fill("{s} tab", name), true)
-                -- The tab's page is filled after the switch.
-                ExecuteInGameThreadWithDelay(300, function()
-                    pcall(function()
-                        -- Only on that tab: just after leaving it, its page
-                        -- still counts as shown (review, 2026-10-15).
-                        local n = name:lower()
-                        local known = n:find("patient", 1, true) or n:find("trading", 1, true) or n:find("crew", 1, true)
-                            or n:find("bio", 1, true) or n:find("work team", 1, true) or n:find("allies", 1, true)
-                        local t = n:find("patient", 1, true) and M.patients_text()
-                            or n:find("trading", 1, true) and M.trading_text()
-                            or n:find("crew", 1, true) and M.crew_text()
-                            or n:find("bio", 1, true) and M.biolab_text()
-                            or n:find("work team", 1, true) and M.workteams_text()
-                            or n:find("allies", 1, true) and M.allies_text()
-                        -- In another language the tab names match none of
-                        -- these words, and the page was never read (outside
-                        -- review, 2026-10-17): then each reader is asked, and
-                        -- the one whose page is shown answers.
-                        if not t and not known then
-                            for _, f in ipairs({ M.patients_text, M.trading_text, M.crew_text, M.biolab_text,
-                                    M.workteams_text, M.allies_text }) do
-                                local okf, s = pcall(f)
-                                if okf and s then t = s break end
-                            end
-                        end
-                        if t then require("speech").say(t, false) end
+                -- The page is read when the game has switched to it: the
+                -- window's switcher event (OnActiveIndexChanged, on opening
+                -- and on every Left and Right; probe 2026-10-22), once its
+                -- fade is over (popups.lua, M.tab_shown). It replaces a
+                -- read 300 ms after the key.
+                local mine = { window = path_of(w), before = okb and before or nil, key = require("keys").key_count }
+                tab_read = mine
+                if not require("popups").room_tab_event() then
+                    -- After the fade's usual length, as before the event.
+                    print("[VoyagerAccess] rooms: tab event not hooked, page read in 300 ms\n")
+                    ExecuteInGameThreadWithDelay(300, function() pcall(M.tab_shown, mine.window) end)
+                else
+                    -- The bounded fallback behind the event: none in 1.5 s
+                    -- (the fade is about 0.4 s), and the page is read then.
+                    ExecuteInGameThreadWithDelay(1500, function()
+                        if tab_read ~= mine then return end
+                        print("[VoyagerAccess] rooms: no tab event in 1.5 s, page read now\n")
+                        pcall(M.tab_shown, mine.window)
                     end)
-                    pcall(function()
-                        local f = require("focus")
-                        local label = f.current_label()
-                        if okb and before and f.current_path() == before and label and label ~= "" then
-                            require("speech").say(label, false)
-                        end
-                    end)
-                end)
+                end
                 return true
             end
         end
@@ -1236,13 +1274,36 @@ function M.window_text(path)
     if okc and crew then out[#out + 1] = crew end
     -- The tab can show a moment after the window: a working Sickbay with
     -- five patients said only "Sick bay, level 1, active, uses 7 energy"
-    -- (VM, 2026-10-16). Read it then, after the header.
-    if not (okp and patients) and not (okc and crew) then
-        ExecuteInGameThreadWithDelay(600, function()
-            pcall(function()
-                local t = M.patients_text() or M.crew_text() or M.biolab_text() or M.workteams_text() or M.allies_text()
-                if t then require("speech").say(t, false) end
-            end)
+    -- (VM, 2026-10-16). The window is read at the game's tab event now
+    -- (popups.lua, since 2026-10-22); while the switcher still fades to the
+    -- tab, its page is read once the fade is over (the game's
+    -- IsTransitionPlaying, focus.after_switch), not 600 ms later.
+    if not (okp and patients) and not (okc and crew) and win and win:IsValid() then
+        pcall(function()
+            local key = require("keys").key_count
+            local function page()
+                return M.patients_text() or M.crew_text() or M.biolab_text() or M.workteams_text() or M.allies_text()
+            end
+            -- On the next tick at the earliest: run now, the page was said
+            -- before the window's header, which is said with interrupt
+            -- after this returns (GPT review, 2026-10-26).
+            ExecuteInGameThread(function() pcall(require("focus").after_switch, function() return StaticFindObject(path).WidgetSwitcher end, function()
+                if require("keys").key_count ~= key then return end
+                local t = page()
+                if t then require("speech").say(t, false) return end
+                -- The bounded fallback: a page not filled by the end of the
+                -- fade is read once more 600 ms later, as before.
+                ExecuteInGameThreadWithDelay(600, function()
+                    pcall(function()
+                        if require("keys").key_count ~= key then return end
+                        local t2 = page()
+                        if t2 then
+                            print("[VoyagerAccess] rooms: page read 600 ms after the fade\n")
+                            require("speech").say(t2, false)
+                        end
+                    end)
+                end)
+            end, "room page") end)
         end)
     end
     -- A cargo bay's "Stock" bar (WBP_Cargo_FillPercentModule, FillPercentBar),

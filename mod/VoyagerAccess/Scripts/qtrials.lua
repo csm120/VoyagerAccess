@@ -461,16 +461,13 @@ function M.enter(b, path)
         b:HandleButtonClicked()
         local s = kind == "captain" and (name .. " is your captain")
             or ((kind == "modifier" and "Q Modifier: " or "Q Challenges: ") .. name .. ", chosen")
-        -- OPEN POINT (review of 0.3.70, 2026-10-22): this wait reads no
-        -- state; it puts the sentence after the slot the game focuses as
-        -- the list closes (the game restores focus on the next tick, probe
-        -- 2026-10-22). Not changed until it is tried in play.
-        ExecuteInGameThreadWithDelay(300, function()
-            pcall(function()
-                print("[VoyagerAccess] qtrials: " .. s .. "\n")
-                speech.say(s, true)
-            end)
-        end)
+        -- Said now, and the slot the game focuses as the list closes (on the
+        -- next tick, probe 2026-10-22) is said after it: say_long holds the
+        -- focus line behind it. It replaces a wait of 300 ms that read no
+        -- state and put the sentence over the slot (the open point of the
+        -- review of 0.3.70, 2026-10-22).
+        print("[VoyagerAccess] qtrials: " .. s .. "\n")
+        speech.say_long(s, true)
         return true
     end
     if kind ~= "hero" then return false end

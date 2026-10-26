@@ -366,16 +366,15 @@ function M.overview_list_repeat()
 end
 
 function M.overview_tab(dir)
-    local w = nil
-    for _, x in ipairs(FindAllOf("WBP_OverviewInfoWidget_C") or {}) do
-        if x:IsValid() and x:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(x) then w = x end
-    end
+    -- The shown Overview from popups' record of open windows, and its own
+    -- PreviousTabButton / NextTabButton (WBP_OverviewInfoWidget, CXX dump),
+    -- not a search of every Overview and every button in the game.
+    local w = require("popups").open_of({ WBP_OverviewInfoWidget_C = true })
     if not w then return false end
-    local wp = w:GetFullName():match("^%S+%s+(.+)$") .. "."
     local want = dir < 0 and "PreviousTabButton" or "NextTabButton"
-    for _, b in ipairs(FindAllOf("CommonButtonBase") or {}) do
-        local p = b:IsValid() and b:GetFullName():match("^%S+%s+(.+)$")
-        if p and p:sub(1, #wp) == wp and p:find("%." .. want .. "$") then
+    local okf, field = pcall(function() return w[want] end)
+    for _, b in ipairs({ okf and field or nil }) do
+        if b:IsValid() then
             b:HandleButtonPressed()
             b:HandleButtonReleased()
             b:HandleButtonClicked()

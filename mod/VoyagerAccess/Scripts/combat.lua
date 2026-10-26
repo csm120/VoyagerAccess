@@ -621,11 +621,8 @@ local function pause_poll(w)
     -- keeps the battle stopped: Enter on a paused battle said "Combat
     -- resumed" with the wheel up and nothing moving (VM, 2026-10-21). Said
     -- once the wheel has closed and the battle really runs.
-    if not p and said_pause then
-        for _, x in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-            if live(x) and screen.shown(x) then return end
-        end
-    end
+    -- The ring from popups' record of open windows, not a search.
+    if not p and said_pause and require("popups").open_of({ WBP_RadialMenu_C = true }) then return end
     if p and p ~= said_pause then
         print("[VoyagerAccess] combat: " .. p .. "\n")
         speech.say(p, false)
@@ -762,10 +759,8 @@ end
 function M.energy_key()
     if not M.active() or not energy.selected then return end
     -- The order wheel takes the arrows (it spoke "Weapons 0 of 0" on every
-    -- Down through the wheel, 2026-10-16).
-    for _, x in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-        if live(x) and screen.shown(x) then return end
-    end
+    -- Down through the wheel, 2026-10-16). From popups' record, not a search.
+    if require("popups").open_of({ WBP_RadialMenu_C = true }) then return end
     -- Any other list in front (a tutorial, the pause menu) has the arrows.
     local okv, v = pcall(function() return require("focus").virtual_active() end)
     if okv and v then return end
