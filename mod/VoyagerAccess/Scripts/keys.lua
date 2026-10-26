@@ -109,6 +109,20 @@ local function dispatch()
                     pcall(function() require("speech").say("Tutorial open. Enter closes it, R repeats it.", true) end)
                 end
             end
+            -- A loading screen: the moving keys, Enter and I say so and how
+            -- far it is, since nothing else answers them then (player
+            -- report, 2026-10-24: "game seemed to stall"). The key still
+            -- reaches its handler, in case the screen is only fading out;
+            -- I would say just "Game." over it, so it does not.
+            if TUTORIAL_KEYS[name] or name == "enter" or name == "i" then
+                local okl, step = pcall(function() return require("popups").loading_step() end)
+                if okl and step then
+                    local line = step ~= "" and ("Loading. " .. step) or "Loading, please wait."
+                    print("[VoyagerAccess] loading: " .. line .. "\n")
+                    pcall(function() require("speech").say(line, true) end)
+                    if name == "i" then fn = nil end
+                end
+            end
             if fn then
                 crumb.at("key: " .. name)
                 local ok, err = pcall(fn)

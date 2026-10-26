@@ -196,6 +196,38 @@ local function focused_button()
             if okn and not nested then return known end
         end
     end
+    -- An arrow moves focus to a neighbour: the known button's own list is
+    -- looked through first, then the panel around it, each only as far as
+    -- it is shown (screen.walk). The innermost focused button, as below.
+    -- The search over every button stays for focus that went elsewhere (a
+    -- window opened or closed). Kept small: three levels and 400 widgets
+    -- cost more than the search when they found nothing (hero list, tech
+    -- tree; 2026-10-25).
+    if known and live(known) then
+        BUTTON_BASE = BUTTON_BASE or StaticFindObject("/Script/CommonUI.CommonButtonBase")
+        local okf, near = pcall(function()
+            local area = known:GetParent()
+            for _ = 1, 2 do
+                if not (area and area:IsValid()) then return nil end
+                local best, best_len = nil, -1
+                require("screen").walk(area, function(x)
+                    if x:IsA(BUTTON_BASE) and (x:HasKeyboardFocus() or x:HasFocusedDescendants()) then
+                        local len = #path_of(x)
+                        if len > best_len then best, best_len = x, len end
+                    end
+                    return false
+                end, { no_lists = false, limit = 120 })
+                -- Only a button that has focus itself: one holding the
+                -- focused button inside it (the Incoming Calls button) may be
+                -- all a walk cut short at its limit reached, and the search
+                -- below finds the innermost (Fable review, 2026-10-25).
+                if best then return best:HasKeyboardFocus() and best or nil end
+                area = area:GetParent()
+            end
+            return nil
+        end)
+        if okf and near then return near end
+    end
     local buttons = FindAllOf("CommonButtonBase")
     if not buttons then return nil end
     -- The innermost one: the incoming call list sits inside the Incoming
@@ -241,9 +273,14 @@ local function setting_value(b)
     return string.format("%d percent", math.max(0, math.min(100, pct)))
 end
 
+-- The settings row last said and its value then (adjust: the value before
+-- the game's change, and whether the game has made it yet).
+local shown_setting = nil
+
 local function with_value(label, b)
     if not is_setting(b) then return label end
     local value = setting_value(b)
+    pcall(function() shown_setting = { path = path_of(b), value = value } end)
     if label and label:find(value, 1, true) then return label end
     return label and (label .. ", " .. value) or value
 end
@@ -293,7 +330,11 @@ local crumb = require("crumb")
 -- GameUserSettings.ini). Focus its CONFIRM; Up and Down reach DARKER and
 -- BRIGHTER from there.
 local function focus_first_run_screen()
-    for _, w in ipairs(FindAllOf("WBP_GammaCorrection_C") or {}) do
+    -- From popups' record of the open windows, on every look without a
+    -- focused button: a FindAllOf each time (2026-10-25).
+    local in_view = function(x) return x:IsInViewport() end
+    local w = require("popups").open_of({ WBP_GammaCorrection_C = true }, in_view)
+    for _, w in ipairs(w and { w } or {}) do
         if w:IsValid() and live(w) and w:IsInViewport() then
             local confirm = w.CloseButton
             if confirm and confirm:IsValid() then
@@ -319,10 +360,9 @@ end
 -- in ring order; Enter clicks the focused one as usual.
 local RADIAL_NAMES = { DestroyRuin = "Clear debris" }
 local function focus_radial()
-    local menu = nil
-    for _, w in ipairs(FindAllOf("WBP_RadialMenu_C") or {}) do
-        if w:IsValid() and live(w) and require("screen").shown(w) then menu = w end
-    end
+    -- From popups' record of the open windows (the ring is one), on every
+    -- look without a focused button: a FindAllOf each time (2026-10-25).
+    local menu = require("popups").open_of({ WBP_RadialMenu_C = true })
     if not menu then return nil end
     local list = {}
     for _, it in ipairs(M.ring_buttons(path_of(menu))) do list[#list + 1] = it.b end
@@ -888,6 +928,7 @@ end
 local last_real = nil
 local look_after_input = false   -- set by the input listener for the next look
 local input_look = false         -- the running look came after input
+local stay_on, stay_said   -- an arrow that may leave focus where it was (say_if_alone, below)
 
 -- A mod list (What's new, status) open over a focused menu: the game also
 -- gets Up and Down, so the menu moved with the list and both talked
@@ -973,13 +1014,16 @@ local function is_confirm(p)
     end
     return false
 end
+-- All of them are windows popups.lua watches, so it knows from their events
+-- which is open: asked here on every look, a FindAllOf per class was a
+-- dozen searches after every key (2026-10-25).
+local CONFIRM_SET = nil
 local function open_confirm()
-    for _, c in ipairs(CONFIRMS) do
-        for _, w in ipairs(FindAllOf(c) or {}) do
-            if w:IsValid() and live(w) and require("screen").shown(w) then return w end
-        end
+    if not CONFIRM_SET then
+        CONFIRM_SET = {}
+        for _, c in ipairs(CONFIRMS) do CONFIRM_SET[c] = true end
     end
-    return nil
+    return (require("popups").open_of(CONFIRM_SET))
 end
 local function pause_confirm_open()
     return open_confirm() ~= nil
@@ -988,16 +1032,12 @@ end
 -- take focus (SetFocus on CONFIRM did nothing), the dialogue rule kept the
 -- button list away, the arrows were silent, and Enter went on with the
 -- conversation behind it (demo, Caretaker's ending, VM, 2026-10-22).
--- Asked on every focus look, so the answer is kept for 300 ms (a FindAllOf
--- each time was a steady cost; Fable review, 2026-10-22).
-local gamma_at, gamma_was = -100, false
+-- Asked on every focus look: from popups' record of the open windows (Gamma
+-- is one of them), where a FindAllOf each time, its answer kept for 300 ms,
+-- was a steady cost and a timer (2026-10-22, 2026-10-25).
+local GAMMA_SET = { WBP_GammaCorrection_C = true }
 local function gamma_open()
-    if os.clock() - gamma_at < 0.3 then return gamma_was end
-    gamma_at, gamma_was = os.clock(), false
-    for _, w in ipairs(FindAllOf("WBP_GammaCorrection_C") or {}) do
-        if w:IsValid() and live(w) and require("screen").shown(w) then gamma_was = true break end
-    end
-    return gamma_was
+    return require("popups").open_of(GAMMA_SET) ~= nil
 end
 
 -- Windows whose buttons never take keyboard focus: the pause menu's
@@ -1006,11 +1046,10 @@ end
 local function focusless_window()
     local cw = open_confirm()
     if cw then return path_of(cw) end
-    for _, w in ipairs(FindAllOf("WBP_Sandbox_Setup_C") or {}) do
-        if w:IsValid() and live(w) and require("screen").shown(w) then
-            local warn = w.Warning
-            if warn and warn:IsValid() and require("screen").shown(warn) then return path_of(w) end
-        end
+    local w = require("popups").open_of({ WBP_Sandbox_Setup_C = true })
+    if w then
+        local warn = w.Warning
+        if warn and warn:IsValid() and require("screen").shown(warn) then return path_of(w) end
     end
     return nil
 end
@@ -1709,12 +1748,24 @@ label_for = function(b, path)
     elseif b:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C" then
         -- A side mission offer's options: the wording is rich text the
         -- plain label missed, so the options were silent (2026-10-14).
+        -- From the option's own shown tree, rich text first as before:
+        -- every RichTextBlock and TextBlock in the game was searched for
+        -- the ones under this button on each arrow.
         local texts = {}
         local prefix = path .. "."
+        local screen = require("screen")
         for _, cls in ipairs({ "RichTextBlock", "TextBlock" }) do
-            for _, t in ipairs(FindAllOf(cls) or {}) do
+            local C = StaticFindObject("/Script/UMG." .. cls)
+            local found = {}
+            pcall(function()
+                screen.walk(b, function(w)
+                    if C and w:IsA(C) then found[#found + 1] = w return true end
+                    return false
+                end, { no_lists = true, limit = 300 })
+            end)
+            for _, t in ipairs(found) do
                 local tp = t:IsValid() and path_of(t)
-                if tp and tp:sub(1, #prefix) == prefix and require("screen").shown(t) then
+                if tp and tp:sub(1, #prefix) == prefix then
                     local ok, s = pcall(function() return t:GetText():ToString() end)
                     if ok then s = require("text").prep(s) end  -- icons beside numbers (text.lua)
                     s = ok and s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%s+", " ")
@@ -1847,10 +1898,7 @@ local function poll()
     -- hidden Management page's Upgrade button, and the Engineering Office's
     -- Work Team Info tab (hull repair) could not be reached (VM, 2026-10-16).
     if b and not require("screen").shown(b) then
-        local room_open = false
-        for _, w in ipairs(FindAllOf("WBP_RoomManagementV2_C") or {}) do
-            if w:IsValid() and live(w) and require("screen").shown(w) then room_open = true end
-        end
+        local room_open = require("popups").open_of({ WBP_RoomManagementV2_C = true }) ~= nil
         if room_open then
             print("[VoyagerAccess] focus: hidden " .. tostring((path_of(b) or ""):match("([^%.]+)$")) .. " in a room window, parked\n")
             M.park_focus()
@@ -1968,7 +2016,11 @@ local function poll()
         return
     end
     choice_hidden = false
-    if path == current then return end
+    if path == current then
+        -- The arrow left focus where it was: said again (say_if_alone).
+        if stay_said then stay_said() end
+        return
+    end
     -- In the full game the item whose panel was open stays selected after
     -- Backspace, with its panel still open beside the menu, and Down from
     -- EXIT went into that panel (Settings' tabs); Up from Settings' first tab
@@ -2166,6 +2218,7 @@ end
 -- ask before it runs.
 local check_queued = false
 local in_poll = false   -- a look's own SetFocus asks for no new look
+local backstop_from   -- the backstop look's starting button (request_settle, below)
 function M.request_check()
     if check_queued then return end
     check_queued = true
@@ -2175,6 +2228,14 @@ function M.request_check()
         input_look, look_after_input = look_after_input, false
         local ok, err = pcall(poll)
         in_poll = false
+        if backstop_from then
+            if current ~= backstop_from[1] then
+                print("[VoyagerAccess] focus: found by the 1.5 s backstop, no event: " .. tostring(current) .. "\n")
+            end
+            backstop_from = nil
+        end
+        -- An arrow is answered by the look after it, or not at all.
+        if input_look then stay_on = nil end
         input_look = false
         if not ok then print("[VoyagerAccess] focus error: " .. tostring(err) .. "\n") end
     end)
@@ -2201,16 +2262,20 @@ end
 -- its callers.
 -- One backstop look 1500 ms after the newest request, the bounded fallback
 -- the mod keeps behind every event: the main menu took focus after the
--- performance screen's fade, later than 700 ms, with no event of its own
--- found, and "CAMPAIGN, 1 of 7" was not said (VM, 2026-10-21). With the
--- known button checked first, a look that finds nothing new costs little.
+-- performance screen's fade with no event found (VM, 2026-10-21). firefly82
+-- heard that moment said by the window events alone (2026-10-25), so the
+-- backstop now logs whenever it is the one that finds a new focus: a missed
+-- event shows in the log instead of hiding behind the timer.
 local settle_token = 0
+backstop_from = nil   -- { button } while the backstop's look runs (declared above request_check)
 function M.request_settle()
     settle_token = settle_token + 1
     local mine = settle_token
     M.request_check()
     ExecuteInGameThreadWithDelay(1500, function()
-        if settle_token == mine then M.request_check() end
+        if settle_token ~= mine then return end
+        backstop_from = backstop_from or { current }
+        M.request_check()
     end)
 end
 
@@ -2412,6 +2477,106 @@ local function click_when_panel_up(menu_path, button_path)
         local button = resolve(button_path)
         if button then click(button) end
     end, "enter")
+end
+
+-- The path of fname on obj's class or the nearest class above it that has
+-- it (a Blueprint's override is what runs), or nil.
+local function class_event(obj, fname)
+    local k = obj:GetClass()
+    while k and k:IsValid() do
+        local fp = path_of(k) .. ":" .. fname
+        local f = StaticFindObject(fp)
+        if f and f:IsValid() then return fp end
+        k = k:GetSuperStruct()
+    end
+    return nil
+end
+
+-- The widget w sits in whose class has the game's event fname: up through
+-- w's parents, and from the top of each widget tree to the widget that
+-- owns it. The widget and the event's path, or nil.
+local function owner_with_event(w, fname)
+    local cur, d = w, 0
+    while cur and cur:IsValid() and d < 40 do
+        d = d + 1
+        local okf, fp = pcall(class_event, cur, fname)
+        if okf and fp then return cur, fp end
+        local okp, parent = pcall(function() return cur:GetParent() end)
+        if okp and parent and parent:IsValid() then
+            cur = parent
+        else
+            local okt, owner = pcall(function() return cur:GetOuter():GetOuter() end)
+            cur = okt and owner or nil
+        end
+    end
+    return nil
+end
+
+-- A craft cancelled or an analysis started, said from the game's own report
+-- to its room module after Enter: OnUpdateCraftingReport (bIsCrafting,
+-- ProductName, ...) on the Workshop's, OnFillCurrentAnalysis (bHasResearch,
+-- ResearchName, ...) on the Science Laboratory's (header dump,
+-- STVRoomManagementModule_Workshop and _ScienceLab). They replace a look
+-- 900 and 500 ms after the click that hoped the game had applied it by
+-- then. Only from the module the key was pressed in, and only until the
+-- next key.
+local room_wait = nil   -- { event, owner, key, name }
+local room_hooks = {}   -- event path -> installed
+local function room_report(event, owner, flag, name)
+    local w = room_wait
+    if not (w and w.event == event and w.owner == owner) then return end
+    if require("keys").key_count ~= w.key then room_wait = nil return end
+    print("[VoyagerAccess] room report: " .. event .. " " .. tostring(flag) .. " " .. tostring(name) .. "\n")
+    if event == "OnUpdateCraftingReport" and flag == false then
+        room_wait = nil
+        speech.say(w.name and ("Crafting " .. w.name .. " cancelled") or "Crafting cancelled", true)
+    elseif event == "OnFillCurrentAnalysis" and flag == true and name == w.name then
+        -- The analysis chosen, not one already running: with another under
+        -- way the game refuses and says why ("Analysis already in
+        -- progress"), and its report still names the running one.
+        room_wait = nil
+        speech.say("Analysis started", true)
+    end
+end
+local function arm_room_report(b, event, name)
+    local owner, fp = owner_with_event(b, event)
+    if not owner then
+        print("[VoyagerAccess] room report: no " .. event .. " above " .. tostring(current) .. "\n")
+        return false
+    end
+    if room_hooks[fp] == nil then
+        -- The name is the third parameter of the craft report, the second
+        -- of the analysis one; a pre hook, so the values are the game's.
+        room_hooks[fp] = pcall(RegisterHook, fp, function(ctx, first, second, third)
+            local okp, p = pcall(function() return path_of(ctx:get()) end)
+            local okb, flag = pcall(function() return first:get() end)
+            local param = event == "OnFillCurrentAnalysis" and second or third
+            local okn, n = pcall(function() return require("popups").plain(param:get():ToString()) end)
+            pcall(room_report, event, okp and p or nil, okb and flag, okn and n or nil)
+        end)
+        print("[VoyagerAccess] room report: " .. fp .. (room_hooks[fp] and " hooked" or " not hooked") .. "\n")
+    end
+    if not room_hooks[fp] then return false end
+    room_wait = { event = event, owner = path_of(owner), key = require("keys").key_count, name = name }
+    return true
+end
+-- The bounded fallback behind the report: with no module or hook found, the
+-- button's label is read again after delay ms as before; with the report
+-- awaited and not come in 1.5 s, the same (GPT review, 2026-10-25). Either
+-- way only while no other key has come.
+local function wait_room_report(b, event, name, fallback, delay)
+    local okw, armed = pcall(arm_room_report, b, event, name)
+    armed = okw and armed
+    local mine, key = armed and room_wait or nil, require("keys").key_count
+    ExecuteInGameThreadWithDelay(armed and 1500 or delay, function()
+        if armed and room_wait ~= mine then return end
+        if require("keys").key_count ~= key then return end
+        if armed then
+            room_wait = nil
+            print("[VoyagerAccess] room report: none for " .. event .. " in 1.5 s, the label is read\n")
+        end
+        pcall(fallback)
+    end)
 end
 
 local function activate()
@@ -2892,58 +3057,56 @@ local function activate()
             end)
             return
         end
-        click(b)
         -- The Science Laboratory's analysis button moves between its
         -- Unexplored and Analysis sections, so the changed-label check below
         -- never fired and Enter said nothing (VM, 2026-10-14).
-        if b:GetClass():GetFName():ToString() == "WBP_RoomMgmt_Analyze_Button_C" then
-            local started = before and before:find("^Unexplored") ~= nil
-            local stopped = before and before:find("^Analysis") ~= nil
-            if stopped then
-                speech.say("Analysis stopped", true)
-                return
-            end
-            -- Started only if the game took it: with an analysis already
-            -- running, the mod said "Analysis started" and the game's own
-            -- message then said "Analysis already in progress" (VM,
-            -- 2026-10-24). The same button still unexplored half a second
-            -- later means it was refused, and the game's message says why.
-            if started then
-                ExecuteInGameThreadWithDelay(500, function()
-                    pcall(function()
-                        local now = resolve(path)
-                        local after = now and label_for(now, path)
-                        if after ~= before then speech.say("Analysis started", true) end
-                    end)
-                end)
-                return
-            end
+        -- Started only if the game took it: with an analysis already
+        -- running, the mod said "Analysis started" and the game's own
+        -- message then said "Analysis already in progress" (VM,
+        -- 2026-10-24). The game's report to the lab names the analysis it
+        -- took (wait_room_report), so the click is armed before it is made.
+        local analyze = b:GetClass():GetFName():ToString() == "WBP_RoomMgmt_Analyze_Button_C"
+        if analyze and before and before:find("^Unexplored") then
+            local okn, by = pcall(function() return require("rooms").texts_under(path) end)
+            local name = okn and by and by.AnalysisName or nil
+            if name == "" then name = nil end
+            pcall(wait_room_report, b, "OnFillCurrentAnalysis", name, function()
+                local now = resolve(path)
+                local after = now and label_for(now, path)
+                if after ~= before then speech.say("Analysis started", true) end
+            end, 500)
         end
         -- The Workshop's crafting button cancels the craft under way (the
         -- game's "Enter: cancel"), and the cancel went without a word: the
         -- objective's item was never made (firefly82, German game,
-        -- 2026-10-24). Said as the start is, from the button's own label
-        -- once the game has applied it: no cycles left to count means the
-        -- craft is gone.
-        if path:find("WBP_Workshop_CraftModule_C_%d+%.") and path:find("%.CraftingButton$")
-            and before and before:find("%d+ cycles? left") then
-            -- The name from the label before the press ("Crafting: X, 7
-            -- cycles left"): read after the click, the game had already put
-            -- its empty text there, and "Crafting currently no crafting in
-            -- progress cancelled" was said (VM, 2026-10-24).
-            local item = before:match("^[^:]+:%s*(.-),%s*%d+ cycles? left")
-            if not item or item == "" then item = nil end
-            ExecuteInGameThreadWithDelay(900, function()
-                pcall(function()
-                    local now = resolve(path)
-                    local after = now and label_for(now, path)
-                    if not (after and after:find("%d+ cycles? left")) then
-                        speech.say(item and ("Crafting " .. item .. " cancelled") or "Crafting cancelled", true)
-                    end
-                end)
-            end)
-            return
+        -- 2026-10-24). Said from the game's report to the Workshop that it
+        -- no longer crafts (wait_room_report).
+        local cancel = path:find("WBP_Workshop_CraftModule_C_%d+%.") and path:find("%.CraftingButton$")
+            and before and before:find("%d+ cycles? left")
+        if cancel then
+            -- The name as the button shows it before the press: after it,
+            -- the game had already put its empty text there, and "Crafting
+            -- currently no crafting in progress cancelled" was said (VM,
+            -- 2026-10-24).
+            local okn, item = pcall(function() return require("popups").plain(b.ResearchName:GetText():ToString()) end)
+            if not (okn and item and item ~= "") then
+                item = before:match("^[^:]+:%s*(.-),%s*%d+ cycles? left")
+            end
+            if item == "" then item = nil end
+            pcall(wait_room_report, b, "OnUpdateCraftingReport", item, function()
+                local now = resolve(path)
+                local after = now and label_for(now, path)
+                if not (after and after:find("%d+ cycles? left")) then
+                    speech.say(item and ("Crafting " .. item .. " cancelled") or "Crafting cancelled", true)
+                end
+            end, 900)
         end
+        click(b)
+        if analyze then
+            if before and before:find("^Analysis") then speech.say("Analysis stopped", true) end
+            if before and (before:find("^Analysis") or before:find("^Unexplored")) then return end
+        end
+        if cancel then return end
         -- Enter on an away team slot opens its hero picker, but the game
         -- also takes that Enter as "Start away mission" and puts up "You
         -- still have unassigned slots. Continue?" (twice, 2026-10-14). The
@@ -3193,18 +3356,35 @@ local function go_back()
     speech.say("Nothing to go back to", true)
 end
 
--- Left/Right on a settings row: the game only wires these to the mouse
--- (the row's arrow buttons) and gamepad, so the mod calls the game's own
--- ChangeValueFromInput and speaks the new value.
+-- Left/Right on a settings row: the game changes the value itself, the row
+-- takes the key (probe 2026-10-25: Master Volume 100 to 95 percent, and the
+-- language from Deutsch to 中文, before the mod's own call). The mod called
+-- the game's ChangeValueFromInput on top, a second step on every key:
+-- volume went in tens, and every second language, English among them,
+-- could not be reached. The mod says the value the game has set, read now,
+-- or on the next tick if the game has not applied it yet.
 local function adjust(left)
     crumb.at("key: left/right")
     if require("difficulty").adjust(current, left) then return end
     local b = resolve(current)
     if not (b and is_setting(b)) or is_heading(b) then return end
-    b:ChangeValueFromInput(left)
-    local value = setting_value(b)
-    print("[VoyagerAccess] adjust: " .. value .. "\n")
-    speech.say(value, true)
+    local path = current
+    local before = shown_setting and shown_setting.path == path and shown_setting.value or nil
+    local function say(final)
+        local row = resolve(path)
+        if not row then return true end
+        local okv, value = pcall(setting_value, row)
+        if not okv then return true end
+        if value == before and not final then return false end
+        shown_setting = { path = path, value = value }
+        print("[VoyagerAccess] adjust: " .. tostring(before) .. " to " .. value .. "\n")
+        speech.say(value, true)
+        pcall(function() require("language").check("settings row", value, before) end)
+        return true
+    end
+    if not say(false) then
+        ExecuteInGameThread(function() pcall(say, true) end)
+    end
 end
 
 M.path_of = path_of
@@ -3217,30 +3397,29 @@ local BUTTON = nil
 
 -- A window with one button (the "Final Warning" mission card) gives the
 -- arrows and Home nowhere to go, so focus never changed and nothing was
--- said (VM, 2026-10-23). When focus has stayed on a button that is alone
--- in its list, it is said again, as a sighted player still sees it.
+-- said (VM, 2026-10-23). When focus has stayed on its button, it is said
+-- again, as a sighted player still sees it there: alone in its list, and
+-- at the end of a list too (the Mess Hall's first ration said nothing on
+-- Up, 2026-10-25). Whether focus stayed is what the look after the key
+-- finds (poll, stay_said): the game has moved focus by then, as it had
+-- changed a settings row before the mod read the key (probe 2026-10-25).
+-- It was a look 300 ms later, hoping the game had moved it by then.
+stay_on = nil   -- the button focus was on when the arrow came (declared above poll)
 local function say_if_alone()
-    local before = current
-    if not before then return end
-    ExecuteInGameThreadWithDelay(300, function()
-        if current ~= before then return end
-        pcall(function()
-            local b = resolve(current)
-            if not (b and require("screen").shown(b)) then return end
-            if groups[current] and #groups[current] > 1 then return end
-            BUTTON = BUTTON or StaticFindObject("/Script/CommonUI.CommonButtonBase")
-            local list, n = b:GetParent(), 0
-            for i = 0, list:GetChildrenCount() - 1 do
-                local row = list:GetChildAt(i)
-                if row and row:IsValid() and row:IsA(BUTTON) and require("screen").shown(row) then n = n + 1 end
-            end
-            if n > 1 then return end
-            local okl, l = pcall(M.current_label)
-            if okl and type(l) == "string" and l ~= "" then speech.say(l, true) end
-        end)
-    end)
+    stay_on = current
 end
 M.say_if_alone = say_if_alone
+-- From poll: focus is where it was before the arrow.
+stay_said = function()
+    if not (stay_on and stay_on == current and input_look) then return end
+    stay_on = nil
+    pcall(function()
+        local b = resolve(current)
+        if not (b and require("screen").shown(b)) then return end
+        local okl, l = pcall(M.current_label)
+        if okl and type(l) == "string" and l ~= "" then speech.say(l, true) end
+    end)
+end
 
 local function edge(last)
     crumb.at("key: home/end")

@@ -109,7 +109,9 @@ local COMBAT_LOADOUT = "^(.-WBP_CombatMainWidget_C_%d+%.WidgetTree_%d+%.HeroLoad
 
 -- The battle's hero setup while it is on screen, or nil.
 function M.combat_loadout()
-    for _, w in ipairs(FindAllOf("WBP_CombatMainWidget_C") or {}) do
+    -- The screens combat.lua knows from the game making them: a search of
+    -- every object for them ran twice a second all game long (2026-10-25).
+    for _, w in ipairs(require("combat").screens()) do
         if w:IsValid() and path_of(w):find("^/Engine/Transient%.") then
             local ok, L = pcall(function() return w.HeroLoadout end)
             if ok and L and L:IsValid() and screen.shown(L) then return L end
@@ -265,6 +267,10 @@ function M.slot_label(path)
         -- (VM, 2026-10-15). Said on every filled slot from then on.
         -- Every slot filled: Start Mission can show with one hero of three
         -- (Meeting the Kazon & Kes, Neelix in slot 1, VM, 2026-10-15).
+        -- Superseded: Enter on a filled slot now opens its hero list again,
+        -- and only Start Mission starts (player report, 0.3.82, 2026-10-24),
+        -- so the hint names the way there. Under a new hint key: anyone who
+        -- had heard the old one twice would never have heard this one.
         local full = true
         pcall(function()
             L.HeroPickers:ForEach(function(_, e)
@@ -273,7 +279,7 @@ function M.slot_label(path)
             end)
         end)
         if full and path:find("WBP_AwayMissionLoadout_C", 1, true) then
-            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete" .. require("hints").text("team_enter", ": Enter starts the mission") .. "."
+            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete" .. require("hints").text("team_end", ": End moves to Start Mission") .. "."
         end
         return head .. ": " .. hero
     end
@@ -1456,6 +1462,16 @@ local HINT = "To choose: Down to a hero and press Enter, then Down to Confirm an
 
 -- When a new set of choices comes up, read the first one.
 function M.mission_poll()
+    -- Choices and challenge results are parts of the away mission's
+    -- dialogue window, which dialogue.lua knows from its events: outside it
+    -- there is nothing to look for. Two searches over every object ran after
+    -- every key all game long (2026-10-25).
+    local okw, w = pcall(function() return require("dialogue").active() end)
+    local away = okw and w and w:GetClass():GetFName():ToString():find("AwayMission", 1, true) ~= nil
+    if not away then
+        mission_sig = nil
+        return
+    end
     result_poll()
     if not M.mission_active() then
         mission_sig = nil

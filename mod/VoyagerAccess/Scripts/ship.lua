@@ -578,6 +578,11 @@ local function hover_changed()
         target_slot = nil
         return
     end
+    -- Not while the camera moves: each room passing under the pointer
+    -- sent the pointer after the target again, six to ten real mouse moves
+    -- per arrow (speech.txt, 2026-10-25); camera_arrived points it once
+    -- the game says the camera has stopped.
+    if camera_moving then return end
     local h = hull_at(target_slot)
     if h then aim(h) end
 end

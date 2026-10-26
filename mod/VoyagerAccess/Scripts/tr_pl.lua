@@ -15,7 +15,7 @@ return {
     ["Not available: {s}"] = "Niedostępne: {s}",
     ["{s} {n} of {n}"] = "{s} {n} z {n}",
     [". Team complete"] = ". Zespół kompletny",
-    [": Enter starts the mission"] = ": Enter rozpoczyna misję",
+    [": End moves to Start Mission"] = ": End przechodzi do Rozpocznij misję",
     [", empty"] = ", puste",
     [". Enter to choose a hero"] = ". Enter, aby wybrać bohatera",
     ["dead"] = "martwy",
@@ -431,7 +431,7 @@ return {
 
     -- language.lua
     ["Game language changed to {s}."] = "Język gry zmieniony na {s}.",
-    ["To go back, choose English in Settings, Language."] = "Aby wrócić, wybierz angielski w Ustawienia, Język.",
+    ["To go back, choose {s} in Settings, Language."] = "Aby wrócić, wybierz {s} w Ustawienia, Język.",
     ["English"] = "angielski",
     ["German"] = "niemiecki",
     ["Spanish"] = "hiszpański",
@@ -524,7 +524,7 @@ return {
     ["open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it"] = "otwórz Główną maszynownię klawiszem Enter; w zakładce Rdzeń warp, którą wybierasz strzałkami w lewo i w prawo, strzałki w górę i w dół wybierają poziom, a Enter go ustawia",
     ["C reads your Deuterium and energy"] = "C czyta twój deuter i energię",
     ["choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair"] = "wybierz uszkodzone pomieszczenie w widoku statku lub z listy pomieszczeń pod klawiszem J, naciśnij Enter, a potem Enter na Napraw",
-    ["on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission"] = "na ekranie zespołu zwiadowczego strzałki w górę i w dół przechodzą między miejscami, a Enter wybiera bohatera; gdy wszystkie miejsca są zajęte, Enter rozpoczyna misję",
+    ["on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, End moves to Start Mission and Enter starts it"] = "na ekranie zespołu zwiadowczego strzałki w górę i w dół przechodzą między miejscami, a Enter wybiera bohatera; gdy wszystkie miejsca są zajęte, End przechodzi do Rozpocznij misję, a Enter ją rozpoczyna",
     ["Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms"] = "strzałki w górę i w dół przechodzą przez wybory, ich bohaterów i Potwierdź. Enter na bohaterze go wybiera; Enter na Potwierdź zatwierdza",
     ["a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes"] = "zmęczenie bohatera jest podawane w wynikach misji zwiadowczej; N, Przegląd, a potem zakładka Bohaterowie wyświetla twoich bohaterów",
     ["a dangerous choice says its danger level, out of 3; Up and Down walk the choices and Enter on Confirm confirms"] = "niebezpieczny wybór podaje swój poziom zagrożenia w skali do 3; strzałki w górę i w dół przechodzą przez wybory, a Enter na Potwierdź zatwierdza",
@@ -932,4 +932,6 @@ return {
     ["What's new is not available"] = "Lista nowości jest niedostępna",
     ["Backspace closes the tree when no panel is open"] = "Backspace zamyka drzewo, gdy żaden panel nie jest otwarty",
     ["R repeats the item"] = "R powtarza element",
+    ["Loading. {s}"] = "Wczytywanie. {s}",
+    ["Loading, please wait."] = "Wczytywanie, proszę czekać.",
 }

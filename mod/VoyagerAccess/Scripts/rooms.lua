@@ -314,6 +314,8 @@ function M.serving_label(path)
         label = label .. ", " .. require("tr").lower(by.TextBlock_106 or "Morale") .. " " .. by.ContentText
     end
     -- The window describes only the ration in use: say it with that one.
+    -- Proven 2026-10-25: with focus on the other rations the module still
+    -- shows the one in use (SelectedServingButton), so they have none.
     local b = StaticFindObject(path)
     -- Valid first: a null object's method can crash past pcall.
     local ok, sel = pcall(function() return b and b:IsValid() and b:GetSelected() end)
@@ -1262,5 +1264,7 @@ end
 
 -- Radial build menus show costs with the same widgets (focus.lua).
 M.costs_under = costs_under
+-- A button's shown texts by name (focus.lua: an analysis' name).
+M.texts_under = texts_under
 
 return M

@@ -82,8 +82,11 @@ end
         tr = lua.execute(TR.read_text(encoding="utf-8"))
         self.assertEqual(tr.apply("5 of 10"), "5 von 10")
         self.assertEqual(tr.apply("5 of 10"), "5 von 10")
-        # A language switch is picked up within a second, cache or not.
+        # A language switch is picked up when language.lua says it changed
+        # (culture_changed, read after each input), not on a clock.
         lua.execute('CULTURE = "fr"; CLOCK = 5')
+        self.assertEqual(tr.apply("5 of 10"), "5 von 10")
+        tr.culture_changed()
         self.assertEqual(tr.apply("5 of 10"), "5 sur 10")
 
     def test_longest_template_wins(self):

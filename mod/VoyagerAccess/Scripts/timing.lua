@@ -48,6 +48,18 @@ local function timed(kind, fn)
             print(string.format("[VoyagerAccess] timing: %s took %d ms%s%s\n", name, math.floor(dt * 1000 + 0.5),
                 mem1 < mem0 and string.format(", Lua memory %d to %d KB (collected)", math.floor(mem0), math.floor(mem1)) or "", slow))
         end
+        -- Development measurement (flag file "steps", 2026-10-25): every
+        -- callback with steps, each step with its time and the Lua memory
+        -- it made, whatever the total.
+        if M.all_steps and #steps > 1 then
+            local parts = {}
+            for i, s in ipairs(steps) do
+                local stop = steps[i + 1] and steps[i + 1][2] or (t0 + dt)
+                local mstop = steps[i + 1] and steps[i + 1][3] or mem1
+                parts[#parts + 1] = string.format("%s %.1f ms %+d KB", tostring(s[1]):sub(1, 40), (stop - s[2]) * 1000, math.floor(mstop - (s[3] or mstop)))
+            end
+            print(string.format("[VoyagerAccess] steps: %s %.1f ms %+d KB: %s\n", name, dt * 1000, math.floor(mem1 - mem0), table.concat(parts, " | ")))
+        end
         if not r[1] then error(r[2], 0) end
         return table.unpack(r, 2, r.n)
     end
@@ -69,6 +81,13 @@ function M.install()
         return hook(path, timed("hook " .. short, pre), timed("hook post " .. short, post))
     end
     NotifyOnNewObject = function(cls, fn) return notify(cls, timed("new object", fn)) end
+    local f = io.open((os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\steps", "r")
+    if f then
+        f:close()
+        M.all_steps = true
+        require("crumb").time_writes = true
+        print("[VoyagerAccess] timing: every step of every callback logged (steps)\n")
+    end
     print("[VoyagerAccess] timing: on, logging mod work of 20 ms or more and Lua collections\n")
 end
 

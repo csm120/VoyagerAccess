@@ -15,7 +15,7 @@ return {
     ["Not available: {s}"] = "Недоступно: {s}",
     ["{s} {n} of {n}"] = "{s} {n} из {n}",
     [". Team complete"] = ". Группа собрана",
-    [": Enter starts the mission"] = ": Enter начинает высадку",
+    [": End moves to Start Mission"] = ": End переходит к кнопке начала высадки",
     [", empty"] = ", пусто",
     [". Enter to choose a hero"] = ". Enter, чтобы выбрать героя",
     ["dead"] = "смерть",
@@ -431,7 +431,7 @@ return {
 
     -- language.lua
     ["Game language changed to {s}."] = "Язык игры изменен: {s}.",
-    ["To go back, choose English in Settings, Language."] = "Чтобы вернуть английский, выберите English в разделе Настройки, Язык.",
+    ["To go back, choose {s} in Settings, Language."] = "Чтобы вернуться, выберите {s} в разделе Настройки, Язык.",
     ["English"] = "английский",
     ["German"] = "немецкий",
     ["Spanish"] = "испанский",
@@ -524,7 +524,7 @@ return {
     ["open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it"] = "откройте Главный инженерный отсек клавишей Enter; на вкладке Варп-ядро (стрелки влево и вправо переключают вкладки) стрелки вверх и вниз выбирают уровень, а Enter устанавливает его",
     ["C reads your Deuterium and energy"] = "C читает ваш дейтерий и энергию",
     ["choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair"] = "выберите поврежденный отсек в виде корабля или из списка отсеков по J, нажмите Enter, затем Enter на кнопке Ремонт",
-    ["on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission"] = "на экране группы высадки стрелки вверх и вниз перемещают между местами, а Enter выбирает героя; когда все места заполнены, Enter начинает высадку",
+    ["on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, End moves to Start Mission and Enter starts it"] = "на экране группы высадки стрелки вверх и вниз перемещают между местами, а Enter выбирает героя; когда все места заполнены, End переходит к кнопке начала высадки, а Enter начинает её",
     ["Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms"] = "стрелки вверх и вниз перемещают по вариантам, их героям и кнопке Подтвердить. Enter на герое выбирает его; Enter на кнопке Подтвердить подтверждает",
     ["a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes"] = "усталость героя сообщается в результатах высадки; N, Обзор, затем вкладка Герои показывает ваших героев",
     ["a dangerous choice says its danger level, out of 3; Up and Down walk the choices and Enter on Confirm confirms"] = "опасный вариант сообщает уровень опасности из 3; стрелки вверх и вниз перемещают по вариантам, а Enter на кнопке Подтвердить подтверждает",
@@ -932,4 +932,6 @@ return {
     ["What's new is not available"] = "Список нового недоступен",
     ["Backspace closes the tree when no panel is open"] = "Backspace закрывает дерево, когда панель не открыта",
     ["R repeats the item"] = "R повторяет пункт",
+    ["Loading. {s}"] = "Загрузка. {s}",
+    ["Loading, please wait."] = "Загрузка, подождите.",
 }

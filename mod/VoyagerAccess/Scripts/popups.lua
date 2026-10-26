@@ -1113,7 +1113,7 @@ local TUTORIAL_KEYS = {
     ["Warp Core"] = "open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it",
     ["Gray Mode"] = "C reads your Deuterium and energy",
     ["Repairing Rooms"] = "choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair",
-    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission",
+    ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, End moves to Start Mission and Enter starts it",
     ["Away Mission"] = "Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms",
     ["Fatigue"] = "a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes",
     ["Away Mission Risks"] = "a dangerous choice says its danger level, out of 3; Up and Down walk the choices and Enter on Confirm confirms",
@@ -2110,6 +2110,26 @@ end
 -- with nothing focused).
 M.open_windows = on_screen
 
+-- The shown window of one of the watched classes in set (class name ->
+-- true), and its path, or nil: from the windows' own open and close
+-- events, and the new ones not shown when they were made (fresh), so no
+-- class is searched. focus.lua asked FindAllOf for a dozen classes on every
+-- look, after every key (2026-10-25). test (optional) replaces "shown".
+local fresh   -- below, with the other records of new widgets
+function M.open_of(set, test)
+    for p, cls in pairs(open) do
+        if set[cls] then
+            local w = StaticFindObject(p)
+            if w and w:IsValid() and (test or screen.shown)(w) then return w, p end
+        end
+    end
+    for p in pairs(fresh) do
+        local w = StaticFindObject(p)
+        if w and w:IsValid() and set[w:GetClass():GetFName():ToString()] and (test or screen.shown)(w) then return w, p end
+    end
+    return nil
+end
+
 -- Dry run for development: what would be spoken now, without speaking.
 function M.preview()
     local lines = {}
@@ -2117,6 +2137,27 @@ function M.preview()
         lines[#lines + 1] = p:match("([%w_]+)$") .. ": " .. M.text_under(p)
     end
     return table.concat(lines, " || ")
+end
+
+-- A loading screen is up: its progress line ("Caching Shaders 67.61%"),
+-- "" when it shows none, nil with no loading screen. A new campaign's first
+-- load ran about two minutes in silence, and arrows and Enter seemed to do
+-- nothing (player report, full game, 2026-10-24); keys.lua says this then.
+-- From the open windows, so a closed loading screen the game keeps does not
+-- count.
+function M.loading_step()
+    for _, p in ipairs(on_screen()) do
+        if open[p] == "WBP_Loading_Screen_C" then
+            for _, part in ipairs(parts_under(p)) do
+                if part.path:find("%.StepText$") then
+                    -- Whole percent: "67.61%" said in full each time.
+                    return (part.text:gsub("(%d+)[%.,]%d+%%", "%1%%"))
+                end
+            end
+            return ""
+        end
+    end
+    return nil
 end
 
 -- A tutorial opens with keyboard focus on an unlabeled helper button, and
@@ -2438,7 +2479,7 @@ local queued = {}   -- path -> { kind = "open" | "change" | "close", trust }
 -- yet when focus looked (WBP_MultipleChoiceWidget_C, 12:23:27, firefly82,
 -- 2026-10-21). path -> class name.
 local made = {}
-local fresh = {}    -- path -> true: a new watched widget not shown yet
+fresh = {}    -- path -> true: a new watched widget not shown yet (declared above M.open_of)
 local reopen_wait = {}   -- path -> true while a shown-again window waits to be read
 local reopen_gen = {}    -- path -> count of closes, so a waiting read knows its showing ended
 

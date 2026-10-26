@@ -150,9 +150,10 @@ follows them.
    the goal; O reads the goal. Target changes, abilities turning active or
    ready, pauses and energy ("Engine 1 of 2, 2 spare") are spoken as they
    happen.
-11. Away team selection: once every slot is filled, the game starts the
-    mission on Enter wherever focus is, and filled slots say "Team complete:
-    Enter starts the mission." Up from the first slot goes through the
+11. Away team selection: Enter on a slot chooses or changes its hero. Once
+    every slot is filled, filled slots say "Team complete: End moves to
+    Start Mission"; Enter on Start Mission (also Down from the last slot)
+    starts the mission. Up from the first slot goes through the
     mission's recommended skills, each recommended trait and each challenge
     as lines; Up and Down move, Home goes to the first line, and Down from
     the last line or End goes back to the slots. Heroes in a mission choice say when they have

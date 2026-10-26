@@ -1,5 +1,19 @@
 # New in Voyager Access
 
+## Sunday October 25th 2026
+
+Version 0.3.83
+
+Most of this one is firefly82's work again, from a review that came with its own patch. It found a settings bug I'd been living with for weeks without noticing. Thank you!
+
+- Fixed: Left and Right on a settings row moved it two steps instead of one. Volume went up and down in tens, and in the Language row every second language was skipped, English among them. Now each key moves one step, the same as for a sighted player.
+- Changed: after you change the game's language, the message tells you how to get back to the language you came from, not always to English. The mod's own words switch to the new language right away, too.
+- Changed: Up on the first item of a list and Down on the last one now say that item again, so you know you're at the end. Before, the Mess Hall's first ration said nothing on Up, and it sounded like the keys were broken.
+- Fixed: on the loading screen, the arrow keys, Enter and I seemed dead while the game was loading. Now they say "Loading, please wait.", or the game's own progress line when it shows one, like "Caching Shaders 67%".
+- Fixed: on the away team screen, "Team complete" said Enter starts the mission, and it doesn't. Enter on a slot opens its hero list again. The hint now says End moves to Start Mission, and you'll hear it even if you heard the old one before.
+- Faster: the mod does a lot less searching after every key, in menus, room windows, battles and away missions, so there are fewer little stalls that swallow a key press.
+- Changed: in the ship view, the mouse pointer no longer chases each room the camera passes on its way. It moves once, when the camera stops.
+
 ## Saturday October 24th 2026
 
 Version 0.3.82

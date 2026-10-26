@@ -71,7 +71,7 @@ Everywhere:
 
 Menus and settings:
 
-1. Up and Down Arrow move through the items; Home and End go to the first and last.
+1. Up and Down Arrow move through the items; Home and End go to the first and last. At either end of a list, the arrow says the item you are on again.
 2. Enter selects. Backspace goes back.
 3. Left and Right Arrow change a setting's value, or switch a window's tabs.
 

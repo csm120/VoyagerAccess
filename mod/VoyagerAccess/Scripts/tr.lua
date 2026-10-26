@@ -35,7 +35,7 @@ local function culture()
 end
 
 local loaded = {}      -- code -> { words = {}, compiled = { {pat, rep} } }
-local code_now, checked_at = nil, -100
+local code_now, checked_at = nil, false
 
 local function esc(s) return (s:gsub("[%^%$%(%)%%%.%[%]%*%+%-%?]", "%%%0")) end
 
@@ -132,11 +132,15 @@ local function load(code)
     return data
 end
 
--- The current language's table, or nil in English (checked once a second).
+-- The current language's table, or nil in English. The language is read
+-- once, and again when language.lua, which reads it after every input,
+-- says it changed (M.culture_changed). It was read again once a second,
+-- so for up to a second after a change the mod spoke the old language:
+-- "Spielsprache auf English geändert" (2026-10-25).
 local function current()
-    if os.clock() - checked_at > 1 then
+    if not checked_at then
         code_now = culture()
-        checked_at = os.clock()
+        checked_at = true
     end
     if not code_now then return nil end
     local d = load(code_now)
@@ -237,6 +241,12 @@ function M.fill(template, ...)
     out = out:gsub("{(%d)}", function(i) return "\0" .. i .. "\0" end)
     out = out:gsub("{[ns]}", function() k = k + 1; return "\0" .. k .. "\0" end)
     return (out:gsub("%z(%d)%z", function(i) return tostring(args[tonumber(i)] or "") end))
+end
+
+-- language.lua: the game's language has changed; read it again on the
+-- next lookup.
+function M.culture_changed()
+    checked_at = false
 end
 
 -- Development: the language in use and how many phrases it has.

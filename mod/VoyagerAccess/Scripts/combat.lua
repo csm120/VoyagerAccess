@@ -38,11 +38,32 @@ local function plain(s)
     return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
+-- The combat screens the game has made (popups.on_widget, in M.install),
+-- path -> true; a gone one is forgotten. main() runs on every focus look
+-- and every arrow key, also far from any battle, and searched every object
+-- for WBP_CombatMainWidget_C each time (2026-10-25).
+local made = {}
 local function main()
-    for _, w in ipairs(FindAllOf("WBP_CombatMainWidget_C") or {}) do
-        if live(w) and screen.shown(w) then return w end
+    for p in pairs(made) do
+        local w = StaticFindObject(p)
+        if not (w and w:IsValid()) then
+            made[p] = nil
+        elseif live(w) and screen.shown(w) then
+            return w
+        end
     end
     return nil
+end
+
+-- The combat screens the game has made and still has, shown or not
+-- (awaymission.lua: the battle's hero setup inside one).
+function M.screens()
+    local out = {}
+    for p in pairs(made) do
+        local w = StaticFindObject(p)
+        if w and w:IsValid() then out[#out + 1] = w else made[p] = nil end
+    end
+    return out
 end
 
 -- The combat screen is up at all, the hero setup included (system.lua keeps
@@ -454,16 +475,40 @@ function M.handles(b, path)
     return path:find("WBP_RadialMenu_C_%d+%.WidgetTree_%d+%.BackButton$") ~= nil and M.active()
 end
 
+local target_fields_told = false
 function M.button_label(b, path)
     if path:find("%.BackButton$") then return require("tr").word("Back") end
-    local prefix = path .. "."
+    -- The button's own two texts, by their fields: searching every
+    -- TextBlock in the game for the ones under this button cost about 30 ms
+    -- on each arrow, the size of hitch that swallows key taps (2026-10-21
+    -- and 2026-10-23 measurements of the same search). A text that is no
+    -- field is looked for in the button's shown tree.
     local by = {}
-    for _, t in ipairs(FindAllOf("TextBlock") or {}) do
-        local tp = t:IsValid() and path_of(t)
-        if tp and tp:sub(1, #prefix) == prefix then
-            local name = tp:match("([^%.]+)$")
-            if not by[name] then by[name] = plain(text_of(t)) end
+    local T = StaticFindObject("/Script/UMG.TextBlock")
+    local missing = {}
+    for _, name in ipairs({ "hoverText", "hp" }) do
+        local ok, t = pcall(function() return b[name] end)
+        if ok and t and t:IsValid() and T and t:IsA(T) then
+            by[name] = plain(text_of(t))
+        else
+            missing[#missing + 1] = name
         end
+    end
+    if #missing > 0 then
+        if not target_fields_told then
+            target_fields_told = true
+            print("[VoyagerAccess] combat: target texts not fields: " .. table.concat(missing, ", ") .. "\n")
+        end
+        pcall(function()
+            screen.walk(b, function(w)
+                if T and w:IsA(T) then
+                    local name = w:GetFName():ToString()
+                    if by[name] == nil then by[name] = plain(text_of(w)) end
+                    return true
+                end
+                return false
+            end, { no_lists = true, limit = 300 })
+        end)
     end
     local label = by.hoverText ~= "" and by.hoverText or "Subsystem"
     -- Which part of the ship it sits in (ESTVSectionLocation): a Hirogen
@@ -977,6 +1022,17 @@ local function fewer_heroes_focus()
 end
 
 function M.install()
+    require("popups").on_widget("WBP_CombatMainWidget_C", function(p)
+        made[p] = true
+        print("[VoyagerAccess] combat: screen made " .. tostring(p:match("([%w_]+)$")) .. "\n")
+    end)
+    -- One search at install, for a screen made before the mod's hooks (a
+    -- mod started mid-battle never heard it made; GPT review, 2026-10-25).
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_CombatMainWidget_C") or {}) do
+            if w:IsValid() then made[path_of(w)] = true end
+        end
+    end)
     LoopInGameThreadWithDelay(500, function()
         local ok, err = pcall(poll)
         if not ok then print("[VoyagerAccess] combat error: " .. tostring(err) .. "\n") end

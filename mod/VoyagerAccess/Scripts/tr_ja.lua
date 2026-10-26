@@ -15,7 +15,7 @@ return {
     ["Not available: {s}"] = "使用不可: {s}",
     ["{s} {n} of {n}"] = "{1} {3}中{2}",
     [". Team complete"] = "。チーム完成",
-    [": Enter starts the mission"] = "。Enterでミッション開始",
+    [": End moves to Start Mission"] = "。Endでミッション開始ボタンへ移動",
     [", empty"] = "、空き",
     [". Enter to choose a hero"] = "。Enterでヒーローを選択",
     ["dead"] = "死亡",
@@ -431,7 +431,7 @@ return {
 
     -- language.lua
     ["Game language changed to {s}."] = "ゲームの言語を{s}に変更しました。",
-    ["To go back, choose English in Settings, Language."] = "元に戻すには、設定の言語で英語を選んでください。",
+    ["To go back, choose {s} in Settings, Language."] = "元に戻すには、設定の言語で{s}を選んでください。",
     ["English"] = "英語",
     ["German"] = "ドイツ語",
     ["Spanish"] = "スペイン語",
@@ -524,7 +524,7 @@ return {
     ["open Main Engineering with Enter; on its Warp Core tab (Left and Right switch tabs), Up and Down choose the tier and Enter sets it"] = "Enterで主機関室を開きます。ワープコアタブ(左右矢印でタブ切り替え)で、上下矢印でティアを選び、Enterで設定します",
     ["C reads your Deuterium and energy"] = "Cで重水素とエネルギーを読み上げます",
     ["choose the damaged room in the ship view or from the J room list, press Enter, then Enter on Repair"] = "艦内ビューかJの部屋一覧で損傷した部屋を選んでEnter、次に修理でEnterを押します",
-    ["on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, Enter starts the mission"] = "遠征班の画面で上下矢印でスロットを移動し、Enterでヒーローを選びます。すべてのスロットが埋まったら、Enterでミッションを開始します",
+    ["on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, End moves to Start Mission and Enter starts it"] = "遠征班の画面で上下矢印でスロットを移動し、Enterでヒーローを選びます。すべてのスロットが埋まったら、Endでミッション開始ボタンへ移動し、Enterで開始します",
     ["Up and Down walk the choices, their heroes and Confirm. Enter on a hero selects them; Enter on Confirm confirms"] = "上下矢印で選択肢、そのヒーロー、確認を移動します。ヒーローでEnterを押すと選択、確認でEnterを押すと決定します",
     ["a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes"] = "ヒーローの疲労は遠征ミッションの結果で伝えます。N、概要、ヒーロータブでヒーローを一覧にします",
     ["a dangerous choice says its danger level, out of 3; Up and Down walk the choices and Enter on Confirm confirms"] = "危険な選択肢は3段階の危険度を伝えます。上下矢印で選択肢を移動し、確認でEnterを押すと決定します",
@@ -932,4 +932,6 @@ return {
     ["What's new is not available"] = "新機能の情報がありません",
     ["Backspace closes the tree when no panel is open"] = "パネルが開いていないとき、Backspaceでツリーを閉じます",
     ["R repeats the item"] = "Rで項目を繰り返します",
+    ["Loading. {s}"] = "読み込み中。{s}",
+    ["Loading, please wait."] = "読み込み中です。お待ちください。",
 }
