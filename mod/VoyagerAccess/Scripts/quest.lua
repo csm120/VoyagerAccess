@@ -419,6 +419,19 @@ function M.install()
     require("keys").on("o", M.say_objective)
     local okh = pcall(RegisterHook, "/Script/STVoyager.STVQuestTrackerWidget:UpdateQuestLine", function() M.request_look() end)
     print("[VoyagerAccess] quest: tracker event " .. (okh and "hooked" or "not hooked") .. "\n")
+    -- A battle's end from the game's event bus (firefly82's census, 26
+    -- October): the objectives held back during the battle are looked at
+    -- then. The one-second retry while the battle screen is up stays as the
+    -- fallback (the screen can still be up at this event; logged to see).
+    local okc = pcall(RegisterHook, "/Script/STVoyager.STVSectorSummarySubsystem:OnCombatFinished", function()
+        ExecuteInGameThread(function()
+            local up = false
+            pcall(function() up = require("combat").screen_up() and true or false end)
+            print("[VoyagerAccess] quest: combat finished, battle screen up: " .. tostring(up) .. "\n")
+            M.request_look()
+        end)
+    end)
+    print("[VoyagerAccess] quest: combat finished event " .. (okc and "hooked" or "not hooked") .. "\n")
     local LINE = { "OnAddedDisplayedQuest", "OnUpdateDisplayedQuest", "UpdateQuestTracker" }
     local GOAL = { "DisplayQuest_BP", "OnUpdateValues" }
     popups.on_widget("WBP_QuestLineDisplay_C", function(p) hook_widget(p, LINE) end)

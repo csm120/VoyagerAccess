@@ -270,6 +270,38 @@ class KeyEventsTests(unittest.TestCase):
         self.front = False
         self.assertIsNone(self.ev.mouse(0x202, 900, 10, 40, False))
 
+    def test_only_a_players_press_of_a_game_key_counts_as_seen(self):
+        # "seen" ends the mod's speech hold. Enter's release 0.1 s after it
+        # opened a room window ended it, and the focused button cut the
+        # window off (Casey, 2026-10-26); the mod's own clicks must not
+        # either. A game key pressed soon after a mod key still counts.
+        from voyager.helper import player_press
+        e_down = self.ev.key(0x45, True, 0, False)
+        e_up = self.ev.key(0x45, False, 80, False)
+        enter_down = self.ev.key(VK["enter"], True, 100, False)
+        enter_up = self.ev.key(VK["enter"], False, 900, False)
+        self.assertTrue(player_press(*e_down))
+        self.assertFalse(player_press(*e_up))
+        self.assertFalse(player_press(*enter_down))
+        self.assertFalse(player_press(*enter_up))
+        self.assertTrue(player_press([], self.ev.mouse(0x201, 5, 5, 0, False)))
+        self.assertFalse(player_press([], self.ev.mouse(0x202, 5, 5, 40, False)))
+        self.assertFalse(player_press([], self.ev.mouse(0x201, 5, 5, 50, True)))
+        self.assertFalse(player_press([], None))
+
+    def test_screen_reader_commands_are_no_press(self):
+        # NVDA+Up to hear a line again must not end the hold on what the
+        # mod is reading (Fable review, 2026-10-26). Ctrl alone still does.
+        from voyager.helper import player_press
+        self.assertFalse(player_press(*self.ev.key(VK_INSERT, True, 0, False)))
+        self.assertFalse(player_press(*self.ev.key(VK["r"], True, 10, False)))   # R with Insert
+        self.ev.key(VK["r"], False, 50, False)
+        self.ev.key(VK_INSERT, False, 60, False)
+        self.assertFalse(player_press(*self.ev.key(VK_CAPITAL, True, 100, False)))
+        self.assertFalse(player_press(*self.ev.key(0x54, True, 110, False)))       # T with Caps Lock
+        self.ev.key(VK_CAPITAL, False, 150, False)
+        self.assertTrue(player_press(*self.ev.key(0xA2, True, 200, False)))         # Ctrl alone
+
     def test_mod_key_is_named_and_logged(self):
         names, line = self.ev.key(VK["enter"], True, 0, False)
         self.assertEqual(names, ["enter"])

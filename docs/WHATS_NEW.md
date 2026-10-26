@@ -1,5 +1,16 @@
 # New in Voyager Access
 
+## Monday October 26th 2026, afternoon
+
+Version 0.3.85
+
+A small one, to fix something this morning's release did to me while I was playing.
+
+- Fixed: a room window opened with Enter could be cut off by its first button about a second and a half in. Letting go of Enter was being counted as a new key press. Now only pressing a key counts, so the window is read to the end unless you press something.
+- Fixed: NVDA's own commands, like NVDA+Up Arrow to hear a line again, no longer let the mod's next line cut off what it was reading.
+- Fixed: a game key like E, pressed right after Enter, now cuts off what the mod is reading, the same as any other key.
+- Changed: when the game won't take Set course for a place, the mod's log now says whether the mouse pointer was really on that place. If it happens to you, a report with your log will help us find out why.
+
 ## Monday October 26th 2026
 
 Version 0.3.84

@@ -115,7 +115,7 @@ Side mission requests read who is asking, what they want and the time limit, the
 
 Tutorials are read aloud and stay open until you press Enter, so R can read them again. While one is open, the arrow keys remind you that Enter closes it. A tutorial that opens on top of a window is read first, then the window behind it.
 
-What the mod says on its own (a scan result, an objective, a conversation that starts by itself) isn't cut off by the next thing it says on its own; any key you press still cuts it off.
+What the mod says on its own (a scan result, an objective, a conversation that starts by itself) isn't cut off by the next thing it says on its own; any key you press still cuts it off, except your screen reader's own commands (NVDA+Up Arrow and the like).
 
 ## Uninstalling
 

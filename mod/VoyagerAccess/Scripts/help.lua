@@ -611,7 +611,20 @@ function M.install()
     -- slower, bounded fallback.
     local transition_hooked = pcall(RegisterHook, "/Script/STVoyager.STVJourneySubsystem:OnStateTransitionFinished", function()
         ExecuteInGameThread(function()
-            print("[VoyagerAccess] help: transition finished\n")
+            -- With the loading screen's own state (GXCommonActivatableWidget
+            -- IsActivated): firefly82 saw this event about a second before
+            -- the loading screen went (25 October); this line says whether
+            -- the load-end fallbacks can wait for the screen's deactivation
+            -- instead (his proposal, 26 October). Logging only.
+            local load = "none"
+            pcall(function()
+                for _, w in ipairs(FindAllOf("WBP_Loading_Screen_C") or {}) do
+                    if w:IsValid() and not w:GetFullName():find("Default__", 1, true) then
+                        load = tostring(w:IsActivated())
+                    end
+                end
+            end)
+            print("[VoyagerAccess] help: transition finished, loading screen activated: " .. load .. "\n")
             pcall(M.view_check)
         end)
     end)

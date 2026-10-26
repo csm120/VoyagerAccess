@@ -463,6 +463,24 @@ class KeyEvents:
         return "%s mouse %s up after %d ms at %d,%d, %s" % (self.now(), name, max(ms - was, 0), x, y, who)
 
 
+def player_press(names, line):
+    """True for a press (key, mouse button or wheel) by the player of
+    something the mod does not handle: what a bare "press" stands for. It
+    ends the mod's speech hold, so a release must not count (Enter's release
+    cut a room window off, Casey, 2026-10-26), nor the mod's own clicks; the
+    mod's keys are sent by name and end it themselves."""
+    if names or not line:
+        return False
+    # Nor a screen reader's own command: Insert or Caps Lock, alone or held
+    # with another key (NVDA+Up to hear a line again would otherwise end the
+    # hold on what is being read; Fable review, 2026-10-26).
+    held = line.split(" down with ", 1)[1] if " down with " in line else ""
+    if (" Insert down" in line or " Caps Lock down" in line
+            or "Insert" in held.split(" (")[0] or "Caps Lock" in held.split(" (")[0]):
+        return False
+    return " up after " not in line and "by the mod" not in line
+
+
 class InputHooks:
     """Windows' own keyboard and mouse events (low-level hooks), read on a
     thread of their own, instead of asking for 21 keys every 10 ms.
@@ -730,8 +748,8 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
         out = []
         if hooks:
             written = time.perf_counter()
-            seen = False
-            for _names, line, lag, at in hooks.drain():
+            seen = press = False
+            for names, line, lag, at in hooks.drain():
                 # Every event as a "log:" line, which the mod writes to
                 # UE4SS.log between the game's own lines and otherwise
                 # ignores. Each says how long Windows took to report it and
@@ -740,13 +758,19 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
                     out.append("log:%s [Windows to helper %d ms, helper to file %d ms]"
                                % (line, lag, (written - at) * 1000))
                 seen = seen or bool(line)
+                press = press or player_press(names, line)
             # With the log off, a key or mouse button in the game still
             # tells the mod that input happened (a bare "seen", no key
             # name): Tab or a mouse click can move focus with no window
             # event, and the mod looks only after input (GPT review,
-            # 2026-10-21).
+            # 2026-10-21). "press" too when the player pressed something
+            # the mod does not handle: only that ends the mod's speech hold
+            # (a release did, 2026-10-26). With the log on, the mod tells
+            # the lines apart itself (keys.lua).
             if seen and not log_on[0]:
                 out.append("seen")
+            if press and not log_on[0]:
+                out.append("press")
         pressed = watcher.poll()
         out += pressed
         if "ctrl+f11" in pressed:

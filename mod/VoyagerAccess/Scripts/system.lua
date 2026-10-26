@@ -742,7 +742,11 @@ end
 
 -- The ship has started to move. Its target from the game; the mod's own
 -- name for it when the mod set the course.
+local holding = nil   -- the running Set course hold, { stop = function } (hold_set_course)
 local function on_started()
+    -- Only the mod's own course (pending): a move the game starts by itself
+    -- must not cut a hold short of the game's 0.6 s (Fable review).
+    if holding and pending then holding.stop("the trip started") end
     local name, path = nil, nil
     if pending then name, path = pending.name, pending.path end
     pcall(function()
@@ -810,6 +814,13 @@ function M.hook_travel()
     local ok4 = pcall(RegisterHook, J .. "OnStateTransitionFinished", function()
         ExecuteInGameThread(function() pcall(look_waiting) end)
     end)
+    -- The event bus's arrival at a point (firefly82's census, 26 October),
+    -- logged only, against OnTravelCompleted: ending the waiting-event
+    -- watch on it would drop a window that opens after it.
+    local ok5 = pcall(RegisterHook, "/Script/STVoyager.STVSectorSummarySubsystem:OnArrivedAtPOI", function()
+        ExecuteInGameThread(function() print("[VoyagerAccess] course: arrived at a point (event bus)\n") end)
+    end)
+    print("[VoyagerAccess] course: arrival event " .. (ok5 and "hooked" or "not hooked") .. "\n")
     local popups = require("popups")
     -- A point's detail panel and its parts (WBP_POIDetailView_C,
     -- WBP_PlanetDetailView_C, ...) are no window that holds an event back.
@@ -1021,6 +1032,42 @@ local function on_screen(actor)
     return yes
 end
 
+-- What the game's own pointer is over now, against the point the mod aimed
+-- at: "target", "nothing", "other <name>", "no cursor widget" or "error ...".
+-- The game's cursor (WBP_CustomCursor_C, USTVCustomCursor) has no event
+-- for it, but GetHoveredActor answers (firefly82's probe, 2026-10-26).
+-- Logged at every hold and select, so a course the game did not take says
+-- whether the pointer was on the point (five holds not taken for the
+-- Shipwreck beside the Array, Casey, 2026-10-26).
+local function under_pointer(path)
+    local r = "no cursor widget"
+    local ok, err = pcall(function()
+        -- The shown one, if the game keeps more than one (Fable review).
+        local c, shown = nil, false
+        for _, x in ipairs(FindAllOf("WBP_CustomCursor_C") or {}) do
+            if x:IsValid() and not x:GetFullName():find("Default__", 1, true) and not shown then
+                shown = require("screen").shown(x) and true or false
+                c = x
+            end
+        end
+        if not c then return end
+        -- None shown: said so, so the line is not taken for the real pointer
+        -- (GPT review, 2026-10-26).
+        local tag = shown and "" or " (hidden cursor)"
+        local a = c:GetHoveredActor()
+        if not (a and a:IsValid()) then r = "nothing" .. tag return end
+        local p = path_of(a)
+        if p == path then r = "target" .. tag return end
+        -- The point's own parts (a component's actor) count as the point.
+        local okw, owner = pcall(function() return a:GetOwner() end)
+        if okw and owner and owner:IsValid() and path_of(owner) == path then r = "target" .. tag return end
+        r = "other " .. a:GetFName():ToString() .. tag
+    end)
+    if not ok then r = "error " .. tostring(err) end
+    return r
+end
+M.under_pointer = under_pointer
+
 -- The game's Set course input held, as a player holds the mouse button or
 -- the gamepad's A on the point: injected every 20 ms for 0.8 s (the game
 -- wants 0.6 s), then ended by its handle and, as a second guard, by a step
@@ -1032,6 +1079,12 @@ local SET_COURSE = nil
 -- without one could reset the hold; the game took no course on about 2 of
 -- 5 tries in the demo (2026-10-24).
 local HOLD_MS, STEP_MS = 1000, 1
+-- The running hold, ended early by the game's own start event (on_started):
+-- the game takes a course at its 0.6 s (IA_Sector_SetCourse's
+-- HoldTimeThreshold), and in firefly82's five courses (26 October) the
+-- trip started 0.4 s before the hold ended, so 0.4 s of input ran on into
+-- the trip. HOLD_MS stays as the bound for a course the game does not take.
+-- (holding is declared before on_started, which ends it.)
 local function hold_set_course()
     local sub = nil
     for _, s in ipairs(FindAllOf("EnhancedInputLocalPlayerSubsystem") or {}) do
@@ -1054,21 +1107,31 @@ local function hold_set_course()
         print("[VoyagerAccess] course: no Set course input to hold\n")
         return false
     end
+    if holding then holding.stop("replaced") end
     local action, n, sent, handle = SET_COURSE, 0, 0, nil
     local started = os.clock()
+    local mine = {}
     handle = LoopInGameThreadWithDelay(STEP_MS, function()
         n = n + 1
-        if os.clock() - started > (HOLD_MS + 200) / 1000 or n > 400 then
+        -- Stopped (by the trip, a new course or the bound) sends nothing
+        -- more even if the cancel did not take (GPT review, 2026-10-26).
+        if mine.stopped or os.clock() - started > (HOLD_MS + 200) / 1000 or n > 400 then
             pcall(CancelDelayedAction, handle)
             return
         end
         local ok = pcall(function() sub:InjectInputVectorForAction(action, { X = 1.0, Y = 0.0, Z = 0.0 }, {}, {}) end)
         if ok then sent = sent + 1 end
     end)
-    ExecuteInGameThreadWithDelay(HOLD_MS, function()
+    function mine.stop(why)
+        if mine.stopped then return end
+        mine.stopped = true
+        if holding == mine then holding = nil end
         pcall(CancelDelayedAction, handle)
-        print("[VoyagerAccess] course: Set course held, " .. sent .. " of " .. n .. " steps sent\n")
-    end)
+        print(string.format("[VoyagerAccess] course: Set course held %d ms (%s), %d of %d steps sent\n",
+            math.floor((os.clock() - started) * 1000), why, sent, n))
+    end
+    holding = mine
+    ExecuteInGameThreadWithDelay(HOLD_MS, function() mine.stop("full hold") end)
     return true
 end
 
@@ -1125,7 +1188,13 @@ local function declare_travel(name, path)
 end
 set_course = function(name, path, zooms, tok, again)
     zooms = zooms or 0
-    if not tok then course_token = course_token + 1 tok = course_token end
+    if not tok then
+        course_token = course_token + 1
+        tok = course_token
+        -- A new destination: the old one's hold stops now, not at its bound
+        -- (GPT review, 2026-10-26).
+        if holding then holding.stop("new course") end
+    end
     local function stale() return tok ~= course_token end
     waiting = nil
     local q0 = pawn()
@@ -1154,6 +1223,9 @@ set_course = function(name, path, zooms, tok, again)
             ExecuteInGameThreadWithDelay(700, function()
                 if stale() then return end
                 pending = { name = name, path = path }
+                local under = under_pointer(path)
+                pending.under = under
+                print("[VoyagerAccess] course: under the pointer at the hold: " .. under .. "\n")
                 if not hold_set_course() then
                     pending = nil
                     if declare_travel(name, path) then return end
@@ -1165,6 +1237,10 @@ set_course = function(name, path, zooms, tok, again)
                 -- shows it as a message, which is read; the mod adds only
                 -- that nothing started, and nothing over a window.
                 ExecuteInGameThreadWithDelay(HOLD_MS + 1500, function()
+                    -- A newer request (the same point chosen again) owns
+                    -- pending now: this one says nothing (Fable review,
+                    -- 2026-10-26: "not set" came while the second hold ran).
+                    if stale() then return end
                     if not (pending and pending.path == path) then return end
                     -- Moving with no start event (its hook did not register
                     -- after a game patch): the trip is said from here, not
@@ -1178,8 +1254,9 @@ set_course = function(name, path, zooms, tok, again)
                         print("[VoyagerAccess] course: travelling with no start event\n")
                         return on_started()
                     end
+                    print("[VoyagerAccess] course: the game took no course for " .. name .. (again and ", second hold" or "")
+                        .. " (pointer at the hold: " .. tostring(pending.under) .. ", now: " .. under_pointer(path) .. ")\n")
                     pending = nil
-                    print("[VoyagerAccess] course: the game took no course for " .. name .. (again and ", second hold" or "") .. "\n")
                     local busy = false
                     pcall(function() busy = busy_now() end)
                     -- One more aim and hold before the player hears it failed:
@@ -1288,8 +1365,9 @@ local function select_in_game(p, done)
         -- in probes a1 and r3b).
         ExecuteInGameThreadWithDelay(600, function()
             if stale() then return give_up() end
+            local under = under_pointer(path)
             local ok = tap("IA_Sector_SelectPoi")
-            print("[VoyagerAccess] system: select in game " .. tostring(ok) .. "\n")
+            print("[VoyagerAccess] system: select in game " .. tostring(ok) .. ", under the pointer: " .. under .. "\n")
             if not ok then give_up() return done(false) end
             job.tapped = true
             ExecuteInGameThreadWithDelay(2000, function()

@@ -84,12 +84,31 @@ local function dispatch()
         local logged = name:match("^log:(.*)$")
         -- "seen": a key or mouse button in the game with the input log off;
         -- it only counts as input for the listeners (focus looks then).
-        if logged or name == "seen" then
+        -- "press": the player pressed one the mod does not handle (sent
+        -- with "seen"; a release or the mod's own click is only "seen").
+        if logged or name == "seen" or name == "press" then
             if logged then print("[VoyagerAccess] input " .. logged .. "\n") end
             -- A game key (Tab, E, a mouse button) is the player moving on
             -- too: what the mod said by itself no longer holds the next
-            -- line back (speech.lua; GPT review, 2026-10-26).
-            if (name == "seen" or not name:match("^log:%S+ helper: ")) and not released then
+            -- line back (speech.lua; GPT review, 2026-10-26). Only a press
+            -- by the player of a key the mod does not handle: a release
+            -- ended the hold of the room window Enter had just opened, so
+            -- its focused button cut the window off (Casey's log, 09:23,
+            -- 2026-10-26). The helper sends "press" for such presses;
+            -- logged lines are told apart here (a 0.5 s window after the
+            -- mod's key missed a long-held Enter's release and also ignored
+            -- an E pressed 0.3 s after; GPT review of that fix).
+            local press = name == "press" or (logged and not logged:find("^%S+ helper: ")
+                and not logged:find(" up after ", 1, true) and not logged:find("(mod key:", 1, true)
+                and not logged:find("by the mod", 1, true)
+                -- Nor a screen reader's command (Insert or Caps Lock, alone
+                -- or held): NVDA+Up to hear a line again ended the hold on
+                -- what was being read (Fable review, 2026-10-26). The helper's
+                -- player_press has the same rule.
+                and not logged:find(" Insert down", 1, true) and not logged:find(" Caps Lock down", 1, true)
+                and not (logged:match(" down with ([^%[(]*)") or ""):find("Insert", 1, true)
+                and not (logged:match(" down with ([^%[(]*)") or ""):find("Caps Lock", 1, true))
+            if press and not released then
                 require("speech").release()
                 released = true
             end
