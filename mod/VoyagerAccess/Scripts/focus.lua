@@ -2579,7 +2579,7 @@ local function room_report(event, owner, flag, name, id)
             -- The report's name, or the button's when it came empty (an id
             -- match does not need the name; reviews, 2026-10-26).
             local said = (name and name ~= "") and name or w.name or ""
-            speech.say("Crafting " .. said .. " started", true)
+            speech.say(said ~= "" and ("Crafting " .. said .. " started") or "Crafting started", true)
         end
     elseif event == "OnUpdateCraftingReport" and flag == false then
         room_wait = nil
@@ -2948,12 +2948,32 @@ local function activate()
         local before = require("rooms").crafting_now()
         local function look()
             local now = require("rooms").crafting_now()
-            if now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
+            -- Only with a craft really running: a craft that finished in the
+            -- wait turned the text to the idle one, which is no start (GPT
+            -- review, 2026-10-26).
+            local running = false
+            -- Above 0: a craft just started shows its full count, and 0 with
+            -- the idle text is not ruled out (Fable, second round).
+            pcall(function() running = FindFirstOf("STVResourceManager"):GetCraftingRemainingCycles() > 0 end)
+            if running and now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
         end
         -- With a craft already running the game refuses and its report names
         -- the running one, even the same item: only the before/after compare
         -- then (GPT and Fable reviews, 2026-10-26).
-        if item and item ~= "" and not before then
+        -- A blueprint button (Transporter Signal Amplifier Blueprints) has no
+        -- ItemName text, so the report was never awaited and only the look
+        -- below said it (VM, 2026-10-26); its ItemTag is enough to match.
+        local tag = nil
+        pcall(function() tag = b.ItemTag.TagName:ToString() end)
+        if tag == "None" or tag == "" then tag = nil end
+        -- Whether a craft is running, from the game's count (-1 when idle,
+        -- probe 2026-10-26): `before` is the module's text, and when idle
+        -- that is "currently no crafting in progress" in the game's
+        -- language, so the guard below took every craft for a second one
+        -- and the report was never awaited.
+        local busy = false
+        pcall(function() busy = FindFirstOf("STVResourceManager"):GetCraftingRemainingCycles() >= 0 end)
+        if ((item and item ~= "") or tag) and not busy then
             wait_room_report(b, "OnUpdateCraftingReport", item, look, 900, true)
         else
             ExecuteInGameThreadWithDelay(900, function() pcall(look) end)

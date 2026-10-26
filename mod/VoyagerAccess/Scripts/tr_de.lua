@@ -250,6 +250,7 @@ return {
     ["Collected"] = "Eingesammelt",
     ["Collected: {s}"] = "Eingesammelt: {s}",
     ["Crafting {s} started"] = "Herstellung von {s} gestartet",
+    ["Crafting started"] = "Herstellung gestartet",
     ["Crafting {s} cancelled"] = "Herstellung von {s} abgebrochen",
     ["Crafting cancelled"] = "Herstellung abgebrochen",
     ["Not possible"] = "Nicht möglich",

@@ -162,6 +162,13 @@ function M.prep(s)
     -- "per" then an icon: "-2 morale per <img id="Cycle"/>" read "-2 morale
     -- per" (The Long Way Home, Q Trials, VM, 2026-10-15).
     s = s:gsub("([Pp]er)%s*" .. IMG, function(p, id) return p .. " " .. (unit(id):gsub("s$", "")) end)
+    -- The other languages' "per" ("-6 HÜLLE pro <img id="Cycle"/>" was read
+    -- "-6 HÜLLE pro.", German, VM, 2026-10-26): a Cycle icon still here is
+    -- the word "cycle", from the mod's tables in every language.
+    s = s:gsub("[ \t]*" .. IMG, function(id)
+        local l = id:lower()
+        if l == "cycle" or l == "cycles" then return " " .. require("tr").word("cycle") end
+    end)
     -- A name already said before the number: "TRITANIUM +30 tritanium" and
     -- "FOOD -150 food" in event results (Q Trials, VM, 2026-10-15) read
     -- "+30 tritanium". Tags may still be around the name.

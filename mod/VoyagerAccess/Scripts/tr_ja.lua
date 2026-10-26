@@ -265,6 +265,7 @@ return {
     ["Collected"] = "回収しました",
     ["Collected: {s}"] = "回収: {s}",
     ["Crafting {s} started"] = "{s}の製作を開始",
+    ["Crafting started"] = "製作を開始",
     ["Crafting {s} cancelled"] = "{s}の製作を中止",
     ["Crafting cancelled"] = "製作を中止",
     ["Not possible"] = "できません",

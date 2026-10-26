@@ -250,6 +250,7 @@ return {
     ["Collected"] = "已收集",
     ["Collected: {s}"] = "已收集：{s}",
     ["Crafting {s} started"] = "开始锻造{s}",
+    ["Crafting started"] = "开始锻造",
     ["Crafting {s} cancelled"] = "已取消锻造{s}",
     ["Crafting cancelled"] = "已取消锻造",
     ["Not possible"] = "无法进行",

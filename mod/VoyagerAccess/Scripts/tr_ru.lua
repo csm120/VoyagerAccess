@@ -265,6 +265,7 @@ return {
     ["Collected"] = "Получено",
     ["Collected: {s}"] = "Получено: {s}",
     ["Crafting {s} started"] = "Начато изготовление: {s}",
+    ["Crafting started"] = "Начато изготовление",
     ["Crafting {s} cancelled"] = "Изготовление отменено: {s}",
     ["Crafting cancelled"] = "Изготовление отменено",
     ["Not possible"] = "Невозможно",

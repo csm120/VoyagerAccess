@@ -250,6 +250,7 @@ return {
     ["Collected"] = "Récupéré",
     ["Collected: {s}"] = "Récupéré : {s}",
     ["Crafting {s} started"] = "Fabrication de {s} lancée",
+    ["Crafting started"] = "Fabrication lancée",
     ["Crafting {s} cancelled"] = "Fabrication de {s} annulée",
     ["Crafting cancelled"] = "Fabrication annulée",
     ["Not possible"] = "Impossible",

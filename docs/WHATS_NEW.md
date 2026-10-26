@@ -1,5 +1,14 @@
 # New in Voyager Access
 
+## Monday October 26th 2026, night
+
+Version 0.3.87
+
+Two small ones that turned up while testing tonight's battles and a German game.
+
+- Fixed: "Crafting started" now comes as soon as the game starts the craft, for blueprints too. It was arriving almost a second late, because the mod thought something was already being crafted when nothing was.
+- Fixed: in German and the other languages, a cost or effect per cycle lost its last word. "-6 HÜLLE pro" is now "-6 HÜLLE pro Zyklus", and the same goes for every language the game ships.
+
 ## Monday October 26th 2026, evening
 
 Version 0.3.86
