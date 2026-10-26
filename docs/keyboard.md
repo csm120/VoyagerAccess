@@ -49,7 +49,7 @@ follows them.
 
 ## Keys in use
 
-1. Everywhere: F1 help, O objective, C resources, energy and morale, V ship view or System Map, N navigation list,
+1. Everywhere: F1 help, O objective, C resources, energy and morale, V ship view or System Map, N navigation list, H a waiting call,
    I where am I, R repeat, Ctrl+F12 what's new (a list, like C), Ctrl+F1 every key (a list, grouped by screen; hotkeys.lua keeps it in step with this file). Backtick (the key left of 1) copies a report for
    troubleshooting to the clipboard (the helper's job, like F12). F12 belongs to the helper, not the mod: after an
    update is offered it restarts the game to install it; otherwise it checks for an update
@@ -58,12 +58,14 @@ follows them.
 2. Menus and settings: Up, Down, Home, End, Enter, Backspace; Left and Right
    change a setting. Menu items and room buttons say their position, for
    example "Dismantle, 2 of 3".
-3. Dialogue: Enter continues, Shift+Enter skips ahead. When a call comes in,
-   the mod says "Incoming call. To answer, press N and choose Incoming
-   calls." To answer, press N in the ship view or System Map, choose
-   "Incoming calls" (listed only while a call is waiting) and press Enter,
-   then press Enter on the call ("Incoming call: <name>") to start the
-   conversation.
+3. Dialogue: Enter continues, Shift+Enter skips ahead. On a line with no
+   choices, Up, Down, Home and End say the line again ("Enter continues."
+   the first times). When a call comes in, the mod says "Incoming call. To
+   answer, press H, then Enter." H, in the ship view or System Map, opens
+   the waiting call as a click on the game's call button does; Enter on the
+   call ("Incoming call: <name>") starts the conversation. With no call, H
+   says "No incoming call". N still lists "Incoming calls" while a call is
+   waiting, in the game's own order.
 4. Cutscene: Shift+Enter skips.
 5. Ship view: Up and Down (or Page Up and Page Down) change deck, Left and
    Right move along it, Home and End go to the ends of the deck, Enter opens

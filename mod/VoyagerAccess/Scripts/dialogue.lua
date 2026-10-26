@@ -113,8 +113,14 @@ local function push(text)
     back = 0
 end
 
+-- The conversation's own last line, for the arrows (M.line_key): R's
+-- last_spoken also takes other readers' text, and on an away mission the
+-- arrows said the location panel instead of the narration (VM, 2026-10-26).
+local window_said = nil
+local said_in = nil   -- the window window_said belongs to (Fable review)
 local function speak_story(text)
     last_spoken = text
+    window_said, said_in = text, window_path
     push(text)
     print("[VoyagerAccess] dialogue: " .. text .. "\n")
     speech.say_story(text)
@@ -167,6 +173,11 @@ local crumb = require("crumb")
 -- speaker for a moment; 2026-10-14 and 2026-10-15).
 local function say_line(w, speaker, line)
     line = plain(line or "")
+    -- Until a new line is said, the arrows have no line: the one before is
+    -- gone from the screen (GPT review, 2026-10-26). Compared cleaned, as
+    -- last_line is: the raw text has tags, and the same line again cleared
+    -- it for good (Fable review).
+    if line ~= "" and line ~= last_line then window_said = nil end
     if line == "" or line == last_line then return end
     local sp = w.DialogueSpeakerText
     local shows_speaker = sp and sp:IsValid() and screen.shown(sp)
@@ -304,6 +315,8 @@ local function on_window(kind)
                 if gone_since and os.time() - gone_since >= 3 then
                     last_line, last_speaker = nil, nil
                     stuck.line, stuck.count = nil, 0
+                    -- Nor the arrows' line (GPT review, 2026-10-26).
+                    window_said = nil
                 end
                 gone_since = nil
                 crumb.at("dialogue: " .. kind)
@@ -447,6 +460,47 @@ local function shown_choices()
     end
     table.sort(list, function(a, b) return a.idx < b.idx end)
     return list
+end
+
+-- Up, Down, Home and End on a line with no choices, where nothing has
+-- focus: they said nothing, and the conversation sounded over while it
+-- still waited for Enter (Casey, 2026-10-26: "We've been cut off,
+-- Captain." after hailing the Array). The line is said again, as a sighted
+-- player still sees it, with "Enter continues." the first times.
+local hinted_line = nil   -- the line "Enter continues." was last added to
+function M.line_key()
+    local w = M.active()
+    if not (w and window_said and said_in == window_path) or #shown_choices() > 0 then return false end
+    local okc, card = pcall(function() return w.WBP_Dialogue_Popup end)
+    if okc and card and card:IsValid() and screen.shown(card) then return false end
+    -- Not with a window over the conversation, which has the keys (an away
+    -- mission's result; Fable review, 2026-10-26): the same test as an
+    -- Enter that went elsewhere (M.continue).
+    local over = false
+    pcall(function()
+        if require("story").active() then over = true return end
+        -- A tutorial or other read-once window over an away mission too
+        -- (Fable, second round); the mission's own windows are not in
+        -- this list, as M.continue's loop shows.
+        if require("popups").tutorial_open() then over = true return end
+        if require("awaymission").mission_active() then
+            for _, o in ipairs(FindAllOf("WBP_AwayMissionOutcome_C") or {}) do
+                if o:IsValid() and o:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(o) then over = true end
+            end
+            return
+        end
+        for _, p in ipairs(require("popups").open_windows()) do
+            if not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("RoomPrompt", 1, true) then over = true end
+        end
+    end)
+    if over then return false end
+    speech.say(window_said, true)
+    -- Once per line: it came after every arrow (VM, 2026-10-26).
+    if hinted_line ~= window_said and require("hints").fresh("line_arrows") then
+        hinted_line = window_said
+        speech.say("Enter continues.", false)
+    end
+    return true
 end
 
 -- Home and End: the first or last choice (Home did nothing, so Enter took

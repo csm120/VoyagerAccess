@@ -919,6 +919,11 @@ return {
     ["{s}, rank {n}"] = "{s}, stopień {n}",
     ["Incoming call."] = "Połączenie przychodzące.",
     [" To answer, press N and choose Incoming calls."] = " Aby odebrać, naciśnij N i wybierz Połączenia przychodzące.",
+    ["Calls are answered in the ship view or the System Map"] = "Połączenia odbiera się w widoku statku lub na mapie układu",
+    ["No incoming call"] = "Brak połączenia przychodzącego",
+    [" To answer, press H, then Enter."] = " Aby odebrać, naciśnij H, a potem Enter.",
+    ["H opens a waiting call, and Enter answers it."] = "H otwiera oczekujące połączenie, a Enter je odbiera.",
+    ["H: in the ship view or System Map, open a waiting call; Enter answers it"] = "H: w widoku statku lub na mapie układu otwiera oczekujące połączenie; Enter je odbiera",
 
     -- warpcore.lua
     ["Gray Mode"] = "Tryb szary",

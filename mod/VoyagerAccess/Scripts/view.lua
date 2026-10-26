@@ -156,6 +156,29 @@ function M.nav_close()
     return true
 end
 
+-- H: a waiting call, as a click on the bar's call button does (Casey,
+-- 2026-10-26: so many calls, and each took N, three Downs and Enter). The
+-- calls list opens on the call; Enter answers it.
+function M.calls_key()
+    if not nav_place() then
+        speech.say("Calls are answered in the ship view or the System Map", true)
+        return
+    end
+    local b = find("IncomingCallsButton")
+    if not (b and b:GetIsEnabled()) then
+        -- The bar hidden under a window (a report over the map) is not
+        -- "no call" (Fable review, 2026-10-26).
+        local bar = nav_bar()
+        if bar and not screen.shown(bar) then speech.say("Close the window first", true) return end
+        speech.say("No incoming call", true)
+        return
+    end
+    for _, it in ipairs(NAV) do
+        if it[2] == "IncomingCallsButton" then nav_items, nav_index = { it }, 1 end
+    end
+    M.nav_enter()
+end
+
 -- Sector switch leaves the sector at once: active missions were cancelled
 -- with no warning heard (State of Flux, VM, 2026-10-15). The game's own
 -- warning is on its hover; the first Enter says it and a second Enter
@@ -453,7 +476,8 @@ local function check_calls(bar)
     if waiting and not call_waiting then
         print("[VoyagerAccess] view: incoming call waiting\n")
         pcall(function() require("calllisten").button_seen() end)
-        speech.say("Incoming call." .. require("hints").text("call_n", " To answer, press N and choose Incoming calls."), false)
+        -- A new hint key: the N wording was heard twice by now (hints.lua).
+        speech.say("Incoming call." .. require("hints").text("call_h", " To answer, press H, then Enter."), false)
     end
     call_waiting = waiting
 end
@@ -519,6 +543,7 @@ M.tab_hold_until = 0
 function M.install()
     require("keys").on("v", M.toggle)
     require("keys").on("n", M.nav_toggle)
+    require("keys").on("h", M.calls_key)
     -- The new Overview tab has been read: the focused item now (overview_tab).
     require("popups").on_read(function(_, cls)
         if cls == "WBP_OverviewInfoWidget_C" and os.clock() < M.tab_hold_until then

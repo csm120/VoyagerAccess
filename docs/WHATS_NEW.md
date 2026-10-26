@@ -1,5 +1,16 @@
 # New in Voyager Access
 
+## Monday October 26th 2026, evening
+
+Version 0.3.86
+
+All of this came out of my own play this afternoon. Calls kept coming in, and I kept hunting for them.
+
+- New: H answers a call. When "Incoming call" comes up, press H in the ship view or the System Map, then Enter on the call. No more N and three Down Arrows every time. With no call waiting, H tells you so.
+- Fixed: on a conversation line with no choices, the arrow keys said nothing, so it sounded like the conversation was over when it was still waiting for Enter. Now Up, Down, Home and End say the line again, and the first couple of times you also hear "Enter continues."
+- Fixed: scanning a place that turns out to hold something, like a spatial anomaly, read the whole description twice. Now you hear it once. A place with resources still says "Found Deuterium" after its details.
+- Changed: when you craft something, the mod now matches the game's own report by the item itself instead of its name, so "Crafting started" is said for the right item. Thanks to firefly82 for the idea.
+
 ## Monday October 26th 2026, afternoon
 
 Version 0.3.85

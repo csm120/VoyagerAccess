@@ -910,6 +910,7 @@ local function run(action, p)
                 end)
         end
         local forgotten = require("popups").reread_for("POIDetailView")
+        local before = found[p.path]
         pw:TryToScanPOI(p.poi)
         -- The result shows at once (Ship revealed Deuterium within a second).
         -- Look the point up again by path: objects are never kept across
@@ -922,7 +923,13 @@ local function run(action, p)
                 if not q then return end
                 if explored(q.actor) then
                     local res = resources(q.poi)
-                    if res == "" then res = found[q.path] or "" end
+                    if res == "" then
+                        -- The panel read again after the scan has said it:
+                        -- "Found Spatial Anomaly, Our sensors..." repeated the
+                        -- panel's whole text 0.7 s later (Casey, 2026-10-26).
+                        if found[q.path] and found[q.path] ~= before then return end
+                        res = found[q.path] or ""
+                    end
                     -- The full game's event IDs are not ResourceEvent_Generated_*,
                     -- so "nothing found" followed a panel listing Tritanium
                     -- (Q Trial, VM, 2026-10-14); the panel says what was found.

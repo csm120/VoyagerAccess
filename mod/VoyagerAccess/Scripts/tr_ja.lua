@@ -919,6 +919,11 @@ return {
     ["{s}, rank {n}"] = "{s}、ランク{n}",
     ["Incoming call."] = "着信です。",
     [" To answer, press N and choose Incoming calls."] = "応答するには、Nを押して着信を選んでください。",
+    ["Calls are answered in the ship view or the System Map"] = "通信には艦内ビューか星系図で応答します",
+    ["No incoming call"] = "着信はありません",
+    [" To answer, press H, then Enter."] = "応答するには、Hを押してからEnterを押してください。",
+    ["H opens a waiting call, and Enter answers it."] = "Hで待機中の着信を開き、Enterで応答します。",
+    ["H: in the ship view or System Map, open a waiting call; Enter answers it"] = "H: 艦内ビューか星系図で待機中の着信を開く。Enterで応答",
 
     -- warpcore.lua
     ["Gray Mode"] = "グレーモード",

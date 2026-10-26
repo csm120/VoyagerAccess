@@ -919,6 +919,11 @@ return {
     ["{s}, rank {n}"] = "{s}, звание {n}",
     ["Incoming call."] = "Входящий вызов.",
     [" To answer, press N and choose Incoming calls."] = " Чтобы ответить, нажмите N и выберите Входящие вызовы.",
+    ["Calls are answered in the ship view or the System Map"] = "На вызовы отвечают в виде корабля или на карте системы",
+    ["No incoming call"] = "Нет входящего вызова",
+    [" To answer, press H, then Enter."] = " Чтобы ответить, нажмите H, затем Enter.",
+    ["H opens a waiting call, and Enter answers it."] = "H открывает ожидающий вызов, а Enter отвечает на него.",
+    ["H: in the ship view or System Map, open a waiting call; Enter answers it"] = "H: в виде корабля или на карте системы открыть ожидающий вызов; Enter отвечает на него",
 
     -- warpcore.lua
     ["Gray Mode"] = "Серый режим",

@@ -2557,18 +2557,29 @@ end
 -- next key.
 local room_wait = nil   -- { event, owner, key, name }
 local room_hooks = {}   -- event path -> installed
-local function room_report(event, owner, flag, name)
+local function room_report(event, owner, flag, name, id)
     local w = room_wait
     if not (w and w.event == event and w.owner == owner) then return end
     if require("keys").key_count ~= w.key then room_wait = nil return end
-    print("[VoyagerAccess] room report: " .. event .. " " .. tostring(flag) .. " " .. tostring(name) .. "\n")
+    print("[VoyagerAccess] room report: " .. event .. " " .. tostring(flag) .. " " .. tostring(name)
+        .. " id " .. tostring(id) .. " (button id " .. tostring(w.id) .. ")\n")
     if event == "OnUpdateCraftingReport" and w.start then
         -- A blueprint chosen: started when the report names it as crafting.
         -- One the game refuses (a craft under way) leaves the report on the
         -- running one, so nothing is said and the game's message says why.
-        if flag == true and name and name ~= "" and name == w.name then
+        -- By the item's id when both sides have one (blueprint ItemTag and
+        -- the report's ItemData.ItemId were both Items.Item.Craft_Torpedo,
+        -- VM, 2026-10-26); by the shown name otherwise. The analysis report
+        -- has no id (header dump), so it stays on the name.
+        local same
+        if id and id ~= "None" and w.id then same = id == w.id
+        else same = name and name ~= "" and name == w.name end
+        if flag == true and same then
             room_wait = nil
-            speech.say("Crafting " .. name .. " started", true)
+            -- The report's name, or the button's when it came empty (an id
+            -- match does not need the name; reviews, 2026-10-26).
+            local said = (name and name ~= "") and name or w.name or ""
+            speech.say("Crafting " .. said .. " started", true)
         end
     elseif event == "OnUpdateCraftingReport" and flag == false then
         room_wait = nil
@@ -2590,17 +2601,26 @@ local function arm_room_report(b, event, name, start)
     if room_hooks[fp] == nil then
         -- The name is the third parameter of the craft report, the second
         -- of the analysis one; a pre hook, so the values are the game's.
-        room_hooks[fp] = pcall(RegisterHook, fp, function(ctx, first, second, third)
+        room_hooks[fp] = pcall(RegisterHook, fp, function(ctx, first, second, third, _, _, sixth)
             local okp, p = pcall(function() return path_of(ctx:get()) end)
             local okb, flag = pcall(function() return first:get() end)
             local param = event == "OnFillCurrentAnalysis" and second or third
             local okn, n = pcall(function() return require("popups").plain(param:get():ToString()) end)
-            pcall(room_report, event, okp and p or nil, okb and flag, okn and n or nil)
+            -- The craft report's item (ItemData.ItemId, a GameplayTag; header
+            -- dump), one flat field read, for matching by id (firefly82's
+            -- proposal, 26 October).
+            local id = nil
+            if sixth then pcall(function() id = sixth:get().ItemId.TagName:ToString() end) end
+            pcall(room_report, event, okp and p or nil, okb and flag, okn and n or nil, id)
         end)
         print("[VoyagerAccess] room report: " .. fp .. (room_hooks[fp] and " hooked" or " not hooked") .. "\n")
     end
     if not room_hooks[fp] then return false end
-    room_wait = { event = event, owner = path_of(owner), key = require("keys").key_count, name = name, start = start }
+    -- The chosen blueprint's own id (STVItemButton.ItemTag; probe 2026-10-26).
+    local bid = nil
+    pcall(function() bid = b.ItemTag.TagName:ToString() end)
+    if bid == "None" or bid == "" then bid = nil end
+    room_wait = { event = event, owner = path_of(owner), key = require("keys").key_count, name = name, start = start, id = bid }
     return true
 end
 -- The bounded fallback behind the report: with no module or hook found, the
@@ -2930,7 +2950,10 @@ local function activate()
             local now = require("rooms").crafting_now()
             if now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
         end
-        if item and item ~= "" then
+        -- With a craft already running the game refuses and its report names
+        -- the running one, even the same item: only the before/after compare
+        -- then (GPT and Fable reviews, 2026-10-26).
+        if item and item ~= "" and not before then
             wait_room_report(b, "OnUpdateCraftingReport", item, look, 900, true)
         else
             ExecuteInGameThreadWithDelay(900, function() pcall(look) end)
@@ -3768,6 +3791,14 @@ function M.install()
             end
         end)
     end)
+    -- A conversation line with no choices and nothing focused: the line
+    -- again (dialogue.line_key), where the arrows said nothing.
+    local function line_only()
+        local b = current and resolve(current)
+        if b and require("screen").shown(b) then return false end
+        local ok, said = pcall(require("dialogue").line_key)
+        return ok and said
+    end
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
@@ -3791,6 +3822,7 @@ function M.install()
         elseif require("dialogue").choice_step(current, -1) then last_dir = -1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
+        elseif line_only() then return
         else last_dir = -1 last_nav = "arrow" say_if_alone() end
     end)
     keys.on("down", function()
@@ -3814,6 +3846,7 @@ function M.install()
         elseif require("dialogue").choice_step(current, 1) then last_dir = 1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
+        elseif line_only() then return
         else last_dir = 1 last_nav = "arrow" say_if_alone() end
     end)
     local rooms = require("rooms")
@@ -3866,6 +3899,7 @@ function M.install()
             if system.menu_open() then return system.menu_edge(last) end
             return system.edge(last)
         end
+        if line_only() then return end
         edge(last)
     end
     keys.on("home", function() home_end(false) end)
