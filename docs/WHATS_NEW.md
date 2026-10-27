@@ -1,5 +1,19 @@
 # New in Voyager Access
 
+## Tuesday October 27th 2026
+
+Version 0.3.89
+
+Away missions got a makeover tonight. I heard "outstanding success chance 11%" on a choice and had no idea whether that was good news or bad, and the list of choices took forever to get through.
+
+- Changed: each choice in an away mission is now a task with short lines. The task line says the skill and the number it needs once, like "Task 3 of 3: Try to find a way to break the illusion of the wall. Engineering 30. Reward 150 Deuterium. Select one or more heroes below." Each hero under it just says their own number, like "Harry Kim, 25", so Up and Down Arrow let you compare them quickly.
+- New: Left and Right Arrow, or Page Up and Page Down, jump from one task to the next without going through all the heroes.
+- New: when two or more heroes are on a task, you hear the team's total, like "Team Engineering 35, 30 needed." The game adds their skills together, but the screen doesn't show the sum. The task line also tells you when you can pick more than one hero.
+- Changed: the chance makes sense now. When your heroes meet the requirement, you hear "Will succeed" and then the chance of a critical success. It used to say "requirement met, outstanding success chance 11%", which sounded like an 11% chance of success.
+- Changed: selecting or removing a hero tells you what changed and the new chance, like "Tom Paris selected. Success chance 83%."
+- Changed: a hero that a task's trait locks out says "can't do it, needs Pilot." A hero without the skill can still go, so they say "no Science" instead.
+- Fixed: on the away team screen, Up from the second slot sometimes went right past the first slot and into the challenges, and Down sometimes said a slot twice.
+
 ## Monday October 26th 2026
 
 Version 0.3.88

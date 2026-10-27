@@ -159,5 +159,16 @@ follows them.
     starts the mission. Up from the first slot goes through the
     mission's recommended skills, each recommended trait and each challenge
     as lines; Up and Down move, Home goes to the first line, and Down from
-    the last line or End goes back to the slots. Heroes in a mission choice say when they have
-    the trait the choice asks for ("has the Pilot trait").
+    the last line or End goes back to the slots.
+12. Away mission choices: one list of tasks, each followed by its heroes and
+    its Lock In or Confirm. Up and Down move, Home and End go to the first
+    and last, and Left and Right, or Page Up and Page Down, jump between
+    task lines. A task line says the skill and number it needs, the reward,
+    any danger and "Select one or more heroes below" when more than one
+    hero can help; a hero line says only that hero's number ("Harry Kim,
+    25"), "no Science", or "can't do it, needs Pilot" for a hero the task's
+    trait locks out, and "has the Pilot trait" when they have it. Enter
+    selects or removes a hero and says the new chance ("Will succeed. 17%
+    chance of a critical success", or "Success chance 83%"), with the
+    team's total when two or more heroes are on the task. Enter on Confirm
+    makes the choice.

@@ -23,7 +23,7 @@ local HELP = {
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room. "
         .. "Closing a hero list without choosing removes the hero.",
     event = "Up and Down move between the options. Where an option can take a hero, Left and Right choose one first. Enter picks the option. R reads the locked options.",
-    mission = "Up and Down move through the choices, their heroes and Confirm. Home and End go to the first and last. "
+    mission = "Up and Down move through the choices, their heroes and Confirm. Left and Right, or Page Up and Page Down, jump between tasks. Home and End go to the first and last. "
         .. "Enter on a hero picks them for that choice, then Enter on its Confirm makes the choice. "
         .. "A hero below the skill needed can still succeed. After a result, Enter continues and R repeats it. "
         .. "Closing a hero list without choosing removes the hero.",
@@ -235,7 +235,7 @@ function M.say_where()
                 parts[1] = "Away mission result"
                 parts[2] = result
                 parts[3] = require("hints").fresh("r_result") and "R repeats it, Enter continues" or nil
-            elseif label and label:find("^Choice %d") then
+            elseif label and (label:find("^Choice %d") or label:find("^Task %d")) then
                 parts[2] = label
             else
                 local who = require("dialogue").speaker()

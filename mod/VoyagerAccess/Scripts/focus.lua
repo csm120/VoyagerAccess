@@ -938,6 +938,7 @@ local last_real = nil
 local look_after_input = false   -- set by the input listener for the next look
 local input_look = false         -- the running look came after input
 local stay_on, stay_said   -- an arrow that may leave focus where it was (say_if_alone, below)
+local moved = nil          -- the last focus change: { from, at, keys, by_input } (M.path_before_key)
 
 -- A mod list (What's new, status) open over a focused menu: the game also
 -- gets Up and Down, so the menu moved with the list and both talked
@@ -2092,6 +2093,7 @@ local function poll()
     -- When focus first reaches a set of dialogue choices (not when it moves
     -- between them): see the Enter guard in activate().
     local was_choice = current ~= nil and require("dialogue").is_choice(current)
+    moved = { from = current, at = os.clock(), keys = require("keys").key_count, by_input = input_look }
     current = path
     -- The battle setup's Start action follows focus (combat.lua).
     if path and path:find(".HeroLoadout.", 1, true) then pcall(require("combat").setup_sync) end
@@ -3501,8 +3503,25 @@ local BUTTON = nil
 -- changed a settings row before the mod read the key (probe 2026-10-25).
 -- It was a look 300 ms later, hoping the game had moved it by then.
 stay_on = nil   -- the button focus was on when the arrow came (declared above poll)
+
+-- The button focus was on when the key being handled came. The game can
+-- move focus before the mod reads that key from keys.txt, and a look the
+-- key did not ask for (the 1.5 s backstop, a SetFocus hook) then finds the
+-- new button first: Up from away team slot 2 said slot 1, and the briefing
+-- took the same Up as one from slot 1 and went on to Challenge 5; Down
+-- from slot 1 said slot 2 twice (Casey's log, 2026-10-26). Such a look
+-- comes at most a key read (30 ms) and a tick before the key; 0.15 s
+-- leaves room for a slow tick and is shorter than any two presses heard.
+function M.path_before_key()
+    local m = moved
+    if m and not m.by_input and m.keys == require("keys").key_count - 1 and os.clock() - m.at < 0.15 then
+        return m.from
+    end
+    return current
+end
+
 local function say_if_alone()
-    stay_on = current
+    stay_on = M.path_before_key()
 end
 M.say_if_alone = say_if_alone
 -- From poll: focus is where it was before the arrow.
@@ -3823,7 +3842,7 @@ function M.install()
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
         pcall(require("combat").energy_key)
-        if away.briefing_step(current, -1) then return end
+        if away.briefing_step(M.path_before_key(), -1) then return end
         if require("qtrials").step(current, -1) then return end
         if require("popups").leave_sector_step(current, -1) then return end
         if require("rooms").trade_offer_step(current, -1) then return end
@@ -3847,7 +3866,7 @@ function M.install()
     end)
     keys.on("down", function()
         pcall(require("combat").energy_key)
-        if away.briefing_step(current, 1) then return end
+        if away.briefing_step(M.path_before_key(), 1) then return end
         if require("qtrials").step(current, 1) then return end
         if require("popups").leave_sector_step(current, 1) then return end
         if require("rooms").trade_offer_step(current, 1) then return end
@@ -3873,6 +3892,9 @@ function M.install()
     keys.on("left", function()
         pcall(require("combat").energy_key)
         last_nav = "go_in"
+        -- An away mission's tasks, as Page Up does (Casey, 2026-10-27); not
+        -- behind an open mod list (F1, Ctrl+F12: GPT review, 2026-10-27).
+        if away.keys_active() and not away.mod_list_open() then return away.mission_task(-1) end
         if require("qtrials").switch_ship(current, -1) then return end
         if require("events").hero_step(current, -1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(-1) end
@@ -3884,6 +3906,7 @@ function M.install()
     keys.on("right", function()
         pcall(require("combat").energy_key)
         last_nav = "go_in"
+        if away.keys_active() and not away.mod_list_open() then return away.mission_task(1) end
         if require("qtrials").switch_ship(current, 1) then return end
         if require("events").hero_step(current, 1) then return end
         if require("techtree").open() then return require("techtree").switch_tab(1) end
@@ -3896,8 +3919,12 @@ function M.install()
         if ship.list_open() or ship_mode() then ship.list_toggle()
         else speech.say("J lists the rooms in the ship view", true) end
     end)
-    keys.on("pageup", function() if ship_mode() then ship.deck(-1) end end)
-    keys.on("pagedown", function() if ship_mode() then ship.deck(1) end end)
+    keys.on("pageup", function()
+        if away.keys_active() and not away.mod_list_open() then away.mission_task(-1) elseif ship_mode() then ship.deck(-1) end
+    end)
+    keys.on("pagedown", function()
+        if away.keys_active() and not away.mod_list_open() then away.mission_task(1) elseif ship_mode() then ship.deck(1) end
+    end)
     local function home_end(last)
         if require("whatsnew").open() then return require("whatsnew").edge(last) end
         if require("hotkeys").open() then return require("hotkeys").edge(last) end

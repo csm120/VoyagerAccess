@@ -569,7 +569,7 @@ end
 -- A mod list open over the team selection (F1, Ctrl+F1, What's new, N, C,
 -- the ship's room list) has the arrows, not the briefing lines: they are
 -- asked for before those lists in focus.lua (Fable review, 2026-10-24).
-local function mod_list_open()
+function M.mod_list_open()
     for _, m in ipairs({ "whatsnew", "hotkeys", "credits", "help" }) do
         local ok, open = pcall(function() local x = require(m) return x.open and x.open() end)
         if ok and open then return true end
@@ -581,7 +581,7 @@ local function mod_list_open()
 end
 
 function M.briefing_step(path, dir)
-    if mod_list_open() then return false end
+    if M.mod_list_open() then return false end
     local count = require("keys").key_count or 0
     if brief and (brief.anchor ~= path or count ~= brief.keys + 1) then brief = nil end
     if not brief and dir > 0 then return false end
@@ -785,6 +785,33 @@ local function chosen(h)
     return yes
 end
 
+-- A hero's value in the task's skill as the screen shows it ("25"), or nil
+-- for none ("-", shown as a lock).
+local function hero_value(h)
+    local v = plain(text_of(h.WBP_HeroAbilityIcon and h.WBP_HeroAbilityIcon.AttributeValue))
+    if v == "" or v == "-" then return nil end
+    return v
+end
+
+-- A hero the game will not put on the task: NotSelectableWidget, a trait
+-- the task requires. A hero with none of the skill ("-") can still be
+-- selected: Tom Paris on a Science task gave 5% (VM, 2026-10-27).
+local function blocked(h)
+    local yes = false
+    pcall(function()
+        local w = h.NotSelectableWidget
+        if w and w:IsValid() and screen.shown(w) then yes = true end
+    end)
+    return yes
+end
+
+-- A hero who adds to the task: has its skill and is not blocked. Only
+-- these count for "one or more" and "add another hero" (the tutorial:
+-- "more than one hero ... if they possess the required skill").
+local function can_take(h)
+    return hero_value(h) ~= nil and not blocked(h)
+end
+
 -- The success chance the game works out when heroes are picked: the window's
 -- OnHeroesSelected(Chance, bCriticalSuccessCheck), a blueprint event
 -- (header dump made on the System Map, 2026-10-18; firefly82's lead). The
@@ -824,22 +851,58 @@ end
 M.ensure_chance_hook = ensure_chance_hook
 
 -- With bCriticalSuccessCheck the team meets the requirement: success is
--- certain and the number is the chance of an outstanding (critical)
--- success. "success chance 5%" was said for a choice that could not fail,
--- and the result was a success (firefly82's review, 2026-10-19). The
--- skill and the requirement are said with the hero, as the screen shows
--- them next to the bar.
+-- certain and the number is the chance of a critical success, the golden
+-- part of the game's chance bar. "success chance 5%" was said for a choice
+-- that could not fail, and the result was a success (firefly82's review,
+-- 2026-10-19). "requirement met, outstanding success chance 11%" sounded
+-- as if 11% were the chance of success, and "outstanding" was the mod's
+-- word for what the game's result calls "Critical Success" (Casey,
+-- 2026-10-26). The skill and the requirement are said with the hero, as
+-- the screen shows them next to the bar. Sentences without the last full
+-- stop: the caller ends the line.
 local function chance_words()
     ensure_chance_hook()
     if not last_chance then return nil end
     if not cleared_by_game and os.clock() - last_chance.at >= 30 then return nil end
     if last_chance.crit then
-        return "requirement met, outstanding success chance " .. last_chance.value .. "%"
+        if last_chance.value <= 0 then return "Will succeed" end
+        return "Will succeed. " .. last_chance.value .. "% chance of a critical success"
     end
     if last_chance.value < 100 then
-        return "success chance " .. last_chance.value .. "%"
+        return "Success chance " .. last_chance.value .. "%"
     end
     return nil
+end
+
+-- "Team Command 52, 36 needed. " when two or more heroes are on the choice:
+-- the game adds their values (its tutorial: "the (cumulative) skill
+-- value"), and the screen shows each hero's value and the requirement, not
+-- the sum. Said only when the sum agrees with the game's own word on the
+-- requirement (bCriticalSuccessCheck): a bonus the heroes' numbers leave
+-- out would make the mod's sum disagree with the game (Casey, 2026-10-26:
+-- no numbers that contradict each other).
+local function team_words(it, c)
+    if not (last_chance and mission_items) then return nil end
+    local skill, needed = choice_skill(c)
+    local n = tonumber(needed)
+    if not n then return nil end
+    local sum, count = 0, 0
+    for _, o in ipairs(mission_items) do
+        if o.kind == "hero" and o.choice == it.choice then
+            local h = StaticFindObject(o.hero)
+            if h and h:IsValid() and chosen(h) then
+                local v = tonumber(plain(text_of(h.WBP_HeroAbilityIcon and h.WBP_HeroAbilityIcon.AttributeValue)))
+                if v then sum, count = sum + v, count + 1 end
+            end
+        end
+    end
+    if count < 2 then return nil end
+    if (sum >= n) ~= (last_chance.crit == true) then
+        print("[VoyagerAccess] away: team sum " .. sum .. " of " .. n .. " disagrees with the game ("
+            .. tostring(last_chance.crit) .. "), not said\n")
+        return nil
+    end
+    return "Team " .. skill .. " " .. sum .. ", " .. needed .. " needed. "
 end
 
 -- Ready to confirm: the game enables the button once a hero is on the
@@ -976,9 +1039,28 @@ local function item_label(it)
     local c = StaticFindObject(it.choice)
     if not (c and c:IsValid()) then return nil end
     if it.kind == "choice" then
-        local label = require("dialogue").away_choice_label(c) or "Choice"
+        -- Short lines, the skill and its number said once here and only the
+        -- hero's number on each hero line, so Up and Down compare the heroes
+        -- (Casey, 2026-10-26: "a screen reader has to listen to each line
+        -- all at once"). Was "Choice 1 of 2: Look for footprints. Needs
+        -- Command 29. Trait: Survivalist. Reward: 200 Deuterium."
+        local parts = {}
+        local wording = ""
+        pcall(function() wording = plain(text_of(c.RightButton.ChoiceText)) end)
+        if wording ~= "" then parts[#parts + 1] = wording end
+        pcall(function()
+            local rt = c.RightButton.RequirementText
+            if rt and rt:IsValid() and screen.shown(rt) then
+                local t = plain(text_of(rt)):gsub("^%[", ""):gsub("%]$", "")
+                if t ~= "" then parts[#parts + 1] = t end
+            end
+        end)
+        local skill, needed = choice_skill(c)
+        if needed ~= "" and needed ~= "-" then parts[#parts + 1] = skill .. " " .. needed end
         local ok, reward = pcall(choice_rewards, it.choice)
-        if ok and reward ~= "" then label = label:gsub("%.?%s*$", "") .. ". Reward: " .. reward .. "." end
+        if ok and reward ~= "" then parts[#parts + 1] = require("tr").fill("Reward {s}", reward) end
+        for i, s in ipairs(parts) do parts[i] = (s:gsub("[%.%s]+$", "")) end
+        local label = #parts > 0 and ((table.concat(parts, ". ") .. "."):gsub("([!?])%.", "%1")) or "Task."
         if it.no_heroes then label = label:gsub("%.?%s*$", "") .. ". No heroes are listed for this choice." end
         -- Danger: three WBP_AwayyMission_RiskIndicator per choice, each
         -- showing its Risk image or its noRisk image; the Risk ones lit are
@@ -1003,17 +1085,45 @@ local function item_label(it)
             print("[VoyagerAccess] mission: golden outline on " .. it.choice:match("([^%.]+)$") .. "\n")
             label = label:gsub("%.?%s*$", "") .. ". Major decision."
         end
-        return string.format("Choice %d of %d: %s", it.n, it.of, label)
+        -- Who is on it, with the game's chance; or where to pick. Heroes
+        -- can be stacked, which the screen does not say: "one or more" when
+        -- two or more heroes can take the task (the game's tutorial:
+        -- "You can select more than one hero for a challenge").
+        local who, able, open = {}, 0, 0
+        for _, o in ipairs(mission_items or {}) do
+            if o.kind == "hero" and o.choice == it.choice then
+                local h = StaticFindObject(o.hero)
+                if h and h:IsValid() then
+                    if is_active(c) and chosen(h) then who[#who + 1] = o.name end
+                    if can_take(h) then able = able + 1 end
+                    if not blocked(h) then open = open + 1 end
+                end
+            end
+        end
+        -- Who is selected even when the game gave no chance, so the line
+        -- never says to select while the hero lines say "selected"; and no
+        -- "select" where nobody can be (Fable review, 2026-10-27).
+        if #who > 0 then
+            local names = #who == 1 and who[1] or (table.concat(who, ", ", 1, #who - 1) .. require("tr").word(" and ") .. who[#who])
+            local cw = chance_words()
+            label = label:gsub("%.?%s*$", "") .. ". " .. require("tr").fill("{s} selected", names) .. "." .. (cw and (" " .. cw .. ".") or "")
+        elseif able >= 2 then
+            label = label:gsub("%.?%s*$", "") .. ". Select one or more heroes below."
+        elseif open > 0 and not it.no_heroes then
+            label = label:gsub("%.?%s*$", "") .. ". Select a hero below."
+        end
+        return string.format("Task %d of %d: %s", it.n, it.of, label)
     elseif it.kind == "hero" then
         local h = StaticFindObject(it.hero)
         if not (h and h:IsValid()) then return nil end
-        local skill, needed = choice_skill(c)
-        local value = plain(text_of(h.WBP_HeroAbilityIcon and h.WBP_HeroAbilityIcon.AttributeValue))
-        local text = it.name .. ", " .. ((value == "" or value == "-") and require("tr").fill("no {s}", skill)
-            or (skill .. " " .. value .. (needed ~= "" and (" of " .. needed .. " needed") or "")))
-        -- "Engineering 21 of 15 needed" read as a shortfall (2026-10-14).
-        local v, n = tonumber(value), tonumber(needed)
-        if v and n and v >= n then text = it.name .. ", " .. skill .. " " .. value .. ", " .. needed .. " needed, enough" end
+        local skill = choice_skill(c)
+        local value = hero_value(h)
+        -- Only the hero's number: the task line says the skill and what it
+        -- needs, so Up and Down compare the heroes (Casey, 2026-10-26).
+        -- "enough" weighed one hero alone while the game adds the team's
+        -- values; whether the team meets it is the game's own word, said
+        -- with the chance.
+        local text = it.name .. ", " .. (value or require("tr").fill("no {s}", skill))
         -- Tired heroes show "Fatigued" over their portrait and lower
         -- values; say it with the hero (2026-10-14).
         local okf, tired = pcall(fatigued, it.choice:match("^(.-WBP_Dialogue_Window_AwayMission_C_%d+)"))
@@ -1023,8 +1133,9 @@ local function item_label(it)
         -- A choice that asks for a trait ("Trait: Pilot") helps the hero who
         -- has it; nothing on the hero said so (Investigating the Array,
         -- VM, 2026-10-15).
+        local want = nil
+        pcall(function() want = (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)") end)
         pcall(function()
-            local want = (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
             local has = trait_of(it.name)
             if want and has ~= "" and has:lower():find(want:lower(), 1, true) then
                 text = text .. ", has the " .. want .. " trait"
@@ -1033,25 +1144,22 @@ local function item_label(it)
         -- The game marks a hero who cannot take this choice (a trait the
         -- choice requires: "Use Saboteur expertise" with no Saboteur on the
         -- team) with NotSelectableWidget; the line read like any other until
-        -- Enter was refused (Operation Fort Knox, VM, 2026-10-18).
-        pcall(function()
-            local w = h.NotSelectableWidget
-            if w and w:IsValid() and screen.shown(w) then
-                local want = (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
-                text = text .. ", cannot take this choice" .. (want and (", needs the " .. want .. " trait") or "")
-            end
-        end)
+        -- Enter was refused (Operation Fort Knox, VM, 2026-10-18). A hero
+        -- with none of the skill can still be selected, so says only that.
+        if blocked(h) then
+            text = it.name .. ", can't do it" .. (want and (", " .. require("tr").fill("needs {s}", want)) or "")
+        end
         if is_active(c) and chosen(h, it.name) then
             text = text .. ", selected"
             local cw = chance_words()
-            if cw then text = text .. ", " .. cw end
+            if cw then text = text .. ". " .. (team_words(it, c) or "") .. cw end
         end
         return text .. "."
     else
         -- Casey pressed Enter on the inactive choice's Lock In and nothing
         -- happened (2026-10-11). So say who it confirms, or that a hero must
         -- be picked for this choice first.
-        if not is_active(c) then return "Lock In: select a hero for this choice first." end
+        if not is_active(c) then return "Lock In, no hero yet." end
         -- Several heroes can go together; only the last was named (2026-10-14:
         -- "Confirm with Tom Paris" sent Harry Kim too).
         local who = {}
@@ -1061,10 +1169,10 @@ local function item_label(it)
                 if h and h:IsValid() and chosen(h, o.name) then who[#who + 1] = o.name end
             end
         end
-        if #who == 0 then return "Lock In: select a hero for this choice first." end
+        if #who == 0 then return "Lock In, no hero yet." end
         local names = #who == 1 and who[1] or (table.concat(who, ", ", 1, #who - 1) .. require("tr").word(" and ") .. who[#who])
         local cw = chance_words()
-        return "Confirm with " .. names .. (cw and (", " .. cw) or "") .. "."
+        return "Confirm with " .. names .. (cw and (". " .. (team_words(it, c) or "") .. cw) or "") .. "."
     end
 end
 
@@ -1124,6 +1232,26 @@ function M.mission_step(dir)
     say_item()
 end
 
+-- Page Down and Page Up: the next or previous task line, past its heroes
+-- and Lock In (Casey, 2026-10-26: one flat list, with a way to skip).
+-- At the first or last task the same task is said again, as list ends are.
+function M.mission_task(dir)
+    refresh()
+    if #mission_items == 0 then return end
+    local i = mission_index or 1
+    -- Page Up from a hero goes to its own task first.
+    if dir < 0 and mission_items[i] and mission_items[i].kind ~= "choice" then
+        while i > 1 and mission_items[i].kind ~= "choice" do i = i - 1 end
+    else
+        local j = i + dir
+        while mission_items[j] and mission_items[j].kind ~= "choice" do j = j + dir end
+        if mission_items[j] then i = j end
+        while i > 1 and mission_items[i].kind ~= "choice" do i = i - 1 end
+    end
+    mission_index = i
+    say_item()
+end
+
 function M.mission_edge(last)
     refresh()
     if #mission_items == 0 then return end
@@ -1161,15 +1289,35 @@ function M.mission_enter()
             -- "selected" can be followed by the success chance.
             pcall(function() was = (item_label(it) or ""):find(", selected[%.,]") ~= nil end)
             press(h.Button)
-            -- Picked, the hero is said with where to go next.
+            -- What changed, said short: the hero's whole line is said when
+            -- the arrows reach it. The new chance only: "up from 83%" was
+            -- dropped as words for what the player just heard (Casey,
+            -- 2026-10-27). The pressed hero's own item, and nothing after
+            -- another key: an Enter on a second task within 600 ms would
+            -- have said this hero with that task's chance (GPT review,
+            -- 2026-10-27).
+            local key_at = require("keys").key_count
             ExecuteInGameThreadWithDelay(600, function()
                 pcall(function()
-                    local cur = mission_items[mission_index]
-                    local label = cur and item_label(cur)
+                    if require("keys").key_count ~= key_at then return end
+                    local label = item_label(it)
                     if not label then return end
+                    local c = StaticFindObject(it.choice)
                     if label:find(", selected[%.,]") then
-                        label = label .. " Confirm is after the heroes."
-                    elseif not was then
+                        local team = c and c:IsValid() and team_words(it, c) or ""
+                        local cw = chance_words()
+                        label = require("tr").fill("{s} selected", it.name) .. "." .. (cw and (" " .. (team or "") .. cw .. ".") or "")
+                        -- Heroes can be stacked, which nothing on screen says.
+                        local more = false
+                        for _, o in ipairs(mission_items) do
+                            local oh = o.kind == "hero" and o.choice == it.choice and StaticFindObject(o.hero)
+                            if oh and oh:IsValid() and not chosen(oh) and can_take(oh) then more = true end
+                        end
+                        if more then label = label .. require("hints").text("add_hero", " You can add another hero.") end
+                    elseif was then
+                        local cw = chance_words()
+                        label = require("tr").fill("{s} unselected", it.name) .. ". " .. (cw and (cw .. ".") or "No hero on this task.")
+                    else
                         -- The game refused the hero without a sound: a choice
                         -- that needs a trait takes only heroes who have it
                         -- (Kes on "Trait: Talaxian", Rise, VM, 2026-10-16).
@@ -1194,10 +1342,11 @@ function M.mission_enter()
                         end)
                         local want = c and c:IsValid() and (require("dialogue").away_choice_label(c) or ""):match("Trait: ([^%.]+)")
                         local has = trait_of(it.name)
+                        -- Worded as the hero lines say it (Casey, 2026-10-26).
                         if why then
-                            label = it.name .. " cannot take this choice: " .. why:gsub("[%.%s]+$", "") .. "."
+                            label = it.name .. ", can't do it, " .. (why:gsub("[%.%s]+$", "")) .. "."
                         elseif want and not (has ~= "" and has:lower():find(want:lower(), 1, true)) then
-                            label = it.name .. " cannot take this choice: it needs a hero with the " .. want .. " trait."
+                            label = it.name .. ", can't do it, " .. require("tr").fill("needs {s}", want) .. "."
                         else
                             label = it.name .. " was not selected. " .. label
                         end
@@ -1213,7 +1362,7 @@ function M.mission_enter()
         local cb = c and c:IsValid() and c.ConfirmButton
         if not (cb and cb:IsValid()) then return end
         local label = item_label(it) or ""
-        if label:find("first%.$") then
+        if label:find("no hero yet%.$") then
             require("speech").say(label, true)
             return
         end
@@ -1486,6 +1635,7 @@ function M.mission_poll()
             if not hinted and it.kind == "choice" then
                 hinted = true
                 require("speech").say(HINT, false)
+                require("speech").say("Left and Right, or Page Up and Page Down, jump between tasks.", false)
             end
         end
     end
