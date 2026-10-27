@@ -161,7 +161,22 @@ end
 -- calls list opens on the call; Enter answers it.
 function M.calls_key()
     if not nav_place() then
-        speech.say("Calls are answered in the ship view or the System Map", true)
+        -- Over an event window on the map this sounded like "no" while
+        -- a call was waiting under it (Casey, 2026-10-27): say that it is.
+        -- The journey's own call count: under a window the bar is hidden,
+        -- and its button reads enabled with no call (VM, 2026-10-27).
+        local calls = 0
+        pcall(function()
+            local j = FindFirstOf("STVJourneySubsystem")
+            if j and j:IsValid() then calls = j:GetIncomingCallsNum() end
+        end)
+        -- Not in a conversation: the call being answered may still count
+        -- until it ends (Fable review).
+        if type(calls) == "number" and calls > 0 and not require("dialogue").active() then
+            speech.say("A call is waiting; H answers it from the ship view or the System Map", true)
+        else
+            speech.say("Calls are answered in the ship view or the System Map", true)
+        end
         return
     end
     local b = find("IncomingCallsButton")

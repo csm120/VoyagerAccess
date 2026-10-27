@@ -2,6 +2,17 @@
 
 ## Tuesday October 27th 2026
 
+Version 0.3.90
+
+All of this came from my first real run through the new away missions this morning.
+
+- Fixed: with the J room list open, Page Up and Page Down moved the ship view to another deck, but the arrows kept walking the list, so I kept ending up back on the deck I started from. Now Page Up, Page Down, Left and Right close the list and move the ship view, and the arrows follow.
+- Fixed: choosing "Return later" at a mission point made the mod say the event there didn't start and tell me to fly away and back. It did start; I just put it off. That message now only comes when the game really held an event back.
+- Fixed: pressing H while an event window was open over the map said calls are answered in the ship view or the System Map, which sounded like there was no call. When a call is waiting behind the window, H now says so.
+- Changed: the key notes the mod adds to the game's away mission tutorials describe the new task list, and "Enter on Confirm confirms" is now "Enter on Confirm makes the choice." The Consequences tutorial covers major decisions in away missions as well as in conversations.
+
+## Tuesday October 27th 2026
+
 Version 0.3.89
 
 Away missions got a makeover tonight. I heard "outstanding success chance 11%" on a choice and had no idea whether that was good news or bad, and the list of choices took forever to get through.

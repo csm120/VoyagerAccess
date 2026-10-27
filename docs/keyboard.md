@@ -83,7 +83,8 @@ follows them.
    place on the deck ("3 of 6"). J lists the ship's rooms (not ruined rooms
    or turbolifts) with deck and state; Up, Down, Home, End, Enter selects
    the room, Backspace or J closes the list (J is unbound in
-   IMC_ShipManagement). A ruined room opens an action ring (radial menu):
+   IMC_ShipManagement), and Page Up, Page Down, Left or Right close it
+   and move in the ship view. A ruined room opens an action ring (radial menu):
    its centre is read, Up and Down move through its segments, Enter does
    the focused one, Escape closes it. Empty building space opens the
    construction ring; a room in it says how many spaces wide it is and

@@ -690,9 +690,9 @@ local function busy_now()
     return require("dialogue").active() and true or false
 end
 
--- Whether the point at path has an event waiting (ESTVEventState 3,
--- Activatable).
-local function event_waiting(path)
+-- Whether the point at path has an event in ESTVEventState state (3
+-- Activatable: waiting; 4 Active and 6 AwaitingConfirmation: open now).
+local function event_in_state(path, state)
     local a = StaticFindObject(path)
     if not (a and a:IsValid()) then return false end
     local c = poi_of(a)
@@ -700,10 +700,14 @@ local function event_waiting(path)
     if not (c and es and es:IsValid()) then return false end
     local yes = false
     c.EventIds:ForEach(function(_, e)
-        if es:GetEventStateById(e:get()) == 3 then yes = true end
+        if es:GetEventStateById(e:get()) == state then yes = true end
     end)
     return yes
 end
+local function event_waiting(path) return event_in_state(path, 3) end
+-- An arrival conversation ("Orders?" with Return later) holds its event in
+-- 6, AwaitingConfirmation, not 4 (VM probe, Class L planet, 2026-10-27).
+local function event_open(path) return event_in_state(path, 6) or event_in_state(path, 4) end
 
 -- After an arrival the point's event can be left waiting. The game holds it
 -- back while a report is up and opens it when the report closes (energy
@@ -723,16 +727,38 @@ local function look_waiting()
     ExecuteInGameThreadWithDelay(1500, function()
         if waiting ~= w or w.token ~= mine then return end
         pcall(function()
-            if busy_now() then w.busy = true return end
+            if busy_now() then
+                w.busy = true
+                -- The point's own event open (its arrival conversation): it
+                -- did start. "Return later" puts it back to waiting, and that
+                -- was said as "did not start" (Ocampa, Casey, 2026-10-27).
+                if not w.opened and event_open(w.path) then
+                    w.opened = true
+                    print("[VoyagerAccess] course: the event at " .. w.name .. " is open\n")
+                end
+                return
+            end
             waiting = nil
             -- Only after a window that was really up: Friendship One's Class O
             -- planet keeps a waiting event that its scan starts (VM,
             -- 2026-10-21).
-            if not (w.busy and event_waiting(w.path)) then return end
+            if w.opened or not (w.busy and event_waiting(w.path)) then return end
             print("[VoyagerAccess] course: event waiting at " .. w.name .. " did not open\n")
             speech.say("The event at " .. w.name .. " did not start. Set course to another point and back to start it.", false)
         end)
     end)
+end
+
+-- Enter on a conversation choice (focus.lua), before the game takes it:
+-- an arrival conversation answered within the look's 1.5 s (Return later)
+-- would otherwise be seen only after, back in state 3 (Fable review).
+function M.before_choice()
+    local w = waiting
+    if not w or w.opened then return end
+    if event_open(w.path) then
+        w.opened = true
+        print("[VoyagerAccess] course: the event at " .. w.name .. " is open (choice)\n")
+    end
 end
 
 local function battle_up()
@@ -825,7 +851,14 @@ function M.hook_travel()
     -- A point's detail panel and its parts (WBP_POIDetailView_C,
     -- WBP_PlanetDetailView_C, ...) are no window that holds an event back.
     popups.on_read(function(_, cls)
-        if waiting and not tostring(cls):find("DetailView", 1, true) then waiting.busy = true end
+        if waiting and not tostring(cls):find("DetailView", 1, true) then
+            waiting.busy = true
+            local ok, open = pcall(event_open, waiting.path)
+            if ok and open and not waiting.opened then
+                waiting.opened = true
+                print("[VoyagerAccess] course: the event at " .. waiting.name .. " is open\n")
+            end
+        end
     end)
     popups.on_close(function() pcall(look_waiting) end)
     print(string.format("[VoyagerAccess] course: travel hooks %s %s %s %s\n", tostring(ok1), tostring(ok2), tostring(ok3), tostring(ok4)))
