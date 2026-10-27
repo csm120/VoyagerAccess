@@ -1,14 +1,12 @@
 # New in Voyager Access
 
-## Monday October 26th 2026, late night
+## Monday October 26th 2026
 
 Version 0.3.88
 
-One I asked for tonight, because building rooms was taking me forever.
-
 - New: an empty building space now tells you how wide the gap is, like "Empty building space, 2 spaces wide". A sighted player sees that at a glance, and I was opening the build list and reading through a room's details just to find out whether anything would fit. You hear it on the arrows in the ship view and in the J room list.
 
-## Monday October 26th 2026, night
+## Monday October 26th 2026
 
 Version 0.3.87
 
@@ -17,7 +15,7 @@ Two small ones that turned up while testing tonight's battles and a German game.
 - Fixed: "Crafting started" now comes as soon as the game starts the craft, for blueprints too. It was arriving almost a second late, because the mod thought something was already being crafted when nothing was.
 - Fixed: in German and the other languages, a cost or effect per cycle lost its last word. "-6 HÜLLE pro" is now "-6 HÜLLE pro Zyklus", and the same goes for every language the game ships.
 
-## Monday October 26th 2026, evening
+## Monday October 26th 2026
 
 Version 0.3.86
 
@@ -28,7 +26,7 @@ All of this came out of my own play this afternoon. Calls kept coming in, and I 
 - Fixed: scanning a place that turns out to hold something, like a spatial anomaly, read the whole description twice. Now you hear it once. A place with resources still says "Found Deuterium" after its details.
 - Changed: when you craft something, the mod now matches the game's own report by the item itself instead of its name, so "Crafting started" is said for the right item. Thanks to firefly82 for the idea.
 
-## Monday October 26th 2026, afternoon
+## Monday October 26th 2026
 
 Version 0.3.85
 
