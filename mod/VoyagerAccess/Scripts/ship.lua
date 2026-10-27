@@ -310,9 +310,16 @@ local function room_prompts(h)
     return out
 end
 
-local function describe(r, with_deck)
+local function describe(r, with_deck, no_width)
     local t = r.hull:GetRoomType()
     local text = room_name(t)
+    -- Empty space: how wide the gap is, first (construction.free_width_text).
+    -- Not for the state-change check (no_width), whose "bare name says no
+    -- change" test is the absence of a comma (Fable review, 2026-10-26).
+    if raw_name(t) == "None" and not no_width then
+        local okw, wide = pcall(require("construction").free_width_text, r.hull)
+        if okw and wide then text = text .. ", " .. wide end
+    end
     local state = room_state(r.hull, raw_name(t))
     local low = r.low or r.deck
     if raw_name(t) == "None" and state == "" and not deck_has_life(low) then state = "no life support" end
@@ -1036,7 +1043,7 @@ local function on_set_state(slot, key, button)
                     slot = r.hull:BP_GetSlotIndex()
                     -- Without the count and its word: "3 cycles" to "1
                     -- cycle" was said as a change (demo, VM, 2026-10-22).
-                    if not key then key = (describe(r, false):gsub("%d+%s*[^,%s]*", "")) end
+                    if not key then key = (describe(r, false, true):gsub("%d+%s*[^,%s]*", "")) end
                     break
                 end
             end
@@ -1074,7 +1081,7 @@ local function on_set_state(slot, key, button)
         if (okw and win) or os.clock() - room_closed_at < 1 then return end
         for _, r in ipairs(list) do
             if not r.upper and r.hull:BP_GetSlotIndex() == slot then
-                local text = describe(r, false)
+                local text = describe(r, false, true)
                 -- A bare name says no change: switching a deck's Life Support
                 -- on changed every room on it, and "Ruined Room" came four
                 -- times and "Empty building space" twice (VM, 2026-10-22).

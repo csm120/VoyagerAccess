@@ -69,7 +69,8 @@ follows them.
 4. Cutscene: Shift+Enter skips.
 5. Ship view: Up and Down (or Page Up and Page Down) change deck, Left and
    Right move along it, Home and End go to the ends of the deck, Enter opens
-   a room. In a room window: Up and Down through its buttons, Left and Right
+   a room. An empty building space says how wide the gap is, for example
+   "Empty building space, 2 spaces wide" (Casey, 2026-10-26). In a room window: Up and Down through its buttons, Left and Right
    switch tabs, Escape closes it (the game's own Escape). Closing a room's
    hero list without choosing, with Backspace or Escape, takes the hero out
    of the room, as the game does; the mod says "removed" (Casey,

@@ -97,8 +97,11 @@ function M.fit(hull, width, decks)
         end
     end
     local first, last = s, s
-    while free[first - 1] do first = first - 1 end
-    while free[last + 1] do last = last + 1 end
+    -- Within the deck's own row: slot numbers run on into the next deck
+    -- (GPT and Fable reviews, 2026-10-26).
+    local row = math.floor(s / gw)
+    while free[first - 1] and math.floor((first - 1) / gw) == row do first = first - 1 end
+    while free[last + 1] and math.floor((last + 1) / gw) == row do last = last + 1 end
     return start, last - first + 1
 end
 
@@ -109,6 +112,17 @@ end
 local function size_text(w, d)
     if d > 1 then return spaces(w) .. " wide and " .. d .. " decks tall" end
     return require("tr").fill("{s} wide", spaces(w))
+end
+
+-- How wide the empty space around this one is, as the ship view says it
+-- ("3 spaces wide"): a sighted player sees the gap's length at once, and
+-- Casey had to open the build list and read a room's "does not fit" to
+-- learn it (2026-10-26). nil when it cannot be counted.
+function M.free_width_text(hull)
+    if not (hull and hull:IsValid() and empty(hull)) then return nil end
+    local ok, _, run = pcall(M.fit, hull, 1, 1)
+    if not (ok and run and run >= 1) then return nil end
+    return size_text(run, 1)
 end
 
 -- Added to a room choice's reading: its size and whether it fits.

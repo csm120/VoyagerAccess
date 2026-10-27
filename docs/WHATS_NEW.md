@@ -1,5 +1,13 @@
 # New in Voyager Access
 
+## Monday October 26th 2026, late night
+
+Version 0.3.88
+
+One I asked for tonight, because building rooms was taking me forever.
+
+- New: an empty building space now tells you how wide the gap is, like "Empty building space, 2 spaces wide". A sighted player sees that at a glance, and I was opening the build list and reading through a room's details just to find out whether anything would fit. You hear it on the arrows in the ship view and in the J room list.
+
 ## Monday October 26th 2026, night
 
 Version 0.3.87
