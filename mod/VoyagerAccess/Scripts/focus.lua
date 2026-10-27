@@ -3904,7 +3904,7 @@ function M.install()
         if require("popups").log_tab(-1) then return end
         if require("view").overview_tab(-1) then return end
         if rooms.window_open() then rooms.switch_tab(-1)
-        elseif ship_mode() then ship.list_dismiss() ship.step(-1) elseif not map_mode() then adjust(true) end
+        elseif ship_mode() then ship.list_leave() ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
         pcall(require("combat").energy_key)
@@ -3916,19 +3916,20 @@ function M.install()
         if require("popups").log_tab(1) then return end
         if require("view").overview_tab(1) then return end
         if rooms.window_open() then rooms.switch_tab(1)
-        elseif ship_mode() then ship.list_dismiss() ship.step(1) elseif not map_mode() then adjust(false) end
+        elseif ship_mode() then ship.list_leave() ship.step(1) elseif not map_mode() then adjust(false) end
     end)
     keys.on("j", function()
         if ship.list_open() or ship_mode() then ship.list_toggle()
         else speech.say("J lists the rooms in the ship view", true) end
     end)
     -- Moving in the ship view closes the J list, or the arrows went on
-    -- stepping the list from the room it was on (Casey, 2026-10-27).
+    -- stepping the list from the room it was on (Casey, 2026-10-27). The move
+    -- starts from the room the list is on (list_leave).
     keys.on("pageup", function()
-        if away.keys_active() and not away.mod_list_open() then away.mission_task(-1) elseif ship_mode() then ship.list_dismiss() ship.deck(-1) end
+        if away.keys_active() and not away.mod_list_open() then away.mission_task(-1) elseif ship_mode() then ship.list_leave() ship.deck(-1) end
     end)
     keys.on("pagedown", function()
-        if away.keys_active() and not away.mod_list_open() then away.mission_task(1) elseif ship_mode() then ship.list_dismiss() ship.deck(1) end
+        if away.keys_active() and not away.mod_list_open() then away.mission_task(1) elseif ship_mode() then ship.list_leave() ship.deck(1) end
     end)
     local function home_end(last)
         if require("whatsnew").open() then return require("whatsnew").edge(last) end

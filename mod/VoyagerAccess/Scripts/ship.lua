@@ -850,10 +850,15 @@ function M.list_toggle()
         speech.say("No rooms", true)
         return
     end
+    -- The list opens on the room the ship view is on, or the nearest listed
+    -- one when that room is left out (a ruined room, a turbolift): it opened
+    -- on the first room then (Casey, 2026-10-27: "start from where you are").
     local index = 1
     if selected then
+        local best = math.huge
         for i, it in ipairs(items) do
-            if it.deck == selected.deck and math.abs(it.y - selected.y) < 1 then index = i end
+            local d = math.abs(it.deck - selected.deck) * 1e6 + math.abs(it.y - selected.y)
+            if d < best then index, best = i, d end
         end
     end
     -- One of the mod's lists at a time (see resources.say).
@@ -876,6 +881,16 @@ end
 -- Closed without a word when another of the mod's lists opens over it.
 function M.list_dismiss()
     jump = nil
+end
+
+-- Closed by moving in the ship view: the move starts from the room the
+-- list was on, not the one the ship view had before J (Casey, 2026-10-27).
+function M.list_leave()
+    if not jump then return end
+    local it = jump.items[jump.index]
+    jump = nil
+    selected = { deck = it.deck, y = it.y }
+    save_selected()
 end
 
 function M.list_close()

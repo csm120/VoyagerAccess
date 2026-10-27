@@ -81,10 +81,10 @@ follows them.
    Combat Allies tab reads the ally's combat power, recruitment cost and
    upkeep. Rooms say their
    place on the deck ("3 of 6"). J lists the ship's rooms (not ruined rooms
-   or turbolifts) with deck and state; Up, Down, Home, End, Enter selects
+   or turbolifts) with deck and state, opening on the room you are on; Up, Down, Home, End, Enter selects
    the room, Backspace or J closes the list (J is unbound in
    IMC_ShipManagement), and Page Up, Page Down, Left or Right close it
-   and move in the ship view. A ruined room opens an action ring (radial menu):
+   and move in the ship view from the room the list is on. A ruined room opens an action ring (radial menu):
    its centre is read, Up and Down move through its segments, Enter does
    the focused one, Escape closes it. Empty building space opens the
    construction ring; a room in it says how many spaces wide it is and

@@ -2,6 +2,13 @@
 
 ## Tuesday October 27th 2026
 
+Version 0.3.91
+
+- Changed: the J room list now opens on the room you're on in the ship view, or the nearest one it lists if you're on a turbolift or a ruined room. Before, it started back at the Bridge.
+- Changed: when you leave the J list with Page Up, Page Down, Left or Right, you move from the room the list was on, not from wherever the ship view was before you pressed J. Enter still puts you right on the room you picked.
+
+## Tuesday October 27th 2026
+
 Version 0.3.90
 
 All of this came from my first real run through the new away missions this morning.
