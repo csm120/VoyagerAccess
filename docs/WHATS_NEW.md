@@ -1,5 +1,19 @@
 # New in Voyager Access
 
+## Wednesday October 28th 2026
+
+Version 0.3.92
+
+The game's Patch 2.2 came out today, with the Delta Chronicles 2 DLC. The mod was checked against it and still talks on the menus, away missions and battles. Battles also got some work.
+
+- Changed: I in a battle is short now. It says each ship's hull as a percentage, your order, your torpedoes and whether the battle is paused, like "U.S.S. Voyager, hull 99%. Target: Kazon Carrier, hull 93%. Order: Attack. 38 torpedoes." Press I twice for everything it used to say: shields, systems, the other enemies, your ally, the heroes' abilities, energy and the goal.
+- Fixed: after the first of the game's battle messages, the rest were silent. Now you hear them too, like "An enemy ship has fled combat, Captain."
+- New: the enemy list under I twice says which ships have surrendered.
+- Fixed: Enter or E over a paused battle said "Combat resumed" as the Orders wheel opened, and then nothing when the battle really started again. Now it says it when you close the wheel.
+- New: a warning when an enemy torpedo is on its way, in the game's own words.
+- Changed: the game's "Enemy shields destroyed" message isn't read, since the mod already says which ship and which side, like "Kazon Carrier, shield down: port".
+- Changed: the note the mod adds to the Away Mission Risks tutorial talks about tasks instead of choices.
+
 ## Tuesday October 27th 2026
 
 Version 0.3.91

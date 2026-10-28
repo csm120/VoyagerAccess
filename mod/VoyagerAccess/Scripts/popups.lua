@@ -1158,7 +1158,7 @@ local TUTORIAL_KEYS = {
     ["Transporter Room"] = "on the away team screen, Up and Down move between the slots and Enter chooses a hero; once every slot is filled, End moves to Start Mission and Enter starts it",
     ["Away Mission"] = "Up and Down walk the tasks, their heroes and Confirm; Left and Right, or Page Up and Page Down, jump between tasks. Enter on a hero selects or removes them and says the new chance; Enter on Confirm makes the choice",
     ["Fatigue"] = "a hero's fatigue is said in away mission results; N, Overview, then the Heroes tab lists your heroes",
-    ["Away Mission Risks"] = "a dangerous choice says its danger level, out of 3; Up and Down walk the choices and Enter on Confirm makes the choice",
+    ["Away Mission Risks"] = "a dangerous task says its danger level, out of 3; Up and Down walk the tasks, their heroes and Confirm, and Enter on Confirm makes the choice",
     ["Away Mission - Advanced"] = "Up and Down walk the tasks, their heroes and Confirm; Left and Right, or Page Up and Page Down, jump between tasks. Enter on a hero selects or removes them and says the new chance; Enter on Confirm makes the choice",
     ["Consequences"] = "In a conversation, Up and Down move between the options, each says its outcome odds, and Enter picks one; a major decision says so and is held for you. In an away mission, a task line says Major decision, and Enter on Confirm makes the choice",
     ["Morale"] = "press N, choose Overview, then press Right to reach the Morale tab",
@@ -1182,7 +1182,7 @@ local TUTORIAL_KEYS = {
     ["Open Command Menu"] = "Enter opens Orders; in the order wheel, Up and Down move, Enter picks, and Back is last",
     ["Command Menu"] = "in the Orders wheel, Up and Down move between the orders and Enter picks one; Back is last",
     ["Attack Movement"] = "I reads both ships; in the Orders wheel, Up and Down move through the offensive actions and Enter picks one",
-    ["Hero Abilities"] = "the number keys use the heroes' abilities; abilities turning active or ready are said as they happen, and I reads them",
+    ["Hero Abilities"] = "the number keys use the heroes' abilities; abilities turning active or ready are said as they happen, and I twice reads them",
     ["Torpedoes"] = "Shift fires a torpedo; I reads the torpedoes left",
     ["Defensive Movement"] = "Enter opens Orders; choose the defensive actions with Up and Down and Enter; I reads both ships",
     ["Combat Repairs"] = "Enter opens Orders; choose the repair action with Up and Down and Enter, then choose the system the same way",
@@ -2007,6 +2007,13 @@ function M.event_unread(button_path)
     if not (p and last_text[p]) then return false end
     local ok, text = pcall(M.text_under, p)
     return ok and text ~= last_text[p] and text:find("%a") ~= nil
+end
+
+-- What this module last said for the window at path, or nil (combat.lua:
+-- a battle toast it said is not said again).
+function M.last_read(path)
+    local t = last_text[path]
+    return t ~= "\0" and t or nil
 end
 
 -- All on-screen text inside the widget at path, in reading order.

@@ -149,10 +149,16 @@ follows them.
 10. Combat: the game's own keys work (Space pauses and resumes, 1 to 3 use
    the heroes' abilities, Tab changes target, Shift fires a torpedo, Left
    and Right pick a system and Up and Down move energy to it). Enter opens
-   Orders; the order wheel is a list (Up, Down, Enter; Back is last). I
-   reads both ships, the enemies, the order, torpedoes, abilities, energy and
-   the goal; O reads the goal. Target changes, abilities turning active or
-   ready, pauses and energy ("Engine 1 of 2, 2 spare") are spoken as they
+   Orders (so does the game's E); the order wheel is a list (Up, Down,
+   Enter; Back is last). I says each ship's hull as a percentage, the
+   order, the torpedoes and whether the battle is paused ("Voyager, hull
+   97%. Target: Kazon Carrier, hull 46%. Order: Attack. 4 torpedoes.").
+   I twice reads everything: both ships with shields and systems, the
+   enemies (a ship that gave up says "surrendered"), the ally, the order,
+   torpedoes, abilities, energy and the goal (Casey, 2026-10-28). O reads
+   the goal. Target changes, abilities turning active or
+   ready, pauses, energy ("Engine 1 of 2, 2 spare") and the game's battle
+   messages ("An enemy ship has fled combat, Captain.") are spoken as they
    happen.
 11. Away team selection: Enter on a slot chooses or changes its hero. Once
     every slot is filled, filled slots say "Team complete: End moves to

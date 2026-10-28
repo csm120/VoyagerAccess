@@ -79,7 +79,8 @@ local GROUPS = {
     } },
     { "Combat", {
         "Enter: open Orders. In the order wheel, Up and Down move, Enter picks, Back is last",
-        "I: both ships, the enemies, the order, torpedoes, abilities and the goal",
+        "I: both hulls, the order and torpedoes",
+        "I twice: both ships, the enemies, the order, torpedoes, abilities and the goal",
         "O: the combat goal",
         "Space, the game's key: pause and resume",
         "1 to 3, the game's keys: the heroes' abilities",

@@ -356,6 +356,12 @@ function M.enemies()
                 local n = plain(text_of(e.TGT_Name))
                 if n == "" then return end
                 if screen.shown(e.selected_border) then n = n .. ", targeted" end
+                -- A ship that gave up keeps its line with a flag beside it;
+                -- the flag is always "shown" and only its opacity says so
+                -- (1 surrendered, 0 fighting; Jabin's fleet, VM,
+                -- 2026-10-28). tr.word: the game's own "Surrendered".
+                local okf, fo = pcall(function() return e.Flag:GetRenderOpacity() end)
+                if okf and type(fo) == "number" and fo > 0.5 then n = n .. ", " .. require("tr").word("surrendered") end
                 names[#names + 1] = n
             end)
         end
@@ -364,7 +370,59 @@ function M.enemies()
     return "Enemies: " .. table.concat(names, "; ")
 end
 
--- L in combat: both ships, the current order, torpedoes and the goal.
+-- The torpedoes left ("4 torpedoes"). With a damaged Torpedo Launch Bay the
+-- counter keeps its placeholder "X" ("X torpedoes", Q Trial, VM, 2026-10-16).
+local function torpedoes(w)
+    local okt, ammo = pcall(function() return plain(text_of(w.FireControlWidget.CT_TorpedoAmmo)) end)
+    if not (okt and ammo ~= "") then return nil end
+    local n = ammo:match("^%d+$")
+    return n and (n .. (n == "1" and " torpedo" or " torpedoes")) or "no torpedoes"
+end
+
+-- A ship's name and hull as a percentage ("Voyager, hull 97%"), for the
+-- short I.
+local function brief_ship(view)
+    if not (view and view:IsValid()) then return nil end
+    local name = title(plain(text_of(view.ShipNameText)))
+    if name == "" then return nil end
+    local hull = plain(text_of(view.T_HullIntegrity))
+    local cur, max = hull:match("(%d+)%s*/%s*(%d+)")
+    if cur and tonumber(max) > 0 then
+        hull = math.floor(tonumber(cur) * 100 / tonumber(max) + 0.5) .. "%"
+    else
+        hull = hull:gsub("%s*/%s*", " of ")
+    end
+    if hull == "" then return name end
+    return name .. ", " .. require("tr").fill("hull {s}", hull)
+end
+
+-- I in combat: the short readout, both hulls, the order, torpedoes and a
+-- pause; I
+-- twice gives status() (Casey, 2026-10-28: the full one was over 100 words,
+-- too long in the middle of a fight).
+function M.brief()
+    local w = main()
+    if not w then return nil end
+    local parts = {}
+    local mine = brief_ship(w.PlayerView)
+    if mine then parts[#parts + 1] = mine end
+    local theirs = brief_ship(w.EnemyView)
+    if theirs then parts[#parts + 1] = "Target: " .. theirs end
+    local order = plain(text_of(w.txt_selectedManeuver)):gsub("%s*/+%s*$", ""):gsub("%s*/+%s*", ", ")
+    local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
+    order = order:gsub(", (%a+)$", function(s) return SIDES[s] and (", " .. require("tr").word(SIDES[s])) or nil end)
+    if order ~= "" then parts[#parts + 1] = "Order: " .. title(order) end
+    local torps = torpedoes(w)
+    if torps then parts[#parts + 1] = torps end
+    local paused = M.paused_text(w)
+    if paused then parts[#parts + 1] = paused end
+    if require("hints").fresh("i_combat") then parts[#parts + 1] = "I again for details" end
+    if #parts == 0 then return nil end
+    for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
+    return table.concat(parts, ". ") .. "."
+end
+
+-- I twice in combat: both ships, the current order, torpedoes and the goal.
 function M.status()
     local w = main()
     if not w then return nil end
@@ -402,13 +460,8 @@ function M.status()
     local SIDES = { Right = "starboard", Left = "port", Front = "bow", Back = "aft", Rear = "aft" }
     order = order:gsub(", (%a+)$", function(s) return SIDES[s] and (", " .. require("tr").word(SIDES[s])) or nil end)
     if order ~= "" then parts[#parts + 1] = "Order: " .. title(order) end
-    local okt, ammo = pcall(function() return plain(text_of(w.FireControlWidget.CT_TorpedoAmmo)) end)
-    -- With a damaged Torpedo Launch Bay the counter keeps its placeholder
-    -- "X" ("X torpedoes", Q Trial, VM, 2026-10-16).
-    if okt and ammo ~= "" then
-        local n = ammo:match("^%d+$")
-        parts[#parts + 1] = n and (n .. (n == "1" and " torpedo" or " torpedoes")) or "no torpedoes"
-    end
+    local torps = torpedoes(w)
+    if torps then parts[#parts + 1] = torps end
     local abilities = M.abilities()
     if abilities then parts[#parts + 1] = abilities end
     local nrg = M.energy_text()
@@ -611,9 +664,79 @@ local function torpedo_poll(w)
     said_ammo = n
 end
 
+-- The game's banners in battle are notification toasts (WBP_Toast_Receive_C
+-- in the HUD's toast display): "What are your orders, Captain?", "An enemy
+-- ship has surrendered, Captain.", "... has been destroyed", "... has fled
+-- combat", "Enemy shields destroyed, Captain." and story ones such as "You
+-- cannot prevail against a cube, Captain!". The game reuses one toast
+-- widget and only the first showing fires the events popups.lua hooks, so
+-- only "What are your orders" was said (trace, Jabin's fleet, VM,
+-- 2026-10-28). Read here instead, in the game's words, when a toast's text
+-- changes; not what popups already said, and not "Enemy shields destroyed",
+-- whose shield line (milestones_poll) says the ship and the side: a toast
+-- within 2.5 s of such a line is left out. A toast's record is dropped
+-- when it leaves the screen, so the same banner again is said again.
+local toast_said = {}   -- toast path -> its text when last looked at
+local shield_said_at = -100
+local function alert_poll(w)
+    local pop = require("popups")
+    for _, t in ipairs(FindAllOf("WBP_Toast_Receive_C") or {}) do
+        local p = t:IsValid() and path_of(t)
+        if p and p:find("^/Engine/Transient%.") and not screen.shown(t) then
+            toast_said[p] = nil
+        elseif p and p:find("^/Engine/Transient%.") then
+            local okt, raw = pcall(pop.text_under, p)
+            local s = okt and plain(raw or "") or ""
+            if s ~= "" and s ~= toast_said[p] and s ~= pop.last_read(p) then
+                -- The shield line may come just after its toast (another
+                -- tick's hit): decided a moment later.
+                ExecuteInGameThreadWithDelay(700, function()
+                    pcall(function()
+                        if os.clock() - shield_said_at < 2.5 then
+                            print("[VoyagerAccess] combat: banner left out (shield line): " .. s .. "\n")
+                            return
+                        end
+                        print("[VoyagerAccess] combat: banner " .. s .. "\n")
+                        speech.say(s, false)
+                    end)
+                end)
+            end
+            toast_said[p] = s
+        end
+    end
+end
+
+-- An enemy torpedo on its way: the screen shows "torpedo incoming" with
+-- its distance (Torp_Incoming, set by the widget's incomingTorpedo).
+-- Said once each time it appears, in the widget's own words.
+local torpedo_coming = false
+local function incoming_poll(w)
+    local ok, on = pcall(function() return w.incomingTorpedo == true and screen.shown(w.Torp_Incoming) end)
+    on = ok and on or false
+    if on and not torpedo_coming then
+        local words = ""
+        local T = StaticFindObject("/Script/UMG.TextBlock")
+        pcall(function()
+            screen.walk(w.Torp_Incoming, function(x)
+                if not (T and x:IsA(T)) then return false end
+                if words == "" and x:GetFName():ToString() ~= "distance" then
+                    local t = plain(text_of(x))
+                    if t ~= "" and not t:find("%d") then words = t end
+                end
+                return true
+            end, { no_lists = true, limit = 40 })
+        end)
+        if words == "" then words = "Torpedo incoming" end
+        print("[VoyagerAccess] combat: " .. words .. "\n")
+        speech.say(words, false)
+    end
+    torpedo_coming = on
+end
+
 -- Space (the game's) pauses and resumes without a word; tutorial steps
 -- pause it too.
 local said_pause = false
+local resume_since = nil
 
 local function pause_poll(w)
     local p = M.paused_text(w)
@@ -622,7 +745,23 @@ local function pause_poll(w)
     -- resumed" with the wheel up and nothing moving (VM, 2026-10-21). Said
     -- once the wheel has closed and the battle really runs.
     -- The ring from popups' record of open windows, not a search.
-    if not p and said_pause and require("popups").open_of({ WBP_RadialMenu_C = true }) then return end
+    if not p and said_pause and require("popups").open_of({ WBP_RadialMenu_C = true }) then resume_since = nil return end
+    -- The wheel opening ends the pause about 0.2 s before popups has the
+    -- wheel, and the pause event comes at once: Enter or E on a paused
+    -- battle said "Combat resumed" again, then nothing when the battle
+    -- really resumed (VM, 2026-10-28). Said once no pause and no wheel have
+    -- lasted 0.4 s.
+    if not p and said_pause then
+        if not resume_since then
+            resume_since = os.clock()
+            ExecuteInGameThreadWithDelay(450, function()
+                pcall(function() if M.active() then pause_poll(main()) end end)
+            end)
+            return
+        end
+        if os.clock() - resume_since < 0.4 then return end
+    end
+    resume_since = nil
     if p and p ~= said_pause then
         print("[VoyagerAccess] combat: " .. p .. "\n")
         speech.say(p, false)
@@ -871,6 +1010,7 @@ local function milestones_poll(w)
                 for side, v in pairs(shields) do
                     local was = t.shields[side]
                     if was and was > 0 and v == 0 then
+                        shield_said_at = os.clock()
                         -- tr.word: bow | aft | port | starboard
                         speech.say(name .. ", " .. require("tr").fill("shield down: {s}", require("tr").word(WORD[side])), false)
                     end
@@ -923,6 +1063,14 @@ local function ensure_pause_hook()
         end) then n_hit = n_hit + 1 end
     end
     print("[VoyagerAccess] combat: hit hooks " .. n_hit .. " of 3\n")
+    -- A ship destroyed, fleeing or surrendering: its banner is set then
+    -- (alert_poll; the loop is the backstop).
+    local ok_s = pcall(RegisterHook, cpath .. ":OnCombatantStatusChangeBP", function()
+        ExecuteInGameThreadWithDelay(200, function()
+            pcall(function() if M.active() then alert_poll(main()) end end)
+        end)
+    end)
+    print("[VoyagerAccess] combat: status hook " .. (ok_s and "installed" or "not installed") .. "\n")
 end
 
 local function poll()
@@ -934,7 +1082,7 @@ local function poll()
     if not hooked and M.screen_up() then energy_hooks() end
     if not M.active() then
         said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil
-        tracked = {}
+        tracked = {} toast_said = {} torpedo_coming = false resume_since = nil
         -- The battle's first levels are set as it starts: not spoken.
         energy_quiet_until = os.time() + 3
         if was_active then
@@ -949,6 +1097,8 @@ local function poll()
     pause_poll(main())
     torpedo_poll(main())
     milestones_poll(main())
+    alert_poll(main())
+    incoming_poll(main())
     local goal = M.objective()
     if goal and goal ~= said_goal then
         said_goal = goal

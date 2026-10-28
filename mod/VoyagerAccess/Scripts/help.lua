@@ -37,7 +37,7 @@ local HELP = {
         .. "Enter on Start Game holds it for you. Escape goes back.",
     combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
         .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
-        .. "I reads both ships and the energy. O reads the combat goal.",
+        .. "I reads both hulls, the order and torpedoes; I twice reads everything, with the energy. O reads the combat goal.",
     -- F1 in the tech tree and the Overview gave the general keys and the
     -- menu keys (VM, 2026-10-21).
     techtree = "Up and Down move. Home and End go to the first and last. "
@@ -261,10 +261,17 @@ function M.say_where()
         elseif ctx == "cutscene" or ctx == "story" then
             parts[2] = nil
         elseif ctx == "combat" then
-            -- An open order wheel first, then the ships.
+            -- An open order wheel first, then the ships: the short readout,
+            -- and the full one on I twice (Casey, 2026-10-28).
             local label = require("focus").current_label()
             if label and label ~= "" then parts[2] = label end
-            parts[#parts + 1] = require("combat").status()
+            local c = require("combat")
+            if again then
+                last_i = -100
+                parts[#parts + 1] = c.status()
+            else
+                parts[#parts + 1] = c.brief() or c.status()
+            end
         else
             -- A window read as the mod's button list: its title, not "Menu"
             -- ("Menu. CLOSE, 1 of 2" over a Construction Report, demo, VM,
