@@ -4,7 +4,7 @@
 
 Version 0.3.96
 
-- New: if the game starts without Voyager Access's speech, the mod now starts it for you. That happens when the game is started some other way than Steam's usual launch, or when Steam has lost the launch setting. About 15 seconds after the game loads you hear "Voyager Access speech started.", and everything works from there.
+- New: if the game starts without Voyager Access's speech, the mod now starts it for you. That happens when the game is started some other way than Steam's usual launch, or when Steam has lost the launch setting. About 15 seconds after the game loads you hear "Voyager Access speech started.", and everything works from there. No window pops up and the game keeps the focus.
 
 ## Thursday October 29th 2026, third update
 
