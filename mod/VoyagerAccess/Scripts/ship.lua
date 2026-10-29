@@ -310,6 +310,27 @@ local function room_prompts(h)
     return out
 end
 
+-- The heroes posted to a room, as its tile shows them: a portrait on the
+-- room (WBP_Button_RoomSelection's Hero overlay, hasHero). The ids come
+-- from the game's own OnSetState (EquippedHeroes) and the names from the
+-- game (events.hero_name). The mod said "Deck 5, Sick bay, on" with the
+-- Doctor's face on the tile (VM, 2026-10-29).
+local room_heroes = {}   -- slot -> { hero id, ... }
+local function tile_heroes(r)
+    local names = {}
+    pcall(function()
+        local hw = r.hull.RoomHullWidget
+        if not (hw and hw:IsValid() and hw.hasHero == true and hw.Hero:IsVisible()) then return end
+        local ids = room_heroes[r.hull:BP_GetSlotIndex()]
+        if not ids or #ids == 0 then
+            print("[VoyagerAccess] ship: hero portrait on a room with no hero id recorded, not said\n")
+            return
+        end
+        for _, id in ipairs(ids) do names[#names + 1] = require("events").hero_name(id) end
+    end)
+    return names
+end
+
 local function describe(r, with_deck, no_width)
     local t = r.hull:GetRoomType()
     local text = room_name(t)
@@ -364,6 +385,10 @@ local function describe(r, with_deck, no_width)
         -- translates.
         text = text .. ", " .. require("tr").word("off") .. state:sub(4)
     elseif state ~= "" then text = text .. ", " .. require("tr").word(state) end
+    -- Not in the state-change key (no_width), so posting a hero is not a change.
+    if not no_width then
+        for _, s in ipairs(tile_heroes(r)) do text = text .. ", " .. s end
+    end
     for _, s in ipairs(room_prompts(r.hull)) do text = text .. ", " .. s end
     if with_deck then
         -- A tall room says the deck the player is on first: moving down a
@@ -1124,7 +1149,7 @@ local function install_state(path)
     local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
     -- UE4SS calls only the first (pre) callback for this Blueprint function
     -- (VM, 2026-10-20): the values come from the call itself.
-    state_hooked = pcall(RegisterHook, cpath .. ":OnSetState", function(ctx, state, _, paused)
+    state_hooked = pcall(RegisterHook, cpath .. ":OnSetState", function(ctx, state, _, paused, heroes)
         local slot, key, button = nil, nil, nil
         pcall(function()
             local b = ctx:get()
@@ -1132,6 +1157,11 @@ local function install_state(path)
             slot = b.RoomSlot
         end)
         if type(slot) == "number" then
+            pcall(function()
+                local ids = {}
+                heroes:get():ForEach(function(_, e) ids[#ids + 1] = e:get():ToString() end)
+                room_heroes[slot] = ids
+            end)
             pcall(function()
                 local s = state:get()
                 key = tostring(s.State) .. "|" .. tostring(s.bLifeSupportEnabled) .. "|" .. tostring(paused:get())

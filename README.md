@@ -91,7 +91,7 @@ Dialogue and cutscenes:
 
 Ship view:
 
-1. Up and Down Arrow change deck; Left and Right Arrow move between the rooms on a deck.
+1. Up and Down Arrow change deck; Left and Right Arrow move between the rooms on a deck. Each room says its state and, when a hero is posted there, the hero's name.
 2. Home and End go to the first and last room on the deck.
 3. J: a list of all the ship's rooms with their deck and state, opening on the room you are on; Enter goes to one. Page Up, Page Down, Left or Right Arrow close the list and move in the ship view from the room the list is on.
 4. Enter opens the room. Its window reads its state and the energy it uses, and each button reads what it costs and why it cannot be used yet. Left and Right Arrow switch the room's tabs. Escape closes the room.

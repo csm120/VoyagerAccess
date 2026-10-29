@@ -64,6 +64,10 @@ local WATCH = {
     -- markers was read as a window on arriving at the System Map, 53 ms
     -- each, about 0.8 s in all (timing log, 2026-10-21 11:10:56).
     "WBP_AwayMissionEventView_C",
+    -- A shuttle mission's setup: header and description (InitWidget); its
+    -- shuttle choices and Confirm are buttons. Named from the channel map
+    -- (2026-10-29); no shuttle mission came up in play yet.
+    "WBP_ShuttleMissionSetup_C",
     -- Away team selection: the mission, heroes needed, recommendations and
     -- challenges (awaymission.lua reads the slots and heroes)
     "WBP_AwayMissionLoadout_C",

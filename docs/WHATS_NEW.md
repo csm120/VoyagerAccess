@@ -1,5 +1,12 @@
 # New in Voyager Access
 
+## Thursday October 29th 2026, later
+
+Version 0.3.94
+
+- New: in the ship view, a room with a hero posted to it says who, like "Deck 5, Sick bay, on, The Doctor". The game shows that hero's portrait right on the room.
+- New: the window for setting up a shuttle mission is read when it opens, with its title and description.
+
 ## Thursday October 29th 2026
 
 Version 0.3.93
