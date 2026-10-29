@@ -466,6 +466,7 @@ return {
 
     -- main.lua
     ["Voyager Access loaded"] = "Voyager Access załadowany",
+    ["Part of Voyager Access failed to start: {s}"] = "Części Voyager Access nie udało się uruchomić: {s}",
 
     -- popups.lua
     ["unknown"] = "nieznane",

@@ -22,11 +22,12 @@ import logging
 import logging.handlers
 import os
 import sys
+import threading
 import time
 from pathlib import Path
 
 from . import modfiles, steam, updater
-from .helper import DATA_DIR, DEFAULT_FILE, DEFAULT_TOLK, RESOURCES, Tolk, serve
+from .helper import DATA_DIR, DEFAULT_FILE, DEFAULT_TOLK, RESOURCES, HeartbeatWatch, Tolk, open_speech, serve
 from .version import __version__
 
 PAYLOAD = RESOURCES / "payload"
@@ -52,6 +53,21 @@ def setup_logging():
     handler.setFormatter(logging.Formatter("%(asctime)s %(message)s"))
     log.addHandler(handler)
     log.setLevel(logging.INFO)
+    # An uncaught exception on any thread goes to helper.log: the frozen exe
+    # has no console, and a crash that ended speech left no trace before
+    # 2026-10-29 (the WFH session's reliability review).
+    old_hook = sys.excepthook
+
+    def crash(kind, value, tb):
+        log.error("uncaught exception", exc_info=(kind, value, tb))
+        old_hook(kind, value, tb)
+
+    def thread_crash(args):
+        log.error("uncaught exception in thread %s", getattr(args.thread, "name", "?"),
+                  exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+
+    sys.excepthook = crash
+    threading.excepthook = thread_crash
 
 
 def needs_install(game):
@@ -389,7 +405,8 @@ def launch_game(command):
     log.info("game started")
     clear_game_state()
     session = PlaySession()
-    tolk = Tolk(DEFAULT_TOLK)
+    tolk = open_speech(DEFAULT_TOLK)
+    heartbeat = HeartbeatWatch()
     try:
         if news:
             tolk.say(news, False)
@@ -397,6 +414,7 @@ def launch_game(command):
         def keep_going():
             if not modfiles.game_is_running():
                 return False
+            heartbeat.check(lambda text: tolk.say(text, True))
             session.step(lambda text: tolk.say(text, True), apply_in_game)
             return not session.restart
 
@@ -411,7 +429,8 @@ def launch_game(command):
             return 0      # setup stops this copy, and the new one starts the game
     finally:
         tolk.unload()
-    log.info("game exited")
+    log.info("game exited; longest heartbeat gap %.1f s%s", heartbeat.longest,
+             "" if heartbeat.armed else " (no heartbeat seen)")
     RELOAD_FLAG.unlink(missing_ok=True)
     session.wait()
     if session.found:
@@ -699,6 +718,15 @@ def build_report(helper_log, game_logs, configs):
         out += Path(helper_log).read_text(encoding="utf-8", errors="replace").splitlines()[-40:]
     except OSError:
         out.append("(none)")
+    # What the mod last said: beside the helper's log it shows whether speech
+    # stopped at the mod or at the helper (2026-10-29).
+    speech_file = Path(helper_log).with_name("speech.txt")
+    if speech_file.exists():
+        out += ["", "== Last speech =="]
+        try:
+            out += speech_file.read_text(encoding="utf-8", errors="replace").splitlines()[-30:]
+        except OSError:
+            out.append("(unreadable)")
     setup_log = Path(helper_log).with_name("setup.log")
     if setup_log.exists():
         out += ["", "== Last update's setup log (end) =="]

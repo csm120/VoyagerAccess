@@ -1,14 +1,23 @@
 -- Hands text to tools/speech_helper.py through a file it tails.
 -- One line per message: "I|text" interrupts, "Q|text" queues.
--- If the folder is missing (helper never run), messages are dropped quietly.
+-- If the folder is missing (helper never run), messages are dropped; the first failure is logged.
 
 local M = {}
 
 local PATH = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\speech.txt"
 
+-- A write that fails is logged once per session, so UE4SS.log says why a
+-- player heard nothing (2026-10-29: every failure was dropped silently).
+local write_failed = false
 local function write(mode, line)
-    local f = io.open(PATH, mode)
-    if not f then return false end
+    local f, err = io.open(PATH, mode)
+    if not f then
+        if not write_failed then
+            write_failed = true
+            print("[VoyagerAccess] speech.txt could not be written: " .. tostring(err) .. "\n")
+        end
+        return false
+    end
     f:write(line)
     f:close()
     return true

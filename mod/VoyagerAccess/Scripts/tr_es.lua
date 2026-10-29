@@ -443,6 +443,7 @@ return {
     ["Czech"] = "checo",
     ["Ukrainian"] = "ucraniano",
     ["Voyager Access loaded"] = "Voyager Access cargado",
+    ["Part of Voyager Access failed to start: {s}"] = "Una parte de Voyager Access no pudo iniciarse: {s}",
     ["unknown"] = "desconocido",
     [", amount unknown"] = ", cantidad desconocida",
     [" until {s} is upgraded"] = " hasta que se mejore {s}",

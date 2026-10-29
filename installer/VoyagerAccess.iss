@@ -65,6 +65,8 @@ Source: "..\dist\VoyagerAccess\*"; DestDir: "{app}"; Flags: recursesubdirs creat
 Source: "..\LICENSE"; DestDir: "{app}"; DestName: "LICENSE.txt"; Flags: ignoreversion
 Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\README.md"; DestDir: "{app}"; DestName: "README.txt"; Flags: ignoreversion
+; The troubleshooting report; it works with the helper not running (2026-10-29).
+Source: "..\tools\collect-report.ps1"; DestDir: "{app}"; Flags: ignoreversion
 
 [Registry]
 ; Versions up to 0.2.0 started a waiting helper at sign-in. Remove that
@@ -74,6 +76,7 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 [Icons]
 Name: "{autoprograms}\{#MyAppName}\Add Voyager Access to the game"; Filename: "{app}\{#MyAppExeName}"; Parameters: "--install-mod"
 Name: "{autoprograms}\{#MyAppName}\Read me"; Filename: "{app}\README.txt"
+Name: "{autoprograms}\{#MyAppName}\Copy a troubleshooting report"; Filename: "powershell.exe"; Parameters: "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\collect-report.ps1"" -Box"
 
 [Messages]
 ; One box at the end (Casey, 2026-10-11): the Finish page says it is ready,

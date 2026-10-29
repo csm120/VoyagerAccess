@@ -1,5 +1,18 @@
 # New in Voyager Access
 
+## Thursday October 29th 2026, third update
+
+Version 0.3.95
+
+This one is about not going quiet on you. Before, a few rare problems could leave you with no speech or dead keys and nothing to tell you why.
+
+- New: if the game hangs or the mod stops answering for about 10 seconds, you hear "Voyager Access lost contact with the game." When it comes back, you hear that too.
+- Fixed: one bad line of speech, or a click that went wrong, could end speech for the rest of the game. Now that line is skipped and speech carries on.
+- New: if the mod can't reach your screen reader at all, it falls back to Windows' own voice and tells you so, instead of saying nothing.
+- Fixed: if one part of the mod failed to start, everything after it was left off too, keys included. Now each part starts on its own, the keys first, and you're told which part failed.
+- New: the Start menu's Voyager Access folder has "Copy a troubleshooting report". It works even when speech has stopped and the game is closed, and it now notices the full game as well as the demo.
+- Changed: both troubleshooting reports, this one and the backtick one in the game, include the last things the mod said. The helper's log also records any crash and which screen reader it's talking to, so a report has something to go on.
+
 ## Thursday October 29th 2026, later
 
 Version 0.3.94

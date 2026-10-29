@@ -39,15 +39,29 @@ local focus = require("focus")
 
 speech.reset()
 speech.say("Voyager Access loaded", true)
-focus.install()
-require("dialogue").install()
-require("story").install()
-require("popups").install()
-require("system").install()
-require("quest").install()
-require("help").install()
-require("resources").install()
-require("view").install()
+
+-- Each module installs on its own, keys first: one module's error used to
+-- stop every install after it, keys included, after "Voyager Access loaded"
+-- had been said (the WFH session's reliability review, 2026-10-29). A
+-- failure is logged and said, naming the module.
+local failed = {}
+local function install(name, fn)
+    local ok, err = pcall(fn or function() require(name).install() end)
+    if not ok then
+        failed[#failed + 1] = name
+        print("[VoyagerAccess] " .. name .. " failed to install: " .. tostring(err) .. "\n")
+    end
+end
+install("keys")
+install("focus", function() focus.install() end)
+install("dialogue")
+install("story")
+install("popups")
+install("system")
+install("quest")
+install("help")
+install("resources")
+install("view")
 -- Development only (flag file "calls"): which game function brings an
 -- incoming call. It answered on 2026-10-24 (the count changes right after
 -- OnStateTransitionFinished or OnTravelCompleted), and its 13 hooks are no
@@ -59,15 +73,19 @@ do
         pcall(function() require("calllisten").install() end)
     end
 end
-require("awaymission").install()
-require("whatsnew").install()
-require("hotkeys").install()
-require("credits").install()
-require("techtree").install()
-require("combat").install()
-require("ship").install()
-require("events").install()
-require("language").install()
-require("keys").install()
-require("reload")()
-require("devcmd")()
+install("awaymission")
+install("whatsnew")
+install("hotkeys")
+install("credits")
+install("techtree")
+install("combat")
+install("ship")
+install("events")
+install("language")
+install("reload", function() require("reload")() end)
+install("devcmd", function() require("devcmd")() end)
+if #failed > 0 then
+    local names = table.concat(failed, ", ")
+    local ok, line = pcall(function() return require("tr").fill("Part of Voyager Access failed to start: {s}", names) end)
+    speech.say(ok and line or ("Part of Voyager Access failed to start: " .. names), false)
+end

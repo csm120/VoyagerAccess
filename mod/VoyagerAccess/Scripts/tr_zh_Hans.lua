@@ -443,6 +443,7 @@ return {
     ["Czech"] = "捷克语",
     ["Ukrainian"] = "乌克兰语",
     ["Voyager Access loaded"] = "Voyager Access已加载",
+    ["Part of Voyager Access failed to start: {s}"] = "Voyager Access 的部分功能未能启动：{s}",
     ["unknown"] = "未知",
     [", amount unknown"] = "，数量未知",
     [" until {s} is upgraded"] = "，升级{s}后才能得知",

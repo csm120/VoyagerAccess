@@ -67,7 +67,7 @@ Everywhere:
 8. Escape: the game's own back and pause menu, just as for anyone else. Backspace closes a list Voyager Access opened without bringing up the pause menu.
 9. F12: check for a Voyager Access update now. If one is found, you hear that it is ready; press F12 again to restart the game and install it.
 10. Control+F12: what's new in Voyager Access.
-11. Backtick (the key left of 1): copy a troubleshooting report to the clipboard.
+11. Backtick (the key left of 1): copy a troubleshooting report to the clipboard. If speech has stopped altogether, the Start menu's Voyager Access folder has "Copy a troubleshooting report", which works without the game.
 
 Menus and settings:
 

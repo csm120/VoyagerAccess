@@ -175,6 +175,24 @@ local function say_log_state()
     require("speech").say(f and "Input log on" or "Input log off", true)
 end
 
+-- The helper's sign that the mod and the game are alive (helper.py
+-- HeartbeatWatch): this loop touches heartbeat.txt about every 2 s, so a
+-- hung game or a dead keys loop is said instead of going silent (the WFH
+-- session's reliability review, 2026-10-29). One small write per 2 s, on
+-- the loop that already runs; no loop of its own.
+local HEARTBEAT = (os.getenv("LOCALAPPDATA") or ".") .. "\\VoyagerAccess\\heartbeat.txt"
+local last_beat = 0
+local function heartbeat()
+    local now = os.time()
+    if now - last_beat < 2 then return end
+    last_beat = now
+    local f = io.open(HEARTBEAT, "w")
+    if f then
+        f:write(tostring(now))
+        f:close()
+    end
+end
+
 function M.install()
     M.on("ctrl+f11", say_log_state)
     -- Keys pressed before the mod loaded are not replayed.
@@ -186,6 +204,7 @@ function M.install()
     LoopInGameThreadWithDelay(INTERVAL_MS, function()
         local ok, err = pcall(dispatch)
         if not ok then print("[VoyagerAccess] keys error: " .. tostring(err) .. "\n") end
+        heartbeat()
     end)
 end
 

@@ -628,10 +628,110 @@ class Tolk:
         return self.dll.Tolk_DetectScreenReader() or "none"
 
     def say(self, text, interrupt):
-        self.dll.Tolk_Output(text, interrupt)
+        # Tolk_Output is False when no screen reader or SAPI took the line;
+        # logged once, so a silent session leaves a trace.
+        if not self.dll.Tolk_Output(text, interrupt) and not getattr(self, "_refused", False):
+            self._refused = True
+            log.info("Tolk refused a line (no screen reader or SAPI took it): %r", text[:60])
 
     def unload(self):
         self.dll.Tolk_Unload()
+
+
+class WindowsSpeech:
+    """Speech when Tolk will not load: Windows' own voice (System.Speech)
+    through one PowerShell process reading lines from stdin, so nothing
+    new ships. Only for that failure; Tolk speaks through the player's
+    screen reader."""
+
+    SCRIPT = (
+        "[Console]::InputEncoding = [Text.Encoding]::UTF8;"
+        "Add-Type -AssemblyName System.Speech;"
+        "$s = New-Object System.Speech.Synthesis.SpeechSynthesizer;"
+        "while ($null -ne ($l = [Console]::In.ReadLine())) {"
+        " if ($l.StartsWith('I|')) { $s.SpeakAsyncCancelAll() };"
+        " [void]$s.SpeakAsync($l.Substring(2)) }")
+
+    def __init__(self):
+        import subprocess
+        self.proc = subprocess.Popen(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", self.SCRIPT],
+            stdin=subprocess.PIPE, creationflags=0x08000000)   # CREATE_NO_WINDOW
+
+    def name(self):
+        return "Windows speech (Tolk did not load)"
+
+    def say(self, text, interrupt):
+        line = ("I|" if interrupt else "Q|") + " ".join(str(text).split()) + "\n"
+        self.proc.stdin.write(line.encode("utf-8"))
+        self.proc.stdin.flush()
+
+    def unload(self):
+        try:
+            self.proc.stdin.close()
+            self.proc.wait(5)
+        except Exception:
+            self.proc.kill()
+
+
+HEARTBEAT = DATA_DIR / "heartbeat.txt"
+
+
+def _heartbeat_mtime():
+    try:
+        return HEARTBEAT.stat().st_mtime
+    except OSError:
+        return None
+
+
+class HeartbeatWatch:
+    """The mod touches heartbeat.txt about every 2 s from its keys loop
+    (keys.lua). check(say), called about once a second while the game runs,
+    says once when it has gone stale for `stale` seconds, and again when
+    beats come back. Nothing counts until a beat newer than this session
+    has been seen, so a slow game start or an old file is never a loss.
+    Before 2026-10-29 a hung game or a dead mod went unnoticed (the WFH
+    session's reliability review)."""
+
+    LOST = "Voyager Access lost contact with the game."
+    BACK = "Voyager Access is in contact with the game again."
+
+    def __init__(self, stale=10, now=time.time, mtime=_heartbeat_mtime):
+        self.stale, self.now, self.mtime = stale, now, mtime
+        self.started = now()
+        self.armed = False
+        self.lost = False
+        self.longest = 0.0
+
+    def check(self, say):
+        beat, now = self.mtime(), self.now()
+        if beat is None or beat <= self.started:
+            return
+        self.armed = True
+        gap = now - beat
+        self.longest = max(self.longest, gap)
+        if gap >= self.stale and not self.lost:
+            self.lost = True
+            log.info("heartbeat stale for %.0f s: lost contact with the game", gap)
+            say(self.LOST)
+        elif gap < self.stale and self.lost:
+            self.lost = False
+            log.info("heartbeat back")
+            say(self.BACK)
+
+
+def open_speech(folder, tolk_cls=Tolk, fallback_cls=WindowsSpeech):
+    """Tolk, or Windows speech when Tolk will not load; the voice in use is
+    logged at every launch (2026-10-29: it never was, and a Tolk failure
+    ended the helper with no speech and no log line)."""
+    try:
+        speech = tolk_cls(folder)
+    except Exception:
+        log.exception("Tolk could not be loaded; using Windows speech")
+        speech = fallback_cls()
+        speech.say("Voyager Access could not reach your screen reader, so it is using Windows speech.", True)
+    log.info("speech: %s", speech.name())
+    return speech
 
 
 def main(argv=None):
@@ -640,7 +740,7 @@ def main(argv=None):
     ap.add_argument("--tolk", type=Path, default=DEFAULT_TOLK)
     args = ap.parse_args(argv)
 
-    tolk = Tolk(args.tolk)
+    tolk = open_speech(args.tolk)
     try:
         print(f"Voyager Access speech helper running; screen reader: {tolk.name()}. Ctrl+C to stop.")
         tolk.say("Voyager Access speech helper running", True)
@@ -803,10 +903,50 @@ def serve(tolk, speech_file, keep_going, on_keys=None):
         keys_thread.join(1.0)
 
 
+def _handle_line(tolk, line, timed):
+    """One line from the mod: speech, a click or a mouse move."""
+    parsed = parse_line(line)
+    if parsed:
+        timed("speech (%s, %d characters)" % ("interrupting" if parsed[0] else "queued", len(parsed[1])),
+              tolk.say, parsed[1], parsed[0])
+        return
+    point = parse_click(line)
+    if point:
+        timed("click", click, *point)
+        return
+    if is_center_mouse(line) and game_in_front():
+        timed("mouse to centre", center_mouse)
+        return
+    ring = parse_ring(line)
+    if ring and game_in_front():
+        timed("mouse move", ring_mouse, *ring)
+        return
+    ring = parse_ring_click(line)
+    if ring and game_in_front():
+        timed("mouse move and click", ring_mouse, *ring, True)
+
+
 def _serve_loop(tolk, tailer, keep_going, on_keys, note, timed, pressed_queue):
     """serve's main loop: speech, clicks and the session check; keys come
-    from the key thread through pressed_queue."""
+    from the key thread through pressed_queue.
+
+    One failing line, click or key handler is logged and skipped: before
+    2026-10-29 any exception here ended speech for the rest of the game,
+    and a player with no speech cannot report it. Logged the first ten
+    times only, so a lasting fault cannot fill helper.log.
+    """
+    errors = [0]
+
+    def guarded(what, fn, *a):
+        try:
+            fn(*a)
+        except Exception:
+            errors[0] += 1
+            if errors[0] <= 10:
+                log.exception("%s failed (error %d); speech goes on", what, errors[0])
+
     last_speech = last_check = 0.0
+    check_failures = 0
     while True:
         while True:
             try:
@@ -814,12 +954,19 @@ def _serve_loop(tolk, tailer, keep_going, on_keys, note, timed, pressed_queue):
             except Exception:
                 break
             if on_keys:
-                on_keys(pressed)
+                guarded("key handler", on_keys, pressed)
         now = time.monotonic()
         if now - last_check >= 1.0:
             last_check = now
             t = time.perf_counter()
-            going = keep_going()
+            # A failing check counts as "keep going": ending the session
+            # would end speech while the game still runs. Thirty failures in
+            # a row (about 30 s) end it, so a check that can never answer
+            # does not keep the helper running after the game has closed.
+            going = [None]
+            guarded("session check", lambda: going.__setitem__(0, keep_going()))
+            check_failures = check_failures + 1 if going[0] is None else 0
+            going = going[0] is not False and check_failures < 30
             took = (time.perf_counter() - t) * 1000
             # Logged only when it held the loop for a whole tick or more:
             # once a second, it would bury the other lines.
@@ -831,26 +978,10 @@ def _serve_loop(tolk, tailer, keep_going, on_keys, note, timed, pressed_queue):
             time.sleep(0.01)
             continue
         last_speech = now
-        for line in tailer.read_lines():
-            parsed = parse_line(line)
-            if parsed:
-                timed("speech (%s, %d characters)" % ("interrupting" if parsed[0] else "queued", len(parsed[1])),
-                      tolk.say, parsed[1], parsed[0])
-                continue
-            point = parse_click(line)
-            if point:
-                timed("click", click, *point)
-                continue
-            if is_center_mouse(line) and game_in_front():
-                timed("mouse to centre", center_mouse)
-                continue
-            ring = parse_ring(line)
-            if ring and game_in_front():
-                timed("mouse move", ring_mouse, *ring)
-                continue
-            ring = parse_ring_click(line)
-            if ring and game_in_front():
-                timed("mouse move and click", ring_mouse, *ring, True)
+        lines = []
+        guarded("reading speech.txt", lambda: lines.extend(tailer.read_lines()))
+        for line in lines:
+            guarded("line %r" % line[:40], _handle_line, tolk, line, timed)
 
 
 if __name__ == "__main__":

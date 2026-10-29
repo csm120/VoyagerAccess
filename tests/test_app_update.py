@@ -386,6 +386,17 @@ class ReportTests(unittest.TestCase):
         self.assertIn("course: under way", text)
         self.assertNotIn("other", text)
 
+    def test_report_has_the_last_speech(self):
+        # What the mod last said, beside the helper's log: it shows whether
+        # speech stopped at the mod or at the helper (2026-10-29).
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / "helper.log").write_text("x\n", encoding="utf-8")
+            (d / "speech.txt").write_text("I|Ship view. Deck 5, Sick bay, on\nQ|E: Toggle Power\n", encoding="utf-8")
+            text = app.build_report(d / "helper.log", [], [])
+        self.assertIn("Deck 5, Sick bay, on", text)
+        self.assertIn("E: Toggle Power", text)
+
     def test_backtick_is_watched(self):
         from voyager.helper import VK
         self.assertEqual(VK["grave"], 0xC0)
