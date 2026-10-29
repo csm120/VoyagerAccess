@@ -404,10 +404,35 @@ def launch_game(command):
         time.sleep(1)
     log.info("game started")
     clear_game_state()
+    return play_session(news=news)
+
+
+def attach_game():
+    """--attach: the mod started this helper because none was running (no
+    Steam launch option, or it was reset), so join the game that is already
+    running and speak until it closes (Casey, 2026-10-29: "the mod should
+    start the helper whenever possible"). The game's state files are left
+    alone: the mod is mid-session."""
+    if not single_instance():
+        log.info("attach: a helper is already running")
+        return 0
+    if not modfiles.game_is_running():
+        log.info("attach: the game is not running")
+        return 0
+    log.info("attach: started by the mod; the Steam launch option is probably missing")
+    keep_installed()
+    return play_session(greeting="Voyager Access speech started.")
+
+
+def play_session(news=None, greeting=None):
+    """Speaks and hands the mod its keys while the game runs; updates
+    install when it closes."""
     session = PlaySession()
     tolk = open_speech(DEFAULT_TOLK)
     heartbeat = HeartbeatWatch()
     try:
+        if greeting:
+            tolk.say(greeting, True)
         if news:
             tolk.say(news, False)
 
@@ -811,9 +836,12 @@ def main(argv=None):
     group.add_argument("--start-game", action="store_true")
     group.add_argument("--speech-check", metavar="REPORT")
     group.add_argument("--launch", nargs=argparse.REMAINDER, metavar="GAME")
+    group.add_argument("--attach", action="store_true")   # started by the mod (helperstart.lua)
     ap.add_argument("--from-setup", action="store_true")
     args = ap.parse_args(argv)
     setup_logging()
+    if args.attach:
+        return attach_game()
     if args.install_mod:
         return install_mod(from_setup=args.from_setup)
     if args.uninstall_mod:

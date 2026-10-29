@@ -191,10 +191,14 @@ local function heartbeat()
         f:write(tostring(now))
         f:close()
     end
+    -- The other direction: no helper running, so start one (helperstart.lua).
+    local ok, err = pcall(function() require("helperstart").check() end)
+    if not ok then print("[VoyagerAccess] helperstart error: " .. tostring(err) .. "\n") end
 end
 
 function M.install()
     M.on("ctrl+f11", say_log_state)
+    pcall(function() require("helperstart").loaded() end)
     -- Keys pressed before the mod loaded are not replayed.
     local f = io.open(PATH, "rb")
     if f then

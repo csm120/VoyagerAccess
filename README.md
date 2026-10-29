@@ -37,7 +37,7 @@ If the game is not installed yet, the installer says so and offers to open the g
 
 You don't need to do anything after installing:
 
-1. Voyager Access starts by itself when you start the game from Steam, and stops when you close the game. Nothing of it runs when you are not playing.
+1. Voyager Access starts by itself when you start the game from Steam, and stops when you close the game. Nothing of it runs when you are not playing. If the game was started some other way, or Steam lost its launch options, the mod starts the speech itself about 15 seconds after the game loads ("Voyager Access speech started.").
 2. If a game update removes Voyager Access from the game, Voyager Access puts itself back before the game starts.
 3. If you uninstall Voyager Access, the game's launch options in Steam go back to how they were before you installed it.
 

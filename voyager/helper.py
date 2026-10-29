@@ -675,6 +675,14 @@ class WindowsSpeech:
 
 
 HEARTBEAT = DATA_DIR / "heartbeat.txt"
+# The other direction: the helper writes the time here about every second
+# while it serves, so the mod can start one when none is running
+# (helperstart.lua; Casey, 2026-10-29).
+HELPER_ALIVE = DATA_DIR / "helper-alive.txt"
+
+
+def touch_alive():
+    HELPER_ALIVE.write_text(str(int(time.time())), encoding="utf-8")
 
 
 def _heartbeat_mtime():
@@ -963,6 +971,7 @@ def _serve_loop(tolk, tailer, keep_going, on_keys, note, timed, pressed_queue):
             # would end speech while the game still runs. Thirty failures in
             # a row (about 30 s) end it, so a check that can never answer
             # does not keep the helper running after the game has closed.
+            guarded("helper-alive.txt", touch_alive)
             going = [None]
             guarded("session check", lambda: going.__setitem__(0, keep_going()))
             check_failures = check_failures + 1 if going[0] is None else 0

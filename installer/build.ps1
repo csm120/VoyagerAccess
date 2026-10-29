@@ -21,12 +21,6 @@ if (($version -split '\.').Count -eq 3) {
     if ($top -ne $version) { throw "docs\WHATS_NEW.md starts with version ${top}, not ${version}: add this release's entry first" }
 }
 
-py -3.11 installer\build_payload.py
-if ($LASTEXITCODE) { throw "payload failed" }
-
-py -3.11 -m PyInstaller installer\VoyagerAccess.spec --distpath dist --workpath build\pyi --noconfirm --log-level WARN
-if ($LASTEXITCODE) { throw "PyInstaller failed" }
-
 # Authenticode (Azure Artifact Signing as Web Friendly Help LLC), before the
 # speech check so the check runs the signed exe. Not fatal on a machine that
 # cannot sign; check the release with installer\codesign.py --check.
@@ -35,6 +29,24 @@ $sign = ($LASTEXITCODE -eq 0)
 if ($sign) {
     $az = "$env:ProgramFiles\Microsoft SDKs\Azure\CLI2\wbin"
     if (Test-Path $az) { $env:PATH = "$az;$env:PATH" }
+}
+
+# voystart.dll, which the mod uses to start the helper with no window
+# (helperstart.lua, 2026-10-29); signed before the payload copies it.
+pwsh -NoProfile -File installer\build_native.ps1
+if ($LASTEXITCODE) { throw "voystart.dll failed" }
+if ($sign) {
+    py -3.11 installer\codesign.py build\native\voystart.dll
+    if ($LASTEXITCODE) { throw "signing voystart.dll failed" }
+}
+
+py -3.11 installer\build_payload.py
+if ($LASTEXITCODE) { throw "payload failed" }
+
+py -3.11 -m PyInstaller installer\VoyagerAccess.spec --distpath dist --workpath build\pyi --noconfirm --log-level WARN
+if ($LASTEXITCODE) { throw "PyInstaller failed" }
+
+if ($sign) {
     py -3.11 installer\codesign.py dist\VoyagerAccess\VoyagerAccess.exe
     if ($LASTEXITCODE) { throw "signing VoyagerAccess.exe failed" }
 } else {

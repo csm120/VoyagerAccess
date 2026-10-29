@@ -46,8 +46,13 @@ def main():
     shutil.copytree(REPO / "mod" / "VoyagerAccess", OUT / "ue4ss" / "Mods" / "VoyagerAccess")
     # What's new, read in the game with Ctrl+F12 (whatsnew.lua).
     shutil.copy2(REPO / "docs" / "WHATS_NEW.md", OUT / "ue4ss" / "Mods" / "VoyagerAccess" / "whats_new.md")
+    # Starts the helper with no window (helperstart.lua; built and signed by
+    # build.ps1 through build_native.ps1, 2026-10-29).
+    native = REPO / "build" / "native" / "voystart.dll"
+    if native.is_file():
+        shutil.copy2(native, OUT / "ue4ss" / "Mods" / "VoyagerAccess" / "voystart.dll")
     for required in ("dwmapi.dll", "ue4ss/UE4SS.dll", "ue4ss/Mods/VoyagerAccess/enabled.txt",
-                     "ue4ss/Mods/VoyagerAccess/Scripts/main.lua"):
+                     "ue4ss/Mods/VoyagerAccess/Scripts/main.lua", "ue4ss/Mods/VoyagerAccess/voystart.dll"):
         if not (OUT / required).is_file():
             sys.exit(f"payload is missing {required}")
     print(f"payload: {sum(1 for p in OUT.rglob('*') if p.is_file())} files in {OUT}")
