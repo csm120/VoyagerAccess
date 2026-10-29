@@ -1,5 +1,13 @@
 # New in Voyager Access
 
+## Thursday October 29th 2026
+
+Version 0.3.93
+
+- Fixed: in German and the other languages, the word for cycle was said twice, like "pro ZYKLUS Zyklus". The game writes its own word right before the cycle icon, and now the mod reads it once, in every language the game has.
+- Fixed: in Russian, "циклов" right before a cycle icon was said twice too, for a different reason.
+- Fixed: an away mission team far over the requirement said things like "116% chance of a critical success". It now stops at 100%, the same as the game's chance bar, which can't be fuller than full.
+
 ## Wednesday October 28th 2026
 
 Version 0.3.92

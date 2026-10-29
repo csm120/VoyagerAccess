@@ -866,7 +866,11 @@ local function chance_words()
     if not cleared_by_game and os.clock() - last_chance.at >= 30 then return nil end
     if last_chance.crit then
         if last_chance.value <= 0 then return "Will succeed" end
-        return "Will succeed. " .. last_chance.value .. "% chance of a critical success"
+        -- The game sends more than 1 when the team is far over the
+        -- requirement: "Team Command 69, 32 needed ... 116% chance" (Casey's
+        -- own play, 0.3.92). A bar is never fuller than full, so the most the
+        -- screen shows is 100%.
+        return "Will succeed. " .. math.min(last_chance.value, 100) .. "% chance of a critical success"
     end
     if last_chance.value < 100 then
         return "Success chance " .. last_chance.value .. "%"

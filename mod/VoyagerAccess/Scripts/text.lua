@@ -125,6 +125,29 @@ end
 
 local IMG = '<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'
 
+-- The game's own cycle words, from the text before every cycle icon in its
+-- eight languages (2026-10-29): CYCLE, ZYKLUS/ZYKLEN, CICLO, CYKL/CYKLÓW,
+-- цикл/цкл, サイクル, 周期. A word starting with a stem is one; in Japanese
+-- and Chinese the word runs on from the text before it, so it ends with one.
+local CYCLE_STEMS = { "cycl", "zykl", "cicl", "cykl", "цикл", "цкл" }
+local CYCLE_TAILS = { "サイクル", "周期" }
+local function is_cycle_word(word)
+    if word == "" then return false end
+    local ok, l = pcall(function()
+        local parts = {}
+        for _, c in utf8.codes(word) do parts[#parts + 1] = utf8.char(lower_cp(c)) end
+        return table.concat(parts)
+    end)
+    if not ok then return false end
+    for _, stem in ipairs(CYCLE_STEMS) do
+        if l:sub(1, #stem) == stem then return true end
+    end
+    for _, tail in ipairs(CYCLE_TAILS) do
+        if #l >= #tail and l:sub(-#tail) == tail then return true end
+    end
+    return false
+end
+
 -- Second words of room and system names ("Warp Core", "Cargo Bay"): a line
 -- break before one is a wrapped name, not a new sentence.
 local NAME_TAILS = { Core = true, Bay = true, Support = true, Engineering = true, Laboratory = true,
@@ -157,17 +180,25 @@ function M.prep(s)
     -- the same line only.
     s = s:gsub(IMG .. "[ \t]*<%w+>[ \t]*([%+%-]?[%d,%.]+)[ \t]*</>", function(id, n) return n .. " " .. unit(id) end)
     s = s:gsub(IMG .. "[ \t]*([%+%-]?%d[%d,%.]*)", function(id, n) return n .. " " .. unit(id) end)
-    -- Number then icon: "3 <img id="Cycles"/>".
-    s = s:gsub("(%d)%s*" .. IMG, function(d, id) return d .. " " .. unit(id) end)
+    -- Number then icon: "3 <img id="Cycles"/>". Digits spelled out: %d took
+    -- the last byte of the Cyrillic "в" (0xB2, a superscript two in the
+    -- Windows locale), so "циклов <img>" was read "циклов циклов" (2026-10-29).
+    s = s:gsub("([0-9])%s*" .. IMG, function(d, id) return d .. " " .. unit(id) end)
     -- "per" then an icon: "-2 morale per <img id="Cycle"/>" read "-2 morale
     -- per" (The Long Way Home, Q Trials, VM, 2026-10-15).
     s = s:gsub("([Pp]er)%s*" .. IMG, function(p, id) return p .. " " .. (unit(id):gsub("s$", "")) end)
     -- The other languages' "per" ("-6 HÜLLE pro <img id="Cycle"/>" was read
     -- "-6 HÜLLE pro.", German, VM, 2026-10-26): a Cycle icon still here is
-    -- the word "cycle", from the mod's tables in every language.
-    s = s:gsub("[ \t]*" .. IMG, function(id)
+    -- the word "cycle", from the mod's tables in every language. But the game
+    -- nearly always writes its own cycle word right before the icon, in every
+    -- language ("pro ZYKLUS <img>" 31 times in German, "в цикл", "サイクル",
+    -- "每周期"), and German heard "pro ZYKLUS Zyklus" (firefly82's review,
+    -- 2026-10-29): after the game's word the icon is dropped.
+    s = s:gsub("([^%s<>]*)(<?/?>?)([ \t]*)" .. IMG, function(word, close, sp, id)
         local l = id:lower()
-        if l == "cycle" or l == "cycles" then return " " .. require("tr").word("cycle") end
+        if l ~= "cycle" and l ~= "cycles" then return nil end
+        if is_cycle_word(word) then return word .. close end
+        return word .. close .. " " .. require("tr").word("cycle")
     end)
     -- A name already said before the number: "TRITANIUM +30 tritanium" and
     -- "FOOD -150 food" in event results (Q Trials, VM, 2026-10-15) read
