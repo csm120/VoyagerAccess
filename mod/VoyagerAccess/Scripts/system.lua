@@ -430,7 +430,8 @@ local function status(p)
     end)
     if not explored(p.actor) then return "not scanned" end
     local res = resources(p.poi)
-    if res == "" then res = found[p.path] or "" end
+    local scan_text = res == "" and found[p.path] or nil
+    if scan_text then res = scan_text end
     -- A found text that ends a sentence went before a comma: "We need to
     -- scan it to find out more., 6 cycles away" (VM, 2026-10-21).
     res = (res:gsub("%s*%.%s*$", ""))
@@ -450,6 +451,11 @@ local function status(p)
             end
         end)
     end)
+    -- What the scan found described the event; once it is over the game's
+    -- panel shows it no more, and "Spatial Anomaly, Our sensors have
+    -- detected ..., done" was said after the event (Casey's play,
+    -- 2026-10-29). Resources still on the point are kept.
+    if done and scan_text then res = "" end
     if done then return (res ~= "" and (res .. ", ") or "") .. require("tr").word("done") end
     return res ~= "" and res or "scanned"
 end

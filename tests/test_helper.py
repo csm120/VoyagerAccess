@@ -224,7 +224,7 @@ class KeyWatcherTests(unittest.TestCase):
 
     def test_all_keys_named(self):
         self.assertEqual(sorted(VK), sorted(
-            ["enter", "backspace", "escape", "up", "down", "left", "right", "r", "o", "i", "n", "grave", "f1", "pageup", "pagedown", "home", "end", "c", "v", "j", "h", "f12"]))
+            ["enter", "backspace", "escape", "up", "down", "left", "right", "r", "o", "i", "n", "grave", "f1", "pageup", "pagedown", "home", "end", "c", "v", "j", "h", "k", "f12"]))
 
     def test_escape_reaches_the_mod(self):
         # Escape opened the game's pause menu while the mod's C list kept
@@ -252,8 +252,8 @@ class KeyEventsTests(unittest.TestCase):
         # otherwise go letter by letter into UE4SS.log, which players paste
         # into public bug reports. E, F and T (the game's quick actions) and
         # the mod's own keys are still named.
-        self.assertEqual(self.ev.key(0x4B, True, 0, False), ([], "T a character key down"))       # K
-        self.assertEqual(self.ev.key(0x4B, False, 50, False), ([], "T a character key up after 50 ms"))
+        self.assertEqual(self.ev.key(0x4C, True, 0, False), ([], "T a character key down"))       # L
+        self.assertEqual(self.ev.key(0x4C, False, 50, False), ([], "T a character key up after 50 ms"))
         self.assertEqual(self.ev.key(0x37, True, 60, False)[1], "T a character key down")        # 7
         self.assertEqual(self.ev.key(0xBE, True, 70, False)[1], "T a character key down")        # period
         self.assertEqual(self.ev.key(0x46, True, 80, False)[1], "T F down")

@@ -907,4 +907,10 @@ return {
     ["R repeats the item"] = "R wiederholt den Eintrag",
     ["Loading. {s}"] = "Wird geladen. {s}",
     ["Loading, please wait."] = "Wird geladen, bitte warten.",
+    ["{n}, {s}, {s}"] = "{n}, {s}, {s}",
+    ["{n}, {s} {s}"] = "{n}, {s} {s}",
+    ["Abilities are read in battle."] = "Fähigkeiten werden im Kampf vorgelesen.",
+    ["No abilities in this battle."] = "Keine Fähigkeiten in diesem Kampf.",
+    ["K reads the abilities with their keys."] = "K liest die Fähigkeiten mit ihren Tasten.",
+    ["K: the abilities with their keys and whether each is ready"] = "K: die Fähigkeiten mit ihren Tasten und ob jede bereit ist",
 }

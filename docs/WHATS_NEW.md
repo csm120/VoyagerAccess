@@ -1,5 +1,18 @@
 # New in Voyager Access
 
+## Thursday October 29th 2026, fifth update
+
+Version 0.3.97
+
+Fixes from watching a real evening of play, from Ocampa to the Caretaker's hidden ending.
+
+- New: in battle, K reads just the abilities, each with the key that uses it and whether it's ready, like "1, Evasive Maneuver, ready. 2, Shield Hacking, ready in 13 seconds." I twice still reads everything. The arrows in battle are the game's energy keys, and moving energy resumes a paused battle, so K is the quick way to check your abilities without unpausing.
+- Changed: when an ability is ready again, you hear its key first, like "2, Shield Hacking ready".
+- Fixed: closing a tutorial in the middle of a battle let the battle run again without a word. Now you hear "Combat resumed".
+- Fixed: the credits after the Caretaker's hidden ending were silent, and Backspace couldn't close them, so you were stuck there. They read as a list now, like the other credits.
+- New: a loading screen that's still up after two seconds says "Loading, please wait." The scene load when you arrive at the Array used to run more than ten seconds in silence.
+- Fixed: once a point's event was over, the System Map still read the event's whole description before "done". Now it just says done.
+
 ## Thursday October 29th 2026, fourth update
 
 Version 0.3.96

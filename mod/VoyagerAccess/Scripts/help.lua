@@ -37,7 +37,7 @@ local HELP = {
         .. "Enter on Start Game holds it for you. Escape goes back.",
     combat = "Enter opens Orders; in the order wheel, Up and Down move and Enter picks. Space pauses and resumes. "
         .. "1 to 6 use the heroes' abilities. Left and Right pick a system and Up and Down move energy to it. "
-        .. "I reads both hulls, the order and torpedoes; I twice reads everything, with the energy. O reads the combat goal.",
+        .. "I reads both hulls, the order and torpedoes; I twice reads everything, with the energy. K reads the abilities with their keys. O reads the combat goal.",
     -- F1 in the tech tree and the Overview gave the general keys and the
     -- menu keys (VM, 2026-10-21).
     techtree = "Up and Down move. Home and End go to the first and last. "
@@ -649,6 +649,21 @@ function M.install()
             if tries < 60000 / every then ExecuteInGameThreadWithDelay(every, look) end
         end
         ExecuteInGameThreadWithDelay(every, look)
+        -- Said once when it is still up 2 s later, as the screen shows it:
+        -- the Array arrival's scene load ran 11 to 13 s in silence (Casey's
+        -- play, 2026-10-29). Short loads (under 2 s) stay quiet.
+        ExecuteInGameThreadWithDelay(2000, function()
+            if load_watch ~= mine then return end
+            -- Not again just after a key said it (keys.lua): "Loading,
+            -- please wait." twice in two seconds (demo, VM, 2026-10-29).
+            if popups.loading_said_at and os.clock() - popups.loading_said_at < 3 then return end
+            local okl, step = pcall(popups.loading_step)
+            if okl and step then
+                local line = step ~= "" and ("Loading. " .. step) or "Loading, please wait."
+                print("[VoyagerAccess] loading: " .. line .. "\n")
+                require("speech").say(line, false)
+            end
+        end)
     end)
     popups.on_close(function(_, cls)
         closed_class, closed_at = cls, os.clock()

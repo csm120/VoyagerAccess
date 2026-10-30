@@ -907,4 +907,10 @@ return {
     ["R repeats the item"] = "R repite el elemento",
     ["Loading. {s}"] = "Cargando. {s}",
     ["Loading, please wait."] = "Cargando, espera.",
+    ["{n}, {s}, {s}"] = "{n}, {s}, {s}",
+    ["{n}, {s} {s}"] = "{n}, {s} {s}",
+    ["Abilities are read in battle."] = "Las habilidades se leen en combate.",
+    ["No abilities in this battle."] = "No hay habilidades en este combate.",
+    ["K reads the abilities with their keys."] = "K lee las habilidades con sus teclas.",
+    ["K: the abilities with their keys and whether each is ready"] = "K: las habilidades con sus teclas y si cada una está lista",
 }

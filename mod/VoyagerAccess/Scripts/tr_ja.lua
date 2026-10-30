@@ -958,4 +958,10 @@ return {
     ["R repeats the item"] = "Rで項目を繰り返します",
     ["Loading. {s}"] = "読み込み中。{s}",
     ["Loading, please wait."] = "読み込み中です。お待ちください。",
+    ["{n}, {s}, {s}"] = "{n}、{s}、{s}",
+    ["{n}, {s} {s}"] = "{n}、{s} {s}",
+    ["Abilities are read in battle."] = "アビリティは戦闘中に読み上げます。",
+    ["No abilities in this battle."] = "この戦闘にアビリティはありません。",
+    ["K reads the abilities with their keys."] = "Kでアビリティとそのキーを読み上げます。",
+    ["K: the abilities with their keys and whether each is ready"] = "K: アビリティとそのキー、それぞれ準備完了かどうか",
 }

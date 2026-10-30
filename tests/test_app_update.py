@@ -509,12 +509,25 @@ class StartGameTests(unittest.TestCase):
                 self.appid = appid
         app.steam.find_games = lambda s=None: [G("2643390"), G("4054540")]
         os.startfile = lambda target: opened.append(target)
+        handlers = list(app.log.handlers)
+        saved_logging = app.setup_logging
+        app.setup_logging = lambda: None
         try:
             self.assertEqual(app.main(["--start-game"]), 0)
         finally:
+            app.setup_logging = saved_logging
             app.steam.find_games = saved[0]
             if saved[1]:
                 os.startfile = saved[1]
+        # main's setup_logging put the real helper.log on the "voyager"
+        # logger, and every later test's deliberate failures ("boom", "main
+        # thread broke", "lost contact") were written into a live player's
+        # log (Casey's own session, 2026-10-29).
+        added = [h for h in app.log.handlers if h not in handlers]
+        for h in added:
+            h.close()
+            app.log.removeHandler(h)
+        self.assertEqual(added, [])
         self.assertEqual(opened, ["steam://rungameid/2643390"])
 
 

@@ -84,16 +84,29 @@ end
 
 -- The credits text is the scroll box's own rich text (CreditsScrollBox in
 -- the CXX dump), read from that widget, not by searching every rich text in
--- the game.
+-- the game. The Caretaker hidden ending's credits keep it one box deeper,
+-- in a VerticalBox (Casey stuck on them, 2026-10-29): searched a few levels.
 local function credits_text(w)
     local box = w.CreditsScrollBox
     if not (box and box:IsValid()) then return nil end
     local RT = StaticFindObject("/Script/UMG.RichTextBlock")
-    for i = 0, box:GetChildrenCount() - 1 do
-        local c = box:GetChildAt(i)
-        if c and c:IsValid() and RT and c:IsA(RT) then return c:GetText():ToString() end
+    if not RT then return nil end
+    local function find(panel, depth)
+        local okn, n = pcall(function() return panel:GetChildrenCount() end)
+        if not okn then return nil end
+        for i = 0, n - 1 do
+            local c = panel:GetChildAt(i)
+            if c and c:IsValid() then
+                if c:IsA(RT) then return c:GetText():ToString() end
+                if depth < 3 then
+                    local s = find(c, depth + 1)
+                    if s then return s end
+                end
+            end
+        end
+        return nil
     end
-    return nil
+    return find(box, 1)
 end
 
 local function opened(path)

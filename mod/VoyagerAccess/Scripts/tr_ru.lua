@@ -958,4 +958,10 @@ return {
     ["R repeats the item"] = "R повторяет пункт",
     ["Loading. {s}"] = "Загрузка. {s}",
     ["Loading, please wait."] = "Загрузка, подождите.",
+    ["{n}, {s}, {s}"] = "{n}, {s}, {s}",
+    ["{n}, {s} {s}"] = "{n}, {s} {s}",
+    ["Abilities are read in battle."] = "Способности читаются в бою.",
+    ["No abilities in this battle."] = "В этом бою нет способностей.",
+    ["K reads the abilities with their keys."] = "K читает способности с их клавишами.",
+    ["K: the abilities with their keys and whether each is ready"] = "K: способности с их клавишами и готова ли каждая",
 }

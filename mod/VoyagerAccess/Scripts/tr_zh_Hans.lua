@@ -907,4 +907,10 @@ return {
     ["R repeats the item"] = "按R重复当前项目",
     ["Loading. {s}"] = "正在加载。{s}",
     ["Loading, please wait."] = "正在加载，请稍候。",
+    ["{n}, {s}, {s}"] = "{n}，{s}，{s}",
+    ["{n}, {s} {s}"] = "{n}，{s} {s}",
+    ["Abilities are read in battle."] = "技能在战斗中朗读。",
+    ["No abilities in this battle."] = "本场战斗没有技能。",
+    ["K reads the abilities with their keys."] = "按K朗读技能及其按键。",
+    ["K: the abilities with their keys and whether each is ready"] = "K：技能及其按键，以及每个技能是否就绪",
 }

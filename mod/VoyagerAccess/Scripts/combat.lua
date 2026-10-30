@@ -200,7 +200,10 @@ end
 -- The heroes' abilities on keys 1 to 3 (WBP_ExtAbility: Index, Ability
 -- with AbilityName, HeroID, CooldownLeft, ActiveTimeLeft), seen
 -- 2026-10-14 as Evasive Maneuver, Rousing Speech, Phaser Double Damage.
-function M.abilities()
+-- short (K): key, ability and state only, no hero; I twice was too long to
+-- listen through for the keys, and arrows in battle are the game's energy
+-- keys, which end a pause (Casey, 2026-10-29).
+function M.abilities(short)
     local list = {}
     -- Not checked as shown: screen.shown said no while they were on screen.
     for _, x in ipairs(FindAllOf("WBP_ExtAbility_C") or {}) do
@@ -220,7 +223,8 @@ function M.abilities()
                 end
                 local okv, vis = pcall(function() return require("screen").shown(x) end)
                 list[#list + 1] = { i = x.Index, key = x.Index .. "|" .. name .. "|" .. hero, shown = okv and vis,
-                    text = string.format("%d, %s, %s, %s", x.Index + 1, name, hero, state) }
+                    text = short and string.format("%d, %s, %s", x.Index + 1, name, state)
+                        or string.format("%d, %s, %s, %s", x.Index + 1, name, hero, state) }
             end)
         end
     end
@@ -247,7 +251,18 @@ function M.abilities()
     end
     local out = {}
     for _, it in ipairs(list) do out[#out + 1] = it.text end
+    if short then return #out > 0 and (table.concat(out, ". ") .. ".") or nil end
     return #out > 0 and ("Abilities: " .. table.concat(out, "; ")) or nil
+end
+
+-- K: the abilities with their keys, nothing else.
+function M.say_abilities()
+    if not M.active() then
+        speech.say("Abilities are read in battle.", true)
+        return
+    end
+    local s = M.abilities(true)
+    speech.say(s or "No abilities in this battle.", true)
 end
 
 -- "Combat is paused! Complete Tutorial Steps to Continue" (or "Toggle
@@ -615,7 +630,9 @@ local function abilities_poll()
                 local said = state
                 if was == "ready" and state == "cooldown" then said = require("tr").word("used") end
                 if was and was ~= state and said ~= "cooldown" then
-                    local text = string.format("%s %s", plain(ab.AbilityName:ToString()), said)
+                    -- With its key first, as the ability bar shows it
+                    -- (Casey, 2026-10-29).
+                    local text = string.format("%d, %s %s", x.Index + 1, plain(ab.AbilityName:ToString()), said)
                     print("[VoyagerAccess] combat: " .. text .. "\n")
                     speech.say(text, false)
                 end
@@ -737,9 +754,16 @@ end
 -- pause it too.
 local said_pause = false
 local resume_since = nil
+-- The last pause event's bPaused (OnCombatPauseChanged(bool bPaused, ...)),
+-- nil before the first. Closing a tutorial ran the battle again while the
+-- pause text still showed for the one event that came, so "Combat
+-- resumed" was never said (Casey's battles, 2026-10-29): the game's word
+-- that the battle runs outranks the text.
+local event_paused = nil
 
 local function pause_poll(w)
     local p = M.paused_text(w)
+    if event_paused == false then p = nil end
     -- The pause text hides while the order wheel is open, and the wheel
     -- keeps the battle stopped: Enter on a paused battle said "Combat
     -- resumed" with the wheel up and nothing moving (VM, 2026-10-21). Said
@@ -1031,13 +1055,16 @@ local function ensure_pause_hook()
     local w = main()
     if not w then return end
     local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
-    pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function(_, _, msg)
+    pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function(_, paused, msg)
         -- Which message the screen shows under the heading (paused_text).
         local okm, m = pcall(function() return msg:get() end)
         if okm and type(m) == "number" then pause_message = m end
+        local okp, b = pcall(function() return paused:get() end)
+        -- Not "x and b or nil": that turns the false that matters into nil.
+        if okp and type(b) == "boolean" then event_paused = b else event_paused = nil end
         -- A pre callback: the pause text is shown on the next tick.
         ExecuteInGameThread(function()
-            print("[VoyagerAccess] combat: pause event, message " .. tostring(pause_message) .. "\n")
+            print("[VoyagerAccess] combat: pause event, paused " .. tostring(event_paused) .. ", message " .. tostring(pause_message) .. "\n")
             pcall(function() if M.active() then pause_poll(main()) end end)
         end)
     end)
@@ -1081,7 +1108,7 @@ local function poll()
     if M.setup_up() then M.setup_last = os.time() end
     if not hooked and M.screen_up() then energy_hooks() end
     if not M.active() then
-        said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil
+        said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil event_paused = nil
         tracked = {} toast_said = {} torpedo_coming = false resume_since = nil
         -- The battle's first levels are set as it starts: not spoken.
         energy_quiet_until = os.time() + 3
@@ -1167,6 +1194,7 @@ local function fewer_heroes_focus()
 end
 
 function M.install()
+    require("keys").on("k", M.say_abilities)
     require("popups").on_widget("WBP_CombatMainWidget_C", function(p)
         made[p] = true
         print("[VoyagerAccess] combat: screen made " .. tostring(p:match("([%w_]+)$")) .. "\n")

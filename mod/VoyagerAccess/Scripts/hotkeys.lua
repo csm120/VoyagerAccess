@@ -82,6 +82,7 @@ local GROUPS = {
         "I: both hulls, the order and torpedoes",
         "I twice: both ships, the enemies, the order, torpedoes, abilities and the goal",
         "O: the combat goal",
+        "K: the abilities with their keys and whether each is ready",
         "Space, the game's key: pause and resume",
         "1 to 3, the game's keys: the heroes' abilities",
         "Tab, the game's key: next target",

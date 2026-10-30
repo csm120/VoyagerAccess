@@ -156,8 +156,12 @@ follows them.
    I twice reads everything: both ships with shields and systems, the
    enemies (a ship that gave up says "surrendered"), the ally, the order,
    torpedoes, abilities, energy and the goal (Casey, 2026-10-28). O reads
-   the goal. Target changes, abilities turning active or
-   ready, pauses, energy ("Engine 1 of 2, 2 spare") and the game's battle
+   the goal. K reads only the abilities, each with its key and whether it
+   is ready ("1, Evasive Maneuver, ready. 2, Shield Hacking, ready in 13
+   seconds."), because I twice is long and the arrows in battle are the
+   game's energy keys, which end a pause (Casey, 2026-10-29). Target
+   changes, abilities turning active or ready (with the key first: "2,
+   Shield Hacking ready"), pauses, energy ("Engine 1 of 2, 2 spare") and the game's battle
    messages ("An enemy ship has fled combat, Captain.") are spoken as they
    happen.
 11. Away team selection: Enter on a slot chooses or changes its hero. Once

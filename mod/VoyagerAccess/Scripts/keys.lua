@@ -146,6 +146,7 @@ local function dispatch()
                     local line = step ~= "" and ("Loading. " .. step) or "Loading, please wait."
                     print("[VoyagerAccess] loading: " .. line .. "\n")
                     pcall(function() require("speech").say(line, true) end)
+                    pcall(function() require("popups").loading_said_at = os.clock() end)
                     if name == "i" then fn = nil end
                 end
             end
