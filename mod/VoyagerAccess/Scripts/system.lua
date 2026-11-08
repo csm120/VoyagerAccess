@@ -1042,7 +1042,9 @@ local function run(action, p)
             speech.say(already_at(name, p.actor), true)
             return
         end
-        speech.say("Setting course for " .. name, true)
+        -- No "Setting course for": "Under way to" follows when the trip
+        -- starts and a refused course is said, so the name came five times
+        -- in seven seconds (Casey, 2026-11-07).
         set_course(name, p.path)
     end
 end
@@ -1597,6 +1599,12 @@ function M.enter()
         menu_map = context_active("IMC_System_Map") and "IMC_System_Map" or "IMC_Sector_Map"
         list_said = false
         ACTIONS = BASE_ACTIONS
+        -- The point Voyager is at: the selection finds nothing under the
+        -- pointer and no panel comes, so the list was said only after 2 s
+        -- of silence, or not at all (Casey's play, 2026-11-07). Said at
+        -- once; a panel that still comes is read after it.
+        local here = ship_at_point()
+        if here and here ~= "" and here == p.path then open_list(false) end
         if not select_in_game(p, open_list) then open_list(false) end
         return
     end
@@ -1611,10 +1619,15 @@ end
 -- button on the point, one action). Called by dialogue.skip only when there
 -- is no dialogue or cutscene to skip. True when it handled the key.
 function M.course_key()
-    -- The System Map only, with nothing in front of it (no window, no mod
-    -- list): on the Sector Map the selection cannot be made and it went
-    -- straight to travel (GPT review, 2026-11-07).
-    if M.inspect_view() or not context_active("IMC_System_Map") then return false end
+    -- Either map, with nothing in front of it (no window, no mod list). On
+    -- the Sector Map no selection can be made, so the course is set at
+    -- once, as the action list's Set course does there (Casey, 2026-11-07:
+    -- "Nothing to skip" on the Sector Map; GPT's review had kept it to the
+    -- System Map).
+    if M.inspect_view() then return false end
+    local map = context_active("IMC_System_Map") and "IMC_System_Map"
+        or (context_active("IMC_Sector_Map") and "IMC_Sector_Map")
+    if not map then return false end
     local okc, ctx = pcall(function() return require("help").context() end)
     if not (okc and ctx == "system") then return false end
     local p0 = selected_point()
@@ -1622,6 +1635,16 @@ function M.course_key()
     -- Only the path is kept across the wait: the point is found again when
     -- the course starts (never keep a UObject across ticks).
     local path = p0.path
+    -- Already there: said at once, as Set course in the action list says it.
+    -- Waiting for the selection's panel first left about 3 s of silence
+    -- (the panel never came with the ship on the point; Casey's play,
+    -- 2026-11-07, three presses before "Voyager is already at").
+    local here = ship_at_point()
+    if here and here ~= "" and here == path then
+        menu = nil
+        run("Set course", p0)
+        return true
+    end
     p0 = nil
     -- The point is selected in the game first, as Enter does: without it the
     -- game took no course ("Setting course for Class D Planet", then "was
@@ -1631,17 +1654,28 @@ function M.course_key()
     -- On Set course (2), not Scan: a second Enter while the selection is
     -- under way then sets course too, where it scanned (Fable review,
     -- 2026-11-07).
-    ACTIONS, menu, list_said, menu_map = BASE_ACTIONS, 2, true, "IMC_System_Map"
+    ACTIONS, menu, list_said, menu_map = BASE_ACTIONS, 2, true, map
+    local popups = require("popups")
     local function go()
+        -- The panel's mute ends with the selection, however it ends: it
+        -- swallowed a later Enter's panel within its 3 s (reviews, 2026-11-08).
+        popups.mute_panel_until = nil
         if menu == nil then return end   -- Backspace or a move in between
         menu = nil
-        if not context_active("IMC_System_Map") then return end
+        if not context_active(map) then return end
         local p = selected_point()
         if not (p and p.path == path) then return end
         run("Set course", p)
     end
     local pnow = selected_point()
-    if not select_in_game(pnow, go) then go() end
+    -- The selection's panel is not said: the point was heard on the arrow
+    -- (Casey, 2026-11-07). Only while a selection is under way: none on the
+    -- Sector Map or when it cannot be made.
+    if select_in_game(pnow, go) then
+        popups.mute_panel_until = os.clock() + 3
+    else
+        go()
+    end
     return true
 end
 
@@ -1683,6 +1717,8 @@ end
 function M.menu_close()
     if not menu then return false end
     menu = nil
+    -- A Shift+Enter's panel mute goes with it (GPT review, 2026-11-08).
+    pcall(function() require("popups").mute_panel_until = nil end)
     speech.say("Closed", true)
     return true
 end

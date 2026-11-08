@@ -54,7 +54,7 @@ local GROUPS = {
         "Up and Down: points of interest, or star systems on the Sector Map",
         "Home and End: the nearest and the farthest",
         "Enter: Scan and Set course. Backspace closes that list",
-        "Shift Enter on the System Map: set course at once",
+        "Shift Enter: set course at once",
         "I: adds the trip's progress while Voyager is under way",
     } },
     { "Events at a point of interest", {

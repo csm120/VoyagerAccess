@@ -764,6 +764,9 @@ local event_paused = nil
 local function pause_poll(w)
     local p = M.paused_text(w)
     if event_paused == false then p = nil end
+    -- A tutorial's pause (said_pause "tutorial", set by the pause event)
+    -- shows no pause text: still paused while the game says so.
+    if not p and said_pause == "tutorial" and event_paused == true then resume_since = nil return end
     -- The pause text hides while the order wheel is open, and the wheel
     -- keeps the battle stopped: Enter on a paused battle said "Combat
     -- resumed" with the wheel up and nothing moving (VM, 2026-10-21). Said
@@ -1062,6 +1065,17 @@ local function ensure_pause_hook()
         local okp, b = pcall(function() return paused:get() end)
         -- Not "x and b or nil": that turns the false that matters into nil.
         if okp and type(b) == "boolean" then event_paused = b else event_paused = nil end
+        -- A tutorial's pause shows no pause text, so nothing was said and
+        -- its end was silent too: Enter closed "Tutorial: Torpedoes" and
+        -- the battle ran on unheard (Casey's play, 2026-11-07). A pause that
+        -- began with a tutorial up is marked as said, so pause_poll says
+        -- "Combat resumed" its usual way: after the order wheel and 0.4 s of
+        -- no pause (GPT review, 2026-11-08). Known from the tutorial on
+        -- screen, not from when the mod closed it (Fable review).
+        if event_paused == true and not said_pause then
+            local okt, up = pcall(function() return require("popups").tutorial_open() end)
+            if okt and up then said_pause = "tutorial" end
+        end
         -- A pre callback: the pause text is shown on the next tick.
         ExecuteInGameThread(function()
             print("[VoyagerAccess] combat: pause event, paused " .. tostring(event_paused) .. ", message " .. tostring(pause_message) .. "\n")

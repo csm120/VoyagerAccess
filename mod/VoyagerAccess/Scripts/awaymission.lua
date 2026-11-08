@@ -1243,9 +1243,15 @@ function M.mission_task(dir)
     refresh()
     if #mission_items == 0 then return end
     local i = mission_index or 1
-    -- Page Up from a hero goes to its own task first.
+    -- From a hero, back from its own task: Left on Kes under Task 2 said
+    -- Task 2 again and took a second Left to reach Task 1 (Casey's play,
+    -- 2026-11-07: "I should switch off of one and on to the other"). Under
+    -- the first task it is the first task, as a list end is.
     if dir < 0 and mission_items[i] and mission_items[i].kind ~= "choice" then
         while i > 1 and mission_items[i].kind ~= "choice" do i = i - 1 end
+        local j = i - 1
+        while j >= 1 and mission_items[j].kind ~= "choice" do j = j - 1 end
+        if j >= 1 then i = j end
     else
         local j = i + dir
         while mission_items[j] and mission_items[j].kind ~= "choice" do j = j + dir end

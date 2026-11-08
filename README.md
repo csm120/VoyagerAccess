@@ -102,7 +102,7 @@ System Map and Sector Map:
 
 1. Up and Down Arrow move through the points of interest, or the star systems on the Sector Map. Each says whether it has been scanned and which resources it has. A star system also says how many of its points are done, like "6 of 13 points done", as its marker shows.
 2. Enter on the System Map picks the place in the game, so you hear the game's own details for it, then "Menu" and a list of actions: Scan, or Set course. On the Sector Map Enter goes straight to the list. Set course puts the pointer on the place and holds the game's own Set course, the way a mouse player does; if the game doesn't take it after two tries, the mod asks the game to fly there directly. While you travel you hear when you are under way, halfway and arrived; I adds the trip's progress.
-3. Shift+Enter on a point of the System Map sets course to it at once, without the list. In a conversation or cutscene, Shift+Enter still skips.
+3. Shift+Enter on a point of the System Map, or a system of the Sector Map, sets course to it at once, without the list. In a conversation or cutscene, Shift+Enter still skips.
 
 Point of interest events: each option reads its reward, its risk, and its chances of a good or bad outcome. Locked options are read when the event opens, and with R.
 

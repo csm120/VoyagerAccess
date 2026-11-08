@@ -117,8 +117,8 @@ follows them.
    opens the action list (Scan, Set course, and the panel's third button,
    Inspect, under the game's own name when the game shows it). Inspect opens
    the game's close view of the point, which has no text; Backspace leaves
-   it. Shift+Enter on a point sets course to it at once, without the
-   list (outside a conversation or cutscene, where Shift+Enter skips).
+   it. Shift+Enter on a point, or on a system of the Sector Map, sets
+   course to it at once, without the list (outside a conversation or cutscene, where Shift+Enter skips).
    The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds
    without a move). Set course says "Under way to", "Halfway to" and

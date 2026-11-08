@@ -1,5 +1,24 @@
 # New in Voyager Access
 
+## Sunday November 8th 2026
+
+Version 0.3.99
+
+Fixes from an evening of play, from the Array to the Phage.
+
+- New: Shift+Enter works on the Sector Map too. On a star system it sets course straight there, like Set course in its menu.
+- Changed: setting a course says the point's name less often. "Setting course for" is gone, since "Under way to" follows as soon as the ship moves, and Shift+Enter no longer reads the point's details panel, which you heard on the arrow anyway.
+- Fixed: Shift+Enter or Enter on the point Voyager is already at took about three seconds to answer. You hear "Voyager is already at" or the menu right away now.
+- Fixed: Escape or Resume in the pause menu said nothing when the game came back. You hear the view again, like "Ship view. Deck 11, Main Engineering".
+- Fixed: in a window's list, like a room's Crafting tab with one item, pressing an arrow at the end of the list said nothing after the first time. Every press says the item now.
+- New: Up or Down in a room window with no buttons at all, like Emergency Quarters, says "No buttons here. Escape closes the window." instead of nothing.
+- Fixed: when a tutorial closed over another window or a conversation, nothing was said, and it sounded like everything was closed. You hear the window's button or the conversation line again.
+- Fixed: "Analysis started" was cut off after a tenth of a second by the next button's name. It's said whole now, and so are "Crafting started" and "Crafting cancelled".
+- Fixed: closing a tutorial in battle, like Torpedoes, could still let the fight run on without a word. Now you hear "Combat resumed".
+- Changed: in an away mission, Left on a hero goes to the task before, not back to the heading of the one you're in.
+- Fixed: the arrows on a conversation line said nothing while one of the game's notifications was up.
+- Changed: "Lvl 1" in the game's text is said as "level 1".
+
 ## Saturday November 7th 2026
 
 Version 0.3.98

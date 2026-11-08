@@ -494,7 +494,14 @@ function M.line_key()
             return
         end
         for _, p in ipairs(require("popups").open_windows()) do
-            if not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("RoomPrompt", 1, true) then over = true end
+            -- A toast takes no keys: Down on "Neelix: It's a deal!" said
+            -- nothing under WBP_Toast_Notification (Casey's play, 2026-11-07).
+            -- Nor a tutorial just closed and its pages, still fading out
+            -- (popups.closing_tutorial; Fable review, 2026-11-08).
+            local closing = require("popups").closing_tutorial
+            local fading = closing and (p == closing or p:find("WBP_TUT_", 1, true) or p:find("TutorialInfoWidget", 1, true))
+            if not fading and not p:find("WBP_PoiEventWidget_C", 1, true) and not p:find("RoomPrompt", 1, true)
+                and not p:find("Toast", 1, true) then over = true end
         end
     end)
     if over then return false end

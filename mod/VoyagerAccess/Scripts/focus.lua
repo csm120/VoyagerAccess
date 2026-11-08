@@ -935,7 +935,11 @@ local function window_buttons(wpath)
     return paths
 end
 
-local function say_virtual()
+-- by_key: an arrow or Home/End, which interrupts. Queued, the same item
+-- said again at a list end was dropped as a repeat: Down on the Workshop's
+-- only item ("No blueprints to craft, 1 of 1") was silent after the first
+-- (Casey's play, 2026-11-07).
+local function say_virtual(by_key)
     local b = virtual and resolve(virtual.buttons[virtual.index])
     if not b then return end
     -- No label yet: "Button, 1 of 1" was said as a Mess Hall opened, before
@@ -949,7 +953,51 @@ local function say_virtual()
         label = string.format("%s, %d of %d", label:gsub("%.$", ""), virtual.index, #virtual.buttons)
     end
     print("[VoyagerAccess] window button: " .. label .. "\n")
-    speech.say(label, false)
+    speech.say(label, by_key == true)
+    return true
+end
+
+-- The pause menu on screen.
+local function pause_menu_up()
+    for _, m in ipairs(FindAllOf("WBP_PauseMenu_C") or {}) do
+        if m:IsValid() and m:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(m) then return true end
+    end
+    return false
+end
+M.pause_menu_up = pause_menu_up
+
+-- After Resume or Escape closed the pause menu: the view again, as the game
+-- shows it again (Casey's play, 2026-11-07: both were silent). The menu
+-- fades out and was still shown 500 ms later (VM, 2026-11-08), so it is
+-- looked at every 250 ms for up to 2 s; another key in between ends it.
+function M.view_after_pause()
+    local keys = require("keys")
+    local key_at = keys.key_count
+    local function look(n)
+        pcall(function()
+            if keys.key_count ~= key_at then
+                print("[VoyagerAccess] pause menu: another key, no view\n")
+                return
+            end
+            if not pause_menu_up() then
+                print("[VoyagerAccess] pause menu closed, view again\n")
+                require("help").view_again()
+            elseif n > 0 then
+                ExecuteInGameThreadWithDelay(250, function() look(n - 1) end)
+            end
+        end)
+    end
+    ExecuteInGameThreadWithDelay(250, function() look(7) end)
+end
+
+-- The window list's button again, if one is open (popups.lua after a
+-- tutorial over the window closes). True when one was said.
+function M.say_window_button()
+    if not virtual then return false end
+    local w = StaticFindObject(virtual.window)
+    if not (w and w:IsValid() and require("screen").shown(w)) then return false end
+    -- Only true when a button was said (GPT review, 2026-11-08).
+    return say_virtual() == true
 end
 
 -- After the game window loses and regains the foreground, a menu can be
@@ -1255,13 +1303,13 @@ function M.virtual_step(dir)
     if not virtual then return end
     local i = virtual.index + dir
     if virtual.buttons[i] then virtual.index = i end
-    say_virtual()
+    say_virtual(true)
 end
 
 function M.virtual_edge(last)
     if not virtual then return end
     virtual.index = last and #virtual.buttons or 1
-    say_virtual()
+    say_virtual(true)
 end
 
 -- A combat order the game has locked (bLocked; its icon is dimmed): Surrender
@@ -2269,7 +2317,7 @@ local function poll()
     label = with_position(label, path)
     if label then
         if require("dialogue").is_choice(path) then heard_choice = path end
-        speech.say(label, true)
+        speech.say(label, os.clock() > (M.report_until or 0))
     end
 end
 
@@ -2587,6 +2635,15 @@ end
 -- next key.
 local room_wait = nil   -- { event, owner, key, name }
 local room_hooks = {}   -- event path -> installed
+-- A room report's result ("Analysis started"), and for 1.5 s after it the
+-- next focus line queues behind it: the Analyze button hid, focus moved to
+-- "Research: currently no research in progress" and cut "Analysis started"
+-- off after a tenth of a second (Casey's play, 2026-11-07).
+local function say_report(text)
+    M.report_until = os.clock() + 1.5
+    speech.say(text, true)
+end
+
 local function room_report(event, owner, flag, name, id)
     local w = room_wait
     if not (w and w.event == event and w.owner == owner) then return end
@@ -2609,17 +2666,17 @@ local function room_report(event, owner, flag, name, id)
             -- The report's name, or the button's when it came empty (an id
             -- match does not need the name; reviews, 2026-10-26).
             local said = (name and name ~= "") and name or w.name or ""
-            speech.say(said ~= "" and ("Crafting " .. said .. " started") or "Crafting started", true)
+            say_report(said ~= "" and ("Crafting " .. said .. " started") or "Crafting started")
         end
     elseif event == "OnUpdateCraftingReport" and flag == false then
         room_wait = nil
-        speech.say(w.name and ("Crafting " .. w.name .. " cancelled") or "Crafting cancelled", true)
+        say_report(w.name and ("Crafting " .. w.name .. " cancelled") or "Crafting cancelled")
     elseif event == "OnFillCurrentAnalysis" and flag == true and name == w.name then
         -- The analysis chosen, not one already running: with another under
         -- way the game refuses and says why ("Analysis already in
         -- progress"), and its report still names the running one.
         room_wait = nil
-        speech.say("Analysis started", true)
+        say_report("Analysis started")
     end
 end
 local function arm_room_report(b, event, name, start)
@@ -2859,6 +2916,12 @@ local function activate()
         end)
     end
     print("[VoyagerAccess] enter: clicking " .. tostring(current) .. "\n")
+    -- Resume in the pause menu: the view is said again, as the game shows
+    -- it again. The mod's view never changed under the pause menu, so
+    -- Resume was silent (Casey's play, 2026-11-07).
+    if current:find("WBP_PauseMenu_C", 1, true) and current:find("ResumeButton", 1, true) then
+        M.view_after_pause()
+    end
     -- The save window's Delete Profile only became "selected" on Enter; a
     -- real click opened its warning (full game, VM, 2026-10-15). The
     -- window's own TryDeleteCurrentProfile is called. (Restart Sector's
@@ -3005,7 +3068,7 @@ local function activate()
             -- Above 0: a craft just started shows its full count, and 0 with
             -- the idle text is not ruled out (Fable, second round).
             pcall(function() running = FindFirstOf("STVResourceManager"):GetCraftingRemainingCycles() > 0 end)
-            if running and now and now ~= before then speech.say("Crafting " .. now .. " started", true) end
+            if running and now and now ~= before then say_report("Crafting " .. now .. " started") end
         end
         -- With a craft already running the game refuses and its report names
         -- the running one, even the same item: only the before/after compare
@@ -3219,7 +3282,7 @@ local function activate()
             pcall(wait_room_report, b, "OnFillCurrentAnalysis", name, function()
                 local now = resolve(path)
                 local after = now and label_for(now, path)
-                if after ~= before then speech.say("Analysis started", true) end
+                if after ~= before then say_report("Analysis started") end
             end, 500)
         end
         -- The Workshop's crafting button cancels the craft under way (the
@@ -3243,7 +3306,7 @@ local function activate()
                 local now = resolve(path)
                 local after = now and label_for(now, path)
                 if not (after and after:find("%d+ cycles? left")) then
-                    speech.say(item and ("Crafting " .. item .. " cancelled") or "Crafting cancelled", true)
+                    say_report(item and ("Crafting " .. item .. " cancelled") or "Crafting cancelled")
                 end
             end, 900)
         end
@@ -3782,6 +3845,15 @@ function M.install()
     end
     keys.on("escape", function()
         last_nav = "go_in"
+        -- Escape out of the pause menu: the view is said again, as for its
+        -- Resume (M.view_after_pause). Or with focus last on one of its
+        -- buttons: the game can close the menu before the mod reads the key
+        -- (GPT review, 2026-11-08).
+        -- The game had already closed it when the mod read the key, every
+        -- time in the VM (2026-11-08): focus on its button is what tells.
+        if pause_menu_up() or (current and current:find("WBP_PauseMenu_C", 1, true)) then
+            M.view_after_pause()
+        end
         -- Escape is the game's: its pause menu opens as for anyone. A mod
         -- list open at the time still closes, so the arrows go back to the
         -- game, but the pause menu is no longer clicked away behind the
@@ -3892,6 +3964,24 @@ function M.install()
         local ok, said = pcall(require("dialogue").line_key)
         return ok and said
     end
+    -- A room window with nothing to focus: Emergency Quarters' only button
+    -- (Power) was hidden, focus was parked, and eight arrows said nothing
+    -- (Casey's play, 2026-11-07). Said if nothing has focus a moment
+    -- later, in case the game moves focus on this key after all.
+    local function room_nothing()
+        local b = current and resolve(current)
+        if b and require("screen").shown(b) then return false end
+        if not require("rooms").window_open() then return false end
+        ExecuteInGameThreadWithDelay(300, function()
+            pcall(function()
+                local nb = current and resolve(current)
+                if nb and require("screen").shown(nb) then return end
+                if M.virtual_active() or not require("rooms").window_open() then return end
+                speech.say("No buttons here. Escape closes the window.", true)
+            end)
+        end)
+        return true
+    end
     -- Lists move with Up and Down everywhere (Casey, 2026-10-10); Left and
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
@@ -3916,6 +4006,7 @@ function M.install()
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
         elseif line_only() then return
+        elseif room_nothing() then return
         else last_dir = -1 last_nav = "arrow" say_if_alone() end
     end)
     keys.on("down", function()
@@ -3940,6 +4031,7 @@ function M.install()
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
         elseif line_only() then return
+        elseif room_nothing() then return
         else last_dir = 1 last_nav = "arrow" say_if_alone() end
     end)
     local rooms = require("rooms")

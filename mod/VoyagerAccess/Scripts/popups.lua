@@ -2268,9 +2268,12 @@ end
 -- tutorial directly instead (focus.lua calls this first). Clicking Close
 -- this way is proven (it opened the next tutorial, 2026-10-10).
 -- A tutorial is on screen (keys.lua answers the arrows with how to close it).
+-- M.closing_tutorial: a frame just closed, still fading out, not counted
+-- (say_tutorial_left sets it; dialogue.line_key asks this; Fable review,
+-- 2026-11-08).
 function M.tutorial_open()
     for p, cls in pairs(open) do
-        if cls == "WBP_TutorialInfoWidget_C" then
+        if cls == "WBP_TutorialInfoWidget_C" and p ~= M.closing_tutorial then
             local w = StaticFindObject(p)
             if w and w:IsValid() and screen.shown(w) then return true end
         end
@@ -2298,7 +2301,20 @@ local function say_tutorial_left(closed)
     for _, f in ipairs(shown_tutorials()) do
         if path_of(f) ~= closed then w = f break end
     end
-    if not w then return end
+    -- No tutorial left, but a window under it (a Construction Report): its
+    -- button is said again, or Enter closed the Tech Tree tutorial in
+    -- silence and the report was found only by N (Casey's play, 2026-11-07).
+    -- Or a conversation line under it, said again: Enter closed "Combat
+    -- Allies" over Chakotay's line in silence (Casey's play, 2026-11-07).
+    if not w then
+        local ok, said = pcall(function() return require("focus").say_window_button() end)
+        if not (ok and said) then
+            M.closing_tutorial = closed
+            pcall(function() require("dialogue").line_key() end)
+            M.closing_tutorial = nil
+        end
+        return
+    end
     local okt, title = pcall(function() return w.TutorialTitle:GetText():ToString() end)
     title = okt and title and plain(title) or ""
     -- Two lines: tr.lua translates the hint only as a whole line.
@@ -2865,7 +2881,23 @@ local function process(p, kind, trust, retry)
     -- the stop).
     read_stop = (not shown) and w or nil
     read_last_try = (retry or 0) >= #CHANGE_RETRY_MS
+    -- A point's detail panel after Shift+Enter is read without speech: the
+    -- course follows at once, and the panel's name came before "Under
+    -- way to" and the trip's lines (Casey, 2026-11-07: "repeated info").
+    -- Still read, so the selection's listeners see it.
+    -- By path or class, as system.lua's panel listener: in the HUD a
+    -- planet's or ship's panel (WBP_PlanetDetailView_C) is named
+    -- POIDetailView (Fable review, 2026-11-08). say_long too, or its speech
+    -- hold stayed on for a panel never said. Kept until a read that spoke
+    -- (a first read before the text is in says nothing; reviews), and
+    -- cleared by system.lua when the course starts.
+    local mute = os.clock() < (M.mute_panel_until or 0)
+        and (tostring(p):find("POIDetailView", 1, true) or tostring(cls):find("POIDetailView", 1, true)) ~= nil
+    local real_say, real_long = speech.say, speech.say_long
+    if mute then speech.say, speech.say_long = function() end, function() end end
     local okr, spoken = pcall(read_window, p, reread)
+    speech.say, speech.say_long = real_say, real_long
+    if mute and okr and spoken then M.mute_panel_until = nil end
     read_stop, read_last_try = nil, true
     if not okr then print("[VoyagerAccess] popups read error: " .. tostring(spoken) .. "\n"); spoken = nil end
     -- Read only once something was said or it is really on screen: a window

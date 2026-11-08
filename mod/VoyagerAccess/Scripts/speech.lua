@@ -126,6 +126,9 @@ function M.say(text, interrupt, built)
     -- 19 tech descriptions start "[NOT WORKING YET]" (text scan, 2026-10-15),
     -- which a synthesizer may spell out letter by letter.
     text = text:gsub("%[NOT WORKING YET%]%s*", "Not working yet: ")
+    -- The game's "Lvl" before a number ("Stellar Cartography Lvl 1" on a
+    -- dialogue choice was read "Lvl"; Casey's play, 2026-11-07).
+    text = text:gsub("%f[%w]Lvl%.?(%s*%d)", "level%1")
     -- A placeholder the game left unfilled ("{AlliedShipÍnitialCost}", text
     -- scan) is dropped, and logged so new ones show up.
     text = text:gsub("{[^{}]+}", function(p)
