@@ -33,7 +33,9 @@ follows them.
    further each time ("Earlier: ..."). After the first reading, objectives announce
    only what changes ("Done: ...", "Mission ended: ...", "New mission: ...");
    O reads the whole list. C also says each resource's storage limit, for
-   example "Duranium 100, max 100".
+   example "Duranium 100, max 100, storage full" (full at the limit), and
+   the hull's maximum, "Hull 400, max 400". The limits are read from the
+   game each time.
 8. Never describe anything by color. A chance bar is read as its outcomes and
    their chances (excellent, good, average, bad, terrible), after the
    rewards, worded "70% chance of a good outcome, 30% chance of a bad
@@ -67,6 +69,11 @@ follows them.
    says "No incoming call". N still lists "Incoming calls" while a call is
    waiting, in the game's own order.
 4. Cutscene: Shift+Enter skips.
+4a. Tutorials: N, then Tutorials, opens the game's tutorial library. While
+   a tutorial is open, Up and Down move through the tutorials seen so far,
+   each read with its title; R repeats it and Enter closes it. Two
+   tutorials opened at once are read one after the other, and closing one
+   names the one left.
 5. Ship view: Up and Down (or Page Up and Page Down) change deck, Left and
    Right move along it, Home and End go to the ends of the deck, Enter opens
    a room. An empty building space says how wide the gap is, for example
@@ -81,7 +88,8 @@ follows them.
    Combat Allies tab reads the ally's combat power, recruitment cost and
    upkeep. Rooms say their
    place on the deck ("3 of 6"). J lists the ship's rooms (not ruined rooms
-   or turbolifts) with deck and state, opening on the room you are on; Up, Down, Home, End, Enter selects
+   or turbolifts), each name first, then state and deck ("Engineering
+   Office, on, Deck 5, 14 of 35"), opening on the room you are on; Up, Down, Home, End, Enter selects
    the room, Backspace or J closes the list (J is unbound in
    IMC_ShipManagement), and Page Up, Page Down, Left or Right close it
    and move in the ship view from the room the list is on. A ruined room opens an action ring (radial menu):
@@ -109,7 +117,9 @@ follows them.
    opens the action list (Scan, Set course, and the panel's third button,
    Inspect, under the game's own name when the game shows it). Inspect opens
    the game's close view of the point, which has no text; Backspace leaves
-   it. The list keeps its order
+   it. Shift+Enter on a point sets course to it at once, without the
+   list (outside a conversation or cutscene, where Shift+Enter skips).
+   The list keeps its order
    while you move through it (it re-sorts nearest first after 15 seconds
    without a move). Set course says "Under way to", "Halfway to" and
    "Arrived at"; I adds the trip's progress and says "not moving" if the

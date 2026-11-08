@@ -19,7 +19,7 @@ local HELP = {
         .. "Enter opens the room. V switches to the System Map. N lists the places to go, such as the Sector Map, the Overview and Research. H opens a waiting call, and Enter answers it. I says where you are; I twice lists the room's details. "
         .. "E is the room's quick action. Hold F to upgrade it, or T to demolish it.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
-        .. "Enter opens Scan and Set course. Backspace closes that list. V switches to the ship. N lists the places to go, such as the Sector Map, the Overview and Research. H opens a waiting call, and Enter answers it.",
+        .. "Enter opens Scan and Set course. Shift+Enter sets course at once. Backspace closes that list. V switches to the ship. N lists the places to go, such as the Sector Map, the Overview and Research. H opens a waiting call, and Enter answers it.",
     room = "Up and Down move between the buttons. Enter uses one. Left and Right switch tabs. Escape closes the room. "
         .. "Closing a hero list without choosing removes the hero.",
     event = "Up and Down move between the options. Where an option can take a hero, Left and Right choose one first. Enter picks the option. R reads the locked options.",
@@ -465,6 +465,24 @@ local function leaving()
         if w:IsValid() and w:GetFullName():find(" /Engine/Transient.", 1, true) and require("screen").shown(w) then return true end
     end
     return false
+end
+
+-- The game is between two states (a scene load with no loading screen of
+-- its own): STVGameStateSubsystem's CurrentTransition is set. The Array
+-- arrival ran about 10 s like this after a conversation, and Down, Up and
+-- Enter said nothing (Casey's play, 2026-11-07). keys.lua asks this when no
+-- loading screen answers.
+function M.transitioning()
+    local ok, busy = pcall(function()
+        for _, o in ipairs(FindAllOf("STVGameStateSubsystem") or {}) do
+            if o:IsValid() and not o:GetFullName():find("Default__", 1, true) then
+                local t = o.CurrentTransition
+                return t ~= nil and t:IsValid()
+            end
+        end
+        return false
+    end)
+    return ok and busy == true
 end
 
 local say_view   -- below

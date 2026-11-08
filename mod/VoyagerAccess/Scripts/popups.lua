@@ -1268,10 +1268,59 @@ function M.clean_tutorial(text)
     return (table.concat(kept, " "):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", ""))
 end
 
-local function tutorial_page(parts)
+-- True while a frame reads its own pages (it has just said its title).
+local reading_frame_pages = false
+local page_text = {}   -- page path -> its text as last read (tutorial_page)
+
+-- The frame showing the page at path: its title, when the page is read on
+-- its own. Down in a tutorial moves the frame to another discovered
+-- tutorial (DoCustomNavigationDown, SelectTutorial), and only the new page's
+-- text was said: "Each combat encounter..." with no title (Casey's play,
+-- 2026-11-07).
+local function own_frame_title(path)
+    local found = nil
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_TutorialInfoWidget_C") or {}) do
+            if w:IsValid() and screen.shown(w) then
+                for _, pp in ipairs(M.tutorial_pages(w)) do
+                    if pp == path then
+                        found = plain(w.TutorialTitle:GetText():ToString())
+                    end
+                end
+            end
+        end
+    end)
+    return found ~= "" and found or nil
+end
+
+local function tutorial_page(parts, path)
     local out = {}
     for _, p in ipairs(parts) do out[#out + 1] = p.text end
     local text = M.clean_tutorial(table.concat(out, ". "))
+    -- Only for a page not read before as it is now: a page read again
+    -- unchanged (a change event just after its frame was read) stays as it
+    -- was, so the repeat check drops it; with the title it was said twice
+    -- (VM, 2026-11-07).
+    -- Decided by the page's text, not by who asks: the same body gives the
+    -- same answer as last time, so read_window's repeat check holds (GPT
+    -- review, 2026-11-07: a title said once, then not, made the body new).
+    -- A step through the library reads the new page itself (tutorial_step):
+    -- the page's own read then said it a moment before, and the step cut
+    -- it off with the same words (Fable review, 2026-11-07).
+    if not reading_frame_pages and os.clock() < (M.stepping_until or -100) then return "" end
+    local key = path or ""
+    local seen = page_text[key]
+    if seen and seen.body == text then
+        text = seen.said
+    else
+        local said = text
+        if not reading_frame_pages and path then
+            local head = own_frame_title(path)
+            if head then said = head .. ". " .. text end
+        end
+        page_text[key] = { body = text, said = said }
+        text = said
+    end
     local title = tutorial_title()
     local keys = title and TUTORIAL_KEYS[title]
     if keys then
@@ -2229,21 +2278,137 @@ function M.tutorial_open()
     return false
 end
 
-function M.close_tutorial()
-    for p, cls in pairs(open) do
-        if cls == "WBP_TutorialInfoWidget_C" then
-            local w = StaticFindObject(p)
-            if w and w:IsValid() and screen.shown(w) then
-                local close = w.CloseButton
-                if close and close:IsValid() then
-                    print("[VoyagerAccess] tutorial: close\n")
-                    M.tutorial_closed_at = os.clock()
-                    close:HandleButtonPressed()
-                    close:HandleButtonReleased()
-                    close:HandleButtonClicked()
-                    return true
-                end
+-- The tutorial frames on screen. From FindAllOf, as tutorial_title does:
+-- two can be open at once.
+local function shown_tutorials()
+    local out = {}
+    for _, w in ipairs(FindAllOf("WBP_TutorialInfoWidget_C") or {}) do
+        local p = w:IsValid() and path_of(w)
+        if p and p:find("^/Engine/Transient%.") and screen.shown(w) then out[#out + 1] = w end
+    end
+    return out
+end
+
+-- After Enter closed one of two tutorials, the one left is named: Casey's
+-- Enter closed "Normal Food rations" in silence and "Assign Hero" stayed
+-- up unheard until V said "Cannot switch view here" (2026-11-07).
+local function say_tutorial_left(closed)
+    -- Not the frame just closed, if it is still fading out (Fable review).
+    local w = nil
+    for _, f in ipairs(shown_tutorials()) do
+        if path_of(f) ~= closed then w = f break end
+    end
+    if not w then return end
+    local okt, title = pcall(function() return w.TutorialTitle:GetText():ToString() end)
+    title = okt and title and plain(title) or ""
+    -- Two lines: tr.lua translates the hint only as a whole line.
+    if title ~= "" then speech.say(title, true) end
+    speech.say("Tutorial open. Enter closes it, R repeats it.", title == "")
+    pcall(function()
+        local texts = { M.text_under(path_of(w)) }
+        for _, pp in ipairs(M.tutorial_pages(w)) do texts[#texts + 1] = M.text_under(pp) end
+        require("dialogue").remember(table.concat(texts, ". "))
+    end)
+end
+
+-- The tutorial window is also the game's tutorial library: Up and Down move
+-- it to the next tutorial found so far (its DoCustomNavigationUp/Down,
+-- SelectedTutorialIndex; 31 in Profile 03, VM, 2026-11-07), as a sighted
+-- player's click on the list does. Casey's Down once moved it with no title
+-- said, and in the VM the new page was not read at all. The key may reach
+-- the game too, so the mod moves it only if the game has not, then reads
+-- the title and the page. dir: 1 Down, -1 Up.
+-- One step at a time: a second press while a step is under way is let go,
+-- or both read the same page and one move was lost (GPT review,
+-- 2026-11-07). Closing a tutorial cancels a step under way (step_token).
+local step_token, step_busy_until = 0, -100
+function M.tutorial_step(dir)
+    local w = shown_tutorials()[1]
+    if not w then return false end
+    if os.clock() < step_busy_until then return true end
+    step_busy_until = os.clock() + 0.6
+    M.stepping_until = os.clock() + 0.8
+    step_token = step_token + 1
+    local mine = step_token
+    local p = path_of(w)
+    local before = nil
+    pcall(function() before = w.SelectedTutorialIndex end)
+    local function live()
+        if step_token ~= mine then return nil end
+        local fw = StaticFindObject(p)
+        if fw and fw:IsValid() and screen.shown(fw) then return fw end
+        return nil
+    end
+    ExecuteInGameThreadWithDelay(150, function()
+        pcall(function()
+            local fw = live()
+            if not fw then return end
+            local now = nil
+            pcall(function() now = fw.SelectedTutorialIndex end)
+            -- EUINavigation Up = 2, Down = 3 (warpcore.lua).
+            if now == before then
+                if dir > 0 then fw:DoCustomNavigationDown(3) else fw:DoCustomNavigationUp(2) end
             end
+            ExecuteInGameThreadWithDelay(250, function()
+                step_busy_until = -100
+                pcall(function()
+                    local w2 = live()
+                    if not w2 then return end
+                    local idx = nil
+                    pcall(function() idx = w2.SelectedTutorialIndex end)
+                    if idx == before then
+                        -- At an end of the list: the same tutorial again.
+                        print("[VoyagerAccess] tutorial: no move at index " .. tostring(idx) .. "\n")
+                    end
+                    local title = ""
+                    pcall(function() title = plain(w2.TutorialTitle:GetText():ToString()) end)
+                    local texts = {}
+                    -- The page reader (tutorial_page) cleans it and adds the
+                    -- keys; the title is said here, so not by it.
+                    -- The flag is put back whatever happens inside (GPT
+                    -- review: an error there left every later page untitled).
+                    reading_frame_pages = true
+                    pcall(function()
+                        for _, pp in ipairs(M.tutorial_pages(w2)) do
+                            announced[pp] = true
+                            local okt, t = pcall(M.text_under, pp)
+                            if okt and t and t ~= "" then
+                                texts[#texts + 1] = t
+                                -- So a later look at the page finds it read
+                                -- (Fable review: a retry after 800 ms said it again).
+                                last_text[pp] = t
+                            end
+                        end
+                    end)
+                    reading_frame_pages = false
+                    local body = table.concat(texts, ". ")
+                    -- The page's own heading repeats the title.
+                    if title ~= "" and body:sub(1, #title) == title then body = body:sub(#title + 1):gsub("^[%.%s]+", "") end
+                    local line = (title ~= "" and (title .. ". ") or "") .. body
+                    print("[VoyagerAccess] tutorial: step to " .. title .. "\n")
+                    speech.say(line, true)
+                    require("dialogue").remember(line)
+                end)
+            end)
+        end)
+    end)
+    return true
+end
+
+function M.close_tutorial()
+    for _, w in ipairs(shown_tutorials()) do
+        local close = w.CloseButton
+        if close and close:IsValid() then
+            print("[VoyagerAccess] tutorial: close\n")
+            M.tutorial_closed_at = os.clock()
+            step_token, step_busy_until = step_token + 1, -100
+            close:HandleButtonPressed()
+            close:HandleButtonReleased()
+            close:HandleButtonClicked()
+            -- The click takes effect by the next tick.
+            local closed = path_of(w)
+            ExecuteInGameThreadWithDelay(500, function() pcall(say_tutorial_left, closed) end)
+            return true
         end
     end
     return false
@@ -2493,6 +2658,33 @@ for _, c in ipairs(WATCH) do
     if c:find("^WBP_TUT_") or c:find("^WBP_TutorialScreen") then PAGE_CLASSES[#PAGE_CLASSES + 1] = c end
 end
 
+-- The shown pages of one tutorial frame, as paths. Two tutorials open at
+-- once ("Assign Hero" and "Normal Food rations" after a Mess Hall upgrade):
+-- the first frame read every shown page, so both bodies came under its
+-- title and the second title was said alone (Casey's play, 2026-11-07).
+-- The frame names its own page in its LastCreated* fields; with none of
+-- them readable, every shown page as before.
+local OWN_PAGES = { "LastCreatedColumViewWidget", "LastCreatedCenterViewWidget", "LastCreatedCharacterViewWidget" }
+function M.tutorial_pages(w)
+    local out, linked = {}, false
+    for _, f in ipairs(OWN_PAGES) do
+        local ok, pw = pcall(function() return w[f] end)
+        if ok and pw and pw:IsValid() then
+            linked = true
+            local pp = path_of(pw)
+            if pp and screen.shown(pw) then out[#out + 1] = pp end
+        end
+    end
+    if linked then return out end
+    for _, pc in ipairs(PAGE_CLASSES) do
+        for _, pw in ipairs(FindAllOf(pc) or {}) do
+            local pp = pw:IsValid() and path_of(pw)
+            if pp and pp:find("^/Engine/Transient%.") and screen.shown(pw) then out[#out + 1] = pp end
+        end
+    end
+    return out
+end
+
 -- Other parts of the mod told when a window has been read or has closed
 -- (help.lua says where you are once a room or event closes), so they need
 -- no scan of their own.
@@ -2682,14 +2874,16 @@ local function process(p, kind, trust, retry)
     local said = { spoken }
     -- A tutorial's frame: its page too, then close it.
     if cls == "WBP_TutorialInfoWidget_C" then
-        for _, pc in ipairs(PAGE_CLASSES) do
-            for _, pw in ipairs(FindAllOf(pc) or {}) do
-                local pp = pw:IsValid() and path_of(pw)
-                if pp and pp:find("^/Engine/Transient%.") and not announced[pp] and screen.shown(pw) then
-                    open[pp] = pc
-                    said[#said + 1] = read_window(pp, false)
-                    announced[pp] = true
-                end
+        local okp, pages = pcall(M.tutorial_pages, w)
+        for _, pp in ipairs(okp and pages or {}) do
+            if not announced[pp] then
+                local pw = StaticFindObject(pp)
+                open[pp] = pw and pw:IsValid() and pw:GetClass():GetFName():ToString() or "WBP_TUT_ColumnView_C"
+                reading_frame_pages = true
+                local okr2, s2 = pcall(read_window, pp, false)
+                reading_frame_pages = false
+                said[#said + 1] = okr2 and s2 or nil
+                announced[pp] = true
             end
         end
         -- It stays open until Enter, as for a sighted player, who can read

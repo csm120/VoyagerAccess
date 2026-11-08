@@ -90,7 +90,11 @@ end
 
 -- The open dialogue window, or nil. Use it within the current tick only.
 function M.active()
-    return find_window()
+    local w = find_window()
+    -- When a conversation was last seen up: Shift+Enter sets course only
+    -- 3 s after one ended (M.skip; Fable review, 2026-11-07).
+    if w then M.seen_at = os.clock() end
+    return w
 end
 
 -- True when the widget path is inside the dialogue window (a choice button).
@@ -986,16 +990,25 @@ function M.skip()
             return
         end
         print("[VoyagerAccess] dialogue: skip\n")
+        M.skipped_at = os.clock()
         speech.say("Skipping", true)
         w:SkipToNextChoiceTriggered()
         return
     end
     local pawn = cutscene_pawn()
     if not pawn then
+        -- On the System Map it sets course (system.course_key), but not
+        -- just after a skip: a second Shift+Enter as a conversation ended
+        -- would have flown the ship away.
+        if os.clock() - (M.skipped_at or -100) > 3 and os.clock() - (M.seen_at or -100) > 3 then
+            local okc, done = pcall(function() return require("system").course_key() end)
+            if okc and done then return end
+        end
         speech.say("Nothing to skip", true)
         return
     end
     print("[VoyagerAccess] cutscene: skip\n")
+    M.skipped_at = os.clock()
     speech.say("Skipping", true)
     pawn:OnSkipActionStarted({})
     pawn:OnSkipActionTriggered({})

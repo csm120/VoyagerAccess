@@ -185,6 +185,31 @@ end
 -- ends in its place in the list.
 local tr = require("tr")
 
+-- What a tier opens: { name, state, obf } in the tier's order. A researched
+-- tier says each technology's state, grouped as the fields show it: "opens
+-- 5: Hydroponics Bay, ..." sounded researched, and the build ring kept
+-- saying "Missing technology" (Casey's play, 2026-11-07). A tier not yet
+-- researched has them all locked by it, so only the names.
+function M.opens_text(names, tier_researched)
+    local unknown, groups, order = 0, {}, {}
+    for _, x in ipairs(names) do
+        if x.obf then
+            unknown = unknown + 1
+        else
+            local key = tier_researched and x.state or ""
+            if not groups[key] then groups[key] = {} order[#order + 1] = key end
+            table.insert(groups[key], x.name)
+        end
+    end
+    local parts = {}
+    for _, key in ipairs(order) do
+        local list = table.concat(groups[key], ", ")
+        parts[#parts + 1] = key ~= "" and (tr.word(key) .. ": " .. list) or list
+    end
+    if unknown > 0 then parts[#parts + 1] = tr.fill(unknown == 1 and "{n} unknown technology" or "{n} unknown technologies", unknown) end
+    return tr.fill(", opens {n}: {s}", #names, table.concat(parts, tier_researched and "; " or ", "))
+end
+
 local function build()
     local items = {}
     local tiers = {}
@@ -228,7 +253,7 @@ local function build()
             -- A tech in a tier not yet researched is locked by that tier.
             if st == "locked" and row > 0 and tier_done[row] == false then st = "locked until its tier is researched" end
             techs[#techs + 1] = {
-                row = row, col = col, name = name, obf = obf,
+                row = row, col = col, name = name, obf = obf, state = st,
                 text = string.format("%s, %s, %s", name, where, tr.word(st)),
                 button = path_of(w.RegularTechButton),
                 -- Shown as a style and an icon on the field (firefly82).
@@ -272,15 +297,8 @@ local function build()
     end
     for _, t in ipairs(tiers) do
         local names = opens[t.n]
-        if names and #names > 0 then
-            local known, unknown = {}, 0
-            -- By the field's own flag, not by the words said for it.
-            for _, x in ipairs(names) do
-                if x.obf then unknown = unknown + 1 else known[#known + 1] = x.name end
-            end
-            if unknown > 0 then known[#known + 1] = tr.fill(unknown == 1 and "{n} unknown technology" or "{n} unknown technologies", unknown) end
-            t.text = t.text .. tr.fill(", opens {n}: {s}", #names, table.concat(known, ", "))
-        end
+        -- By the field's own flag, not by the words said for it.
+        if names and #names > 0 then t.text = t.text .. M.opens_text(names, t.researched) end
     end
     for _, t in ipairs(techs) do items[#items + 1] = t end
     return items

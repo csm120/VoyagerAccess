@@ -390,7 +390,16 @@ local function describe(r, with_deck, no_width)
         for _, s in ipairs(tile_heroes(r)) do text = text .. ", " .. s end
     end
     for _, s in ipairs(room_prompts(r.hull)) do text = text .. ", " .. s end
-    if with_deck then
+    -- "after": the J list, where a room is looked for by its name, so the
+    -- name comes first and the deck after it (Casey, 2026-11-07: hearing
+    -- each deck first slowed finding a room down).
+    if with_deck == "after" then
+        if tall > 1 then
+            text = text .. ", decks " .. (low - tall + 1) .. " to " .. low
+        else
+            text = text .. ", Deck " .. low
+        end
+    elseif with_deck then
         -- A tall room says the deck the player is on first: moving down a
         -- turbo lift said "Decks 2 to 9, Turbo lift" four times over decks
         -- 6 to 9, which sounded stuck (firefly82's review, 2026-10-20).
@@ -706,6 +715,20 @@ local function quick_action_text()
     return table.concat(out, ". ")
 end
 
+-- Whether the game's info panel offers F (upgrade) for the room in slot:
+-- the construction manager's HasRoomAvailableUpgrade said yes for rooms
+-- whose upgrade still needs research, where F does nothing (VM, 2026-11-07).
+local function offers_key(slot, key)
+    local a = hover_action
+    if hover_slot ~= slot or not a then return false end
+    if a.key == key then return true end
+    for _, m in ipairs(a.more or {}) do
+        if m.key == key then return true end
+    end
+    return false
+end
+M.offers_key = offers_key
+
 -- At either end of a deck Left and Right repeat the room, with no extra
 -- words (Casey, 2026-10-10). prefix is optional text said first.
 local function select(r, with_deck, prefix)
@@ -849,7 +872,7 @@ local function say_jump()
     pcall(function()
         for _, r in ipairs(rooms()) do
             if r.deck == it.deck and math.abs(r.y - it.y) < 1 then
-                text = describe(r, true)
+                text = describe(r, "after")
                 break
             end
         end
@@ -868,7 +891,7 @@ function M.list_toggle()
         local raw = raw_name(r.hull:GetRoomType())
         -- Empty building space is listed: it is where rooms are built.
         if raw ~= "RuinedRoom" and raw ~= "TurboShaft" and not r.upper then
-            items[#items + 1] = { deck = r.deck, y = r.y, text = describe(r, true) }
+            items[#items + 1] = { deck = r.deck, y = r.y, text = describe(r, "after") }
         end
     end
     if #items == 0 then
@@ -1015,6 +1038,12 @@ function M.open()
     -- ClickedRoom opens the HOVERED room, not this hull's: with the mouse
     -- resting over Life Support it opened Life Support (2026-10-11; also
     -- why the Aeroshuttle bay opened Stellar Cartography). Hover it first.
+    -- A turbo lift opens nothing for a click either, and Enter on it was
+    -- silent (VM, 2026-11-07).
+    if raw_name(list[i].hull:GetRoomType()) == "TurboShaft" then
+        speech.say("A turbo lift has nothing to open.", true)
+        return
+    end
     list[i].hull:OnHoveredRoom()
     list[i].hull:ClickedRoom()
     -- Work finished while the Construction Report was left with Enter Ship
@@ -1254,6 +1283,25 @@ end
 
 function M.install()
     local popups = require("popups")
+    -- The game's error toast after a key in the ship view (F to upgrade): it
+    -- says only "Missing resources", so what is short follows
+    -- (construction.room_shortage). Said only when something is short and a
+    -- work team is free, and only within 3 s of a key.
+    popups.on_read(function(_, cls)
+        if cls ~= "WBP_Toast_Error_C" then return end
+        if os.time() - (require("keys").last_key_time or 0) > 3 then return end
+        pcall(function()
+            if not M.active() then return end
+            local hull = M.selected_hull()
+            if not (hull and offers_key(hull:BP_GetSlotIndex(), "F")) then return end
+            local what, short = require("construction").room_shortage(hull)
+            if what and short then
+                -- English here: the line pass translates it, and the
+                -- resource names in it, as for "Missing resources: {s}".
+                speech.say("Upgrade needs: " .. short, false)
+            end
+        end)
+    end)
     pcall(NotifyOnNewObject, "/Script/STVoyager.STVConstructionPawn", function(o)
         local okp, p = pcall(function() return path_of(o) end)
         if okp and p then

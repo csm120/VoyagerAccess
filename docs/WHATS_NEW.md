@@ -1,5 +1,26 @@
 # New in Voyager Access
 
+## Saturday November 7th 2026
+
+Version 0.3.98
+
+Fixes from an afternoon of play, from the start of a campaign to sector 2.
+
+- New: Tutorials in the N list opens the game's tutorial library, the question mark a sighted player clicks. While any tutorial is open, Up and Down move through the ones you've seen so far, each with its title.
+- Fixed: when two tutorials opened at once, their titles and text came out mixed up, and closing one left the other open without a word. Each is read on its own now, and closing one tells you which is still open.
+- Fixed: after Escape closed a room like Main Engineering, nothing was said, and Up and Down did nothing until you pressed Left or Right. You hear the ship view again, and the arrows work at once.
+- New: Shift+Enter on a point of the System Map sets course straight there, without the menu. In a conversation or cutscene it still skips.
+- New: when the game turns an upgrade down for missing resources, you hear what's short, like "Upgrade needs: Dilithium, 5 of 20". It works the same whether you hold F on the room or press Upgrade on its Management tab.
+- New: C says the hull's maximum, and a resource at its limit says "storage full", since anything more you collect is lost.
+- New: on the Sector Map, each star system says how many of its points are done, like "6 of 13 points done", so you can tell where you've already been.
+- Changed: a researched tier in the tech tree says the state of each technology it opens. "Opens Hydroponics Bay" sounded like it was researched; now you hear "available: Hydroponics Bay", so you know it still needs its own research.
+- Changed: the J room list says the room's name first and its deck after it.
+- Changed: in the build ring, "Missing technology" comes right after the room's name instead of after the whole description.
+- Changed: Enter on a locked warp core tier says "Tier 2 is locked." instead of talking about Deuterium.
+- Changed: an away mission result where the hero fell short but still succeeded says "Skill 49, below the 52 needed".
+- Fixed: during a scene load with no loading screen, like arriving at the Array, the keys said nothing for about ten seconds. They say "Loading, please wait." now.
+- Fixed: Enter on a turbo lift said nothing. It tells you a turbo lift has nothing to open.
+
 ## Thursday October 29th 2026, fifth update
 
 Version 0.3.97

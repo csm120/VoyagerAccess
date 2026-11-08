@@ -84,6 +84,13 @@ function M.after_enter(path)
             if not (cm and cm:IsValid()) then return end
             if cm:GetSelectedWarpcoreLevel() == level then return end
             local name = level == 0 and "Gray Mode" or ("Tier " .. level)
+            -- A locked tier, not the fuel: "Tier 2 did not engage. Deuterium
+            -- 1500." with full tanks (Casey's play, 2026-11-07).
+            local okm, max = pcall(function() return cm:GetMaxSelectableWarpcoreLevel() end)
+            if okm and type(max) == "number" and level > max then
+                require("speech").say(name .. " is locked.", true)
+                return
+            end
             local deut = nil
             pcall(function() deut = cm:GetWarpcoreInfo().DeuteriumAmount end)
             require("speech").say(name .. " did not engage" .. (deut and (". Deuterium " .. deut) or "") .. ".", true)

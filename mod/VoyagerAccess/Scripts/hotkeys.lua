@@ -20,6 +20,7 @@ local GROUPS = {
         "H: in the ship view or System Map, open a waiting call; Enter answers it",
         "V: switch between the ship view and the System Map",
         "R: repeat the last line, tutorial or card; R again within 5 seconds goes back through earlier messages",
+        "In a tutorial, Up and Down: the tutorials seen so far. N, then Tutorials, opens them",
         "Backtick, the key left of 1: copy a troubleshooting report to the clipboard",
         "F12: check for a Voyager Access update, or restart the game to install one",
         "Control F12: what's new in Voyager Access",
@@ -53,6 +54,7 @@ local GROUPS = {
         "Up and Down: points of interest, or star systems on the Sector Map",
         "Home and End: the nearest and the farthest",
         "Enter: Scan and Set course. Backspace closes that list",
+        "Shift Enter on the System Map: set course at once",
         "I: adds the trip's progress while Voyager is under way",
     } },
     { "Events at a point of interest", {

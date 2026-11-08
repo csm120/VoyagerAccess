@@ -132,7 +132,17 @@ local function dispatch()
                 local okt, up = pcall(function() return require("popups").tutorial_open() end)
                 if okt and up then
                     fn = nil
-                    pcall(function() require("speech").say("Tutorial open. Enter closes it, R repeats it.", true) end)
+                    -- Up and Down browse the tutorials found so far, as the
+                    -- game's list does (popups.tutorial_step); the other
+                    -- keys say how to close it.
+                    local stepped = false
+                    if name == "up" or name == "down" then
+                        local oks, s = pcall(function() return require("popups").tutorial_step(name == "down" and 1 or -1) end)
+                        stepped = oks and s
+                    end
+                    if not stepped then
+                        pcall(function() require("speech").say("Tutorial open. Enter closes it, R repeats it.", true) end)
+                    end
                 end
             end
             -- A loading screen: the moving keys, Enter and I say so and how
@@ -142,6 +152,15 @@ local function dispatch()
             -- I would say just "Game." over it, so it does not.
             if TUTORIAL_KEYS[name] or name == "enter" or name == "i" then
                 local okl, step = pcall(function() return require("popups").loading_step() end)
+                -- No loading screen, but the game is mid-transition (a scene
+                -- load): the same answer (help.transitioning).
+                if not (okl and step) then
+                    -- Never over a conversation, whose Enter must go on.
+                    local okt, busy = pcall(function()
+                        return not require("dialogue").active() and require("help").transitioning()
+                    end)
+                    if okt and busy then okl, step = true, "" end
+                end
                 if okl and step then
                     local line = step ~= "" and ("Loading. " .. step) or "Loading, please wait."
                     print("[VoyagerAccess] loading: " .. line .. "\n")

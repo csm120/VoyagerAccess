@@ -52,6 +52,14 @@ local function lines()
     if hull then
         local ok, text = pcall(function()
             local t = "Hull " .. text_of(hull.CurrentHullValue)
+            -- Its maximum: the HUD's bar shows how full the hull is, and C
+            -- said only the number (Casey asked, 2026-11-07). The
+            -- construction manager's MaxHullIntegrityAtLastUpdate (400 with
+            -- a full bar, VM).
+            pcall(function()
+                local m = FindFirstOf("STVConstructionManager").MaxHullIntegrityAtLastUpdate
+                if type(m) == "number" and m > 0 then t = t .. ", max " .. math.floor(m + 0.5) end
+            end)
             local change = text_of(hull.HullValuePerCycle)
             if change:match("^[%+%-]%d") then
                 t = t .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
@@ -120,7 +128,15 @@ local function lines()
             -- tr.word: Food
             local text = (NAMES[key] or require("tr").word(key)) .. " " .. text_of(w.CurrentResourceAmountText)
             local okc, cap = pcall(function() return manager:GetResourceCapacity(key) end)
-            if okc and type(cap) == "number" and cap > 0 and cap < 9999 then text = text .. ", max " .. cap end
+            if okc and type(cap) == "number" and cap > 0 and cap < 9999 then
+                text = text .. ", max " .. cap
+                -- Full storage: the HUD's bar shows it at a glance, and more
+                -- of it is lost (Casey lost 187 Deuterium to full storage
+                -- and could not tell, 2026-11-07).
+                local have = tonumber((text_of(w.CurrentResourceAmountText):gsub("%D", "")))
+                -- tr.word: storage full
+                if have and have >= cap then text = text .. ", " .. require("tr").word("storage full") end
+            end
             local change = text_of(w.CyclePreview)
             if change:match("^[%+%-]%d") then
                 text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
@@ -158,6 +174,9 @@ local function lines()
         for _, t in ipairs(screen.texts_in(passed)) do
             if not label and t:find("%a") then label = t end
         end
+        -- The game's label is lower case on screen ("passed cycles"), and a
+        -- line starting with it sounded cut off (VM, 2026-11-07).
+        if label then label = label:gsub("^%l", string.upper) end
         if n:match("^%d+$") and label then parts[#parts + 1] = label .. " " .. tonumber(n) end
     end
     -- The rest of the strip (2026-10-11): energy (WBP_AggregateEnergy_Energy:

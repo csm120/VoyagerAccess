@@ -20,8 +20,21 @@ local function nav_bar()
 end
 
 local function find(name)
-    local bar = nav_bar()
     local b = nil
+    -- The tutorial library's button is beside the bar, in the HUD's
+    -- notifications (WBP_Notifications.WBP_Tutorial_Button: the question mark
+    -- a sighted player clicks to read any tutorial again; it opened the
+    -- library in the VM, 2026-11-07).
+    if name == "TutorialButton" then
+        pcall(function()
+            for _, n in ipairs(FindAllOf("WBP_Notifications_C") or {}) do
+                if n:IsValid() and n:GetFullName():find(" /Engine/Transient.", 1, true) then b = n.WBP_Tutorial_Button end
+            end
+        end)
+        if b and b:IsValid() and screen.shown(b) then return b end
+        return nil
+    end
+    local bar = nav_bar()
     pcall(function() b = bar[name] end)
     if b and b:IsValid() and screen.shown(b) then return b end
     return nil
@@ -60,6 +73,8 @@ local NAV = {
     { "Sector map", "ShowSectorButton" }, { "Overview", "OverviewButton" },
     { "Research", "ResearchButton" }, { "Wait one cycle", "WaitOneCycleButton" },
     { "Incoming calls", "IncomingCallsButton" }, { "Sector switch, leave for the next sector", "SectorSwitchButton" },
+    -- tr.word: Tutorials
+    { "Tutorials", "TutorialButton" },
     -- Q Trials only: opens Leave Sector (missing from N, VM, 2026-10-14)
     { "Leave sector", "SandboxExitSector" },
 }

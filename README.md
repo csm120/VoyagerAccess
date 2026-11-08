@@ -60,8 +60,8 @@ Everywhere:
 1. F1: help for this screen. Control+F1: every key.
 2. I: where you are and what is selected.
 3. O: your current objective. In a battle, the battle's goal.
-4. C: hull, resources (cargo), crew, work teams, fuel, energy, battery and morale, as a list.
-5. N: a list of places to go: ship, System Map, Sector Map, Overview, Research, and Wait one cycle.
+4. C: hull, resources (cargo), crew, work teams, fuel, energy, battery and morale, as a list. The hull and each resource say their maximum, and a resource at its maximum says "storage full", since anything more you collect is lost.
+5. N: a list of places to go: ship, System Map, Sector Map, Overview, Research, Wait one cycle, and Tutorials (every tutorial you have seen so far).
 6. V: switch between the ship and the System Map.
 7. R: repeat the last line, tutorial or window.
 8. Escape: the game's own back and pause menu, just as for anyone else. Backspace closes a list Voyager Access opened without bringing up the pause menu.
@@ -93,15 +93,16 @@ Ship view:
 
 1. Up and Down Arrow change deck; Left and Right Arrow move between the rooms on a deck. Each room says its state and, when a hero is posted there, the hero's name.
 2. Home and End go to the first and last room on the deck.
-3. J: a list of all the ship's rooms with their deck and state, opening on the room you are on; Enter goes to one. Page Up, Page Down, Left or Right Arrow close the list and move in the ship view from the room the list is on.
+3. J: a list of all the ship's rooms, each with its name first, then its state and deck, opening on the room you are on; Enter goes to one. Page Up, Page Down, Left or Right Arrow close the list and move in the ship view from the room the list is on.
 4. Enter opens the room. Its window reads its state and the energy it uses, and each button reads what it costs and why it cannot be used yet. Left and Right Arrow switch the room's tabs. Escape closes the room.
 5. A ruined room or empty building space opens a ring of actions; Up and Down Arrow move through it and Enter picks one. On empty space, each room you could build says how many spaces wide it is and whether it fits there, and Enter builds it. Escape closes the ring.
-6. The game's own room keys act on the room you moved to, and each room says which it offers: E is its quick action, F upgrades it and T demolishes it. A tap of E switches power; repairing, clearing debris, upgrading and demolishing take the key held down, so those rooms say "Hold E: Repair" or "Hold F: Upgrade".
+6. The game's own room keys act on the room you moved to, and each room says which it offers: E is its quick action, F upgrades it and T demolishes it. A tap of E switches power; repairing, clearing debris, upgrading and demolishing take the key held down, so those rooms say "Hold E: Repair" or "Hold F: Upgrade". When the game turns an upgrade down for missing resources, you also hear what is short, like "Upgrade needs: Dilithium, 5 of 20", whether you held F or pressed Upgrade on the room's Management tab.
 
 System Map and Sector Map:
 
-1. Up and Down Arrow move through the points of interest, or the star systems on the Sector Map. Each says whether it has been scanned and which resources it has.
+1. Up and Down Arrow move through the points of interest, or the star systems on the Sector Map. Each says whether it has been scanned and which resources it has. A star system also says how many of its points are done, like "6 of 13 points done", as its marker shows.
 2. Enter on the System Map picks the place in the game, so you hear the game's own details for it, then "Menu" and a list of actions: Scan, or Set course. On the Sector Map Enter goes straight to the list. Set course puts the pointer on the place and holds the game's own Set course, the way a mouse player does; if the game doesn't take it after two tries, the mod asks the game to fly there directly. While you travel you hear when you are under way, halfway and arrived; I adds the trip's progress.
+3. Shift+Enter on a point of the System Map sets course to it at once, without the list. In a conversation or cutscene, Shift+Enter still skips.
 
 Point of interest events: each option reads its reward, its risk, and its chances of a good or bad outcome. Locked options are read when the event opens, and with R.
 
@@ -113,7 +114,7 @@ Battles: Enter opens Orders, and the order wheel is a list (attack a system of t
 
 Side mission requests read who is asking, what they want and the time limit, then the choices.
 
-Tutorials are read aloud and stay open until you press Enter, so R can read them again. While one is open, the arrow keys remind you that Enter closes it. A tutorial that opens on top of a window is read first, then the window behind it.
+Tutorials are read aloud and stay open until you press Enter, so R can read them again. While one is open, Up and Down Arrow move through the tutorials you have seen, each read with its title, and the other arrows remind you that Enter closes it. When two open at once, each is read with its own title, and closing one names the one still open. A tutorial that opens on top of a window is read first, then the window behind it.
 
 What the mod says on its own (a scan result, an objective, a conversation that starts by itself) isn't cut off by the next thing it says on its own; any key you press still cuts it off, except your screen reader's own commands (NVDA+Up Arrow and the like).
 

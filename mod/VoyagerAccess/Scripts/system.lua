@@ -117,14 +117,49 @@ local function poi_of(actor)
     return nil
 end
 
+-- How many of a Sector Map system's points are done, from its marker's
+-- SystemPois: the marker draws one icon per point in its event state, which
+-- is how a sighted player sees which systems are worked through; the mod
+-- said only "scanned" (Casey's play, 2026-11-07). A point is shown when one
+-- of its events is visible (ESTVEventState 2 and up), and done when none is
+-- left open or locked (2, 3, 4, 6) and one is Completed (5) or Failed (7).
+function M.points_done(w, es)
+    local shown, done = 0, 0
+    w.SystemPois:ForEach(function(_, v)
+        local p = v:get()
+        if not (p and p:IsValid()) then return end
+        local visible, left, over = false, false, false
+        p.EventIds:ForEach(function(_, e)
+            local s = es:GetEventStateById(e:get())
+            if type(s) == "number" and s >= 2 then visible = true end
+            if s == 2 or s == 3 or s == 4 or s == 6 then left = true end
+            if s == 5 or s == 7 then over = true end
+        end)
+        if visible then
+            shown = shown + 1
+            if over and not left then done = done + 1 end
+        end
+    end)
+    if shown == 0 then return nil end
+    return done .. " of " .. shown .. " points done"
+end
+
 local function system_marks(actor)
     local marks = {}
+    -- After the other marks: "Voyager is here" and the mission badges first.
+    local done_mark = nil
     pcall(function()
         local apath = actor:GetFullName()
         -- Points in a system have the same kind of widget
         -- (WBP_PoiEventWidget): Ocampa's shows the main mission icon as a
         -- dynamic material, MID_MI_UI_MainMission_... (2026-10-14).
         for _, w in ipairs(widgets_of(apath)) do
+            pcall(function()
+                if not w:GetFullName():find("WBP_SolarSystemWorldSpaceWidget_C", 1, true) then return end
+                local es = FindFirstOf("STVEventSubsystem")
+                local d = es and es:IsValid() and M.points_done(w, es)
+                if d then done_mark = d end
+            end)
             do
                 -- The countdown a point shows under its marker while a hero
                 -- is stationed there or it is locked down
@@ -184,6 +219,10 @@ local function system_marks(actor)
             end
         end)
     end)
+    -- In the list and I only: the travel lines name the system with its
+    -- marks, and "Setting course for System 9 8 4 oh point 1, 2 of 8
+    -- points done" was too much (VM, 2026-11-07).
+    if done_mark and M.with_points_done then marks[#marks + 1] = done_mark end
     return marks
 end
 
@@ -593,7 +632,10 @@ local function select(list, i, prefix)
     menu = nil
     local p = list[i]
     selected = p.path
-    local name = name_of(p.actor)
+    M.with_points_done = true
+    local okn, name = pcall(name_of, p.actor)
+    M.with_points_done = false
+    if not okn then error(name) end
     if p.actor:GetClass():GetFName():ToString() ~= "BP_STVSolarSystem_C" then
         local marks = system_marks(p.actor)
         if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
@@ -653,7 +695,12 @@ local function item_name(a)
     return require("tr").word(a)
 end
 
+-- The map the action list was opened on: the System Map's list stayed open
+-- after N switched to the Sector Map, and Down there said "Set course, 2 of
+-- 2" (VM, 2026-11-07). Leaving that map closes it.
+local menu_map = nil
 function M.menu_open()
+    if menu ~= nil and menu_map and not context_active(menu_map) then menu = nil end
     return menu ~= nil
 end
 
@@ -1545,8 +1592,9 @@ function M.enter()
         speech.say("Nothing selected." .. require("hints").text("map_updown", " Use Up and Down Arrow to choose a point of interest."), true)
         return
     end
-    if not menu then
+    if not M.menu_open() then
         menu = 1
+        menu_map = context_active("IMC_System_Map") and "IMC_System_Map" or "IMC_Sector_Map"
         list_said = false
         ACTIONS = BASE_ACTIONS
         if not select_in_game(p, open_list) then open_list(false) end
@@ -1558,20 +1606,62 @@ function M.enter()
     run(action, p)
 end
 
+-- Shift+Enter on the System Map: Set course to the selected point without
+-- the action list (Casey, 2026-11-07: a sighted player holds the left
+-- button on the point, one action). Called by dialogue.skip only when there
+-- is no dialogue or cutscene to skip. True when it handled the key.
+function M.course_key()
+    -- The System Map only, with nothing in front of it (no window, no mod
+    -- list): on the Sector Map the selection cannot be made and it went
+    -- straight to travel (GPT review, 2026-11-07).
+    if M.inspect_view() or not context_active("IMC_System_Map") then return false end
+    local okc, ctx = pcall(function() return require("help").context() end)
+    if not (okc and ctx == "system") then return false end
+    local p0 = selected_point()
+    if not p0 then return false end
+    -- Only the path is kept across the wait: the point is found again when
+    -- the course starts (never keep a UObject across ticks).
+    local path = p0.path
+    p0 = nil
+    -- The point is selected in the game first, as Enter does: without it the
+    -- game took no course ("Setting course for Class D Planet", then "was
+    -- not set" after two full holds; Casey's play, 2026-11-07). The list is
+    -- marked open but not said, so the selection's checks hold; the course
+    -- follows the panel, or at once when the selection cannot be made.
+    -- On Set course (2), not Scan: a second Enter while the selection is
+    -- under way then sets course too, where it scanned (Fable review,
+    -- 2026-11-07).
+    ACTIONS, menu, list_said, menu_map = BASE_ACTIONS, 2, true, "IMC_System_Map"
+    local function go()
+        if menu == nil then return end   -- Backspace or a move in between
+        menu = nil
+        if not context_active("IMC_System_Map") then return end
+        local p = selected_point()
+        if not (p and p.path == path) then return end
+        run("Set course", p)
+    end
+    local pnow = selected_point()
+    if not select_in_game(pnow, go) then go() end
+    return true
+end
+
 -- For L (where am I): the selected point, or nil.
 function M.where()
     local list = points()
     local i = index_of_selected(list)
     if not i then return nil end
     local p = list[i]
-    local name = name_of(p.actor)
+    M.with_points_done = true
+    local okn, name = pcall(name_of, p.actor)
+    M.with_points_done = false
+    if not okn then error(name) end
     if p.actor:GetClass():GetFName():ToString() ~= "BP_STVSolarSystem_C" then
         local marks = system_marks(p.actor)
         if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
     end
     local travel = travel_time(p)
     local text = string.format("%s, %s%s, %s%d of %d", name, status(p), inside_text(p.actor), travel and (travel .. ", ") or "", i, #list)
-    if menu then text = text .. ". Action list open: " .. item_name(ACTIONS[menu]) end
+    if M.menu_open() then text = text .. ". Action list open: " .. item_name(ACTIONS[menu]) end
     return text
 end
 

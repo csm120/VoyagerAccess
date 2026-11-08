@@ -1440,7 +1440,16 @@ local function result_poll()
                 local have, need = plain(text_of(r.HeroValueText)), plain(text_of(r.RequiredValueText))
                 -- "42 of 25" read as a fraction (2026-10-14); worded like
                 -- the hero lines ("Engineering 42, 25 needed").
-                if have:match("^%d+$") and need:match("^%d+$") then parts[#parts + 1] = "Skill " .. have .. ", " .. need .. " needed" end
+                -- Below the need it can still succeed, and "Success. Skill
+                -- 49, 52 needed." sounded like a contradiction (Casey's play,
+                -- 2026-11-07); the screen shows the two numbers side by side.
+                if have:match("^%d+$") and need:match("^%d+$") then
+                    if tonumber(have) < tonumber(need) then
+                        parts[#parts + 1] = "Skill " .. have .. ", below the " .. need .. " needed"
+                    else
+                        parts[#parts + 1] = "Skill " .. have .. ", " .. need .. " needed"
+                    end
+                end
                 parts[#parts + 1] = story
                 -- Rewards: WBP_ResourceReward_AwayMissionChallengeResult,
                 -- amount text and an icon naming the resource

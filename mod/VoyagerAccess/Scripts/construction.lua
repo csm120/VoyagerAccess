@@ -165,10 +165,10 @@ local function res_name(name)
     return (name:gsub("(%l)(%u)", "%1 %2"))
 end
 
-local function shortages(cfg, rm)
+local function shortages(cfg, rm, field)
     local short = {}
     pcall(function()
-        cfg.RequiredResourcesToBuild:ForEach(function(_, e)
+        cfg[field or "RequiredResourcesToBuild"]:ForEach(function(_, e)
             local r = e:get()
             local name = r.ResourceName:ToString()
             local have = rm:GetResourceAmount(name, false)
@@ -178,6 +178,53 @@ local function shortages(cfg, rm)
         end)
     end)
     return #short > 0 and table.concat(short, "; ") or nil
+end
+
+-- A built room's next action and what is short for it: "Upgrade" (the next
+-- level's build cost) or, for a damaged room, "Repair" (its level's repair
+-- cost); nil, nil when nothing is short. The game's own refusal is a bare
+-- "Missing resources" toast; the costs are on the room's Management tab
+-- (Casey held F on Main Engineering twice and could not tell what was
+-- missing, 2026-11-07). GetRoomUpgradeLevelBySlot is 0 for level 1, and
+-- the level N+1 config is the upgrade (70 Duranium, 30 Tritanium, 20
+-- Dilithium for Main Engineering 1 to 2, as its Management tab says; VM).
+function M.room_shortage(hull)
+    local cm = FindFirstOf("STVConstructionManager")
+    local rm = FindFirstOf("STVResourceManager")
+    local rc = StaticFindObject(ROOM_CONFIG)
+    if not (hull and hull:IsValid() and cm and rm and rc) then return nil end
+    local t = hull:GetRoomType()
+    local level = cm:GetRoomUpgradeLevelBySlot(hull:BP_GetSlotIndex())
+    -- ESTVRoomState: 1 Building, 2 Upgrading, 3 Repairing, 4 Damaged,
+    -- 5 Removing. A room already at work has nothing to pay for (the probe
+    -- said "Upgrade" for an upgrading Main Engineering, VM).
+    local state = nil
+    pcall(function() state = hull.RoomHullWidget.State.State end)
+    if state == 1 or state == 2 or state == 3 or state == 5 then return nil end
+    -- Upgrades only. A damaged room's repair: the hint already says its cost
+    -- ("Hold E: Repair, 100 Duranium, 50 Tritanium, 3 Bio-neural Gel
+    -- Pack"), and the level config's RequiredResourcesToRepair is not that
+    -- cost (15 Duranium against those 100; VM).
+    if state == 4 then return nil end
+    if not cm:HasRoomAvailableUpgrade(t, level) then return nil end
+    local out = {}
+    rc:GetRoomConfig(t, level + 1, out)
+    local cfg = out.OutConfig
+    if not (cfg and cfg:IsValid()) then return nil end
+    -- With no free work team the game's refusal is about that ("No
+    -- available work team"), and the costs were added after it (VM).
+    local teams = true
+    pcall(function()
+        for _, w in ipairs(FindAllOf("WBP_WorkTeams_Resource_C") or {}) do
+            if w:IsValid() and require("screen").shown(w) then
+                local n = tonumber((w.AvailableAmount:GetText():ToString():match("%d+")))
+                if n then teams = n >= cfg.RequiredWorkTeamsToBuild end
+            end
+        end
+    end)
+    if not teams then return nil end
+    local short = shortages(cfg, rm)
+    return short and "Upgrade" or nil, short
 end
 
 function M.blocked(cmd, cm, cfg, tc)

@@ -638,7 +638,8 @@ function M.radial_focus(b, path)
     -- belongs to the segment itself is read (its name, a room's data): a
     -- centre read without the game's word may still show the segment the
     -- pointer was on before.
-    local function say_it(hovered)
+    -- keep_why: the hover never came, so the mod's own reason stays in.
+    local function say_it(hovered, keep_why)
         pcall(function()
             if current ~= path then return end
             local nb = resolve(path)
@@ -652,7 +653,7 @@ function M.radial_focus(b, path)
                 -- will follow: every blocked choice was said twice with two
                 -- reasons, "Technologie fehlt" (the mod's) then "Fehlende
                 -- Technologie" (the centre's; firefly82's review, 2026-10-23).
-                if not hovered and ring_hooked and ring.why and not ring.why:find("^Missing resources") then
+                if not hovered and not keep_why and ring_hooked and ring.why and not ring.why:find("^Missing resources") then
                     text = text:gsub("%s*" .. ring.why:gsub("%p", "%%%0") .. "%.?", "", 1)
                 end
                 -- The centre's reason when it shows one. "Missing resources"
@@ -729,8 +730,25 @@ function M.radial_focus(b, path)
     -- Opening says the hovered reading whole: an older reading of this
     -- segment must not make it just the reason.
     if opening then radial_said[path] = nil end
-    if not opening then say_it(false) end
+    -- A room the game will not build waits for the hover (about 60 ms), so
+    -- the game's reason follows the name: "Missing technology" came after
+    -- the whole description, where a sighted player sees the lock at once
+    -- (Casey's play, 2026-11-07). Without a hover, the mod's own reason.
+    local wait_reason = ring_hooked and not opening and direct and ring0.why
+        and not ring0.why:find("^Missing resources")
+    if wait_reason then radial_said[path] = nil end
+    if not opening and not wait_reason then say_it(false) end
     if ring_hooked then ring_pending = { path = path, fn = function() say_it(true) end } end
+    if wait_reason then
+        local mine = ring_pending
+        ExecuteInGameThreadWithDelay(300, function()
+            if ring_pending == mine and mine.fn then
+                print("[VoyagerAccess] radial: no hover for a blocked room, read with the mod's reason\n")
+                mine.fn = nil
+                say_it(false, true)
+            end
+        end)
+    end
     if opening then
         local mine = ring_pending
         -- The hover stays pending: if it comes later, its centre is still
@@ -869,6 +887,16 @@ local virtual = nil   -- { window = path, buttons = { paths }, index = n }
 pcall(function()
     require("popups").on_close(function(p)
         if virtual and virtual.window == p then virtual = nil end
+        -- Focus inside the window that closed is gone with it. Escape from
+        -- Main Engineering left focus on its Tier 2 button: the ship view
+        -- was not said, and Up and Down went to the hidden warp core tiers
+        -- in silence until Right (Casey's play, 2026-11-07).
+        -- The warp core tiers are their own widget, not under the room
+        -- window's path (WBP_MainEngineeringModule_C beside it).
+        if current and type(p) == "string" and (current:sub(1, #p + 1) == p .. "."
+            or (p:find("WBP_RoomManagementV2_C", 1, true) and current:find("WBP_MainEngineeringModule_C", 1, true))) then
+            current = nil
+        end
     end)
 end)
 
@@ -2791,7 +2819,24 @@ local function activate()
         local okl, l = pcall(label_for, b, current)
         local why = okl and type(l) == "string" and l:match("Not possible: ([^%.]+)")
         if why then
-            speech.say("Not possible: " .. why, true)
+            -- The Management tab's Upgrade says what is short, as F on the
+            -- room in the ship view does (Casey, 2026-11-07: both routes
+            -- the same).
+            local extra = ""
+            if current:find("Upgrade", 1, true) then
+                pcall(function()
+                    -- Only when the button shows a cost in red ("not
+                    -- enough", rooms.lua): a research-locked upgrade would
+                    -- send the player after resources that will not help
+                    -- (Fable review). The ship view's hover panel is not
+                    -- current while the room window is open (VM).
+                    if not l:find(" not enough", 1, true) then return end
+                    local hull = require("ship").selected_hull()
+                    local what, short = require("construction").room_shortage(hull)
+                    if what and short then extra = ". Upgrade needs: " .. short end
+                end)
+            end
+            speech.say("Not possible: " .. why .. extra, true)
             return
         end
     end
@@ -3650,6 +3695,12 @@ function M.install()
         if require("rooms").window_open() then return false end
         return ship.active()
     end
+    -- The tiers' window closed but focus was left on a tier: the arrows
+    -- moved hidden tiers in silence (Casey's play, 2026-11-07).
+    local function warpcore_shown()
+        local b = resolve(current)
+        return b ~= nil and require("screen").shown(b)
+    end
     local system = require("system")
     local function map_mode()
         if require("dialogue").active() then return false end
@@ -3860,7 +3911,7 @@ function M.install()
         elseif require("view").heroes_open() then require("view").hero_step(-1)
         elseif require("view").overview_list_step(-1) then return
         elseif M.virtual_active() then M.virtual_step(-1)
-        elseif require("warpcore").handles(current) then require("warpcore").move(current, 1)
+        elseif require("warpcore").handles(current) and warpcore_shown() then require("warpcore").move(current, 1)
         elseif require("dialogue").choice_step(current, -1) then last_dir = -1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
@@ -3884,7 +3935,7 @@ function M.install()
         elseif require("view").heroes_open() then require("view").hero_step(1)
         elseif require("view").overview_list_step(1) then return
         elseif M.virtual_active() then M.virtual_step(1)
-        elseif require("warpcore").handles(current) then require("warpcore").move(current, -1)
+        elseif require("warpcore").handles(current) and warpcore_shown() then require("warpcore").move(current, -1)
         elseif require("dialogue").choice_step(current, 1) then last_dir = 1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
