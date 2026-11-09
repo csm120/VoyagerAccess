@@ -976,6 +976,9 @@ function M.continue()
     else
         stuck.line, stuck.count = line, 1
     end
+    -- The key's time before any hint below: the hint is feedback for this
+    -- Enter, so the held-line check must count it (GPT review, 2026-11-09).
+    local at = os.clock()
     if stuck.count >= 3 then
         stuck.count = 0
         speech.say("This line does not move on with Enter. Shift+Enter skips to the next choice.", true)
@@ -987,7 +990,6 @@ function M.continue()
     -- 2026-11-09: say so. Only when the same line is still up M.HELD_MS
     -- later, nothing was said since and no other key was pressed.
     if elsewhere or not line then return end
-    local at = os.clock()
     local okk, keys = pcall(require, "keys")
     local key_at = okk and keys.key_count or nil
     ExecuteInGameThreadWithDelay(M.HELD_MS, function()

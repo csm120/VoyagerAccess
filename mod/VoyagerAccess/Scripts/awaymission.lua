@@ -559,7 +559,7 @@ end
 
 local function hold_anchor(b)
     local f = require("focus")
-    f.hush_focus_until = os.clock() + 0.5
+    f.hush_focus_until, f.hush_key = os.clock() + 0.5, nil
     pcall(function() b:SetFocus() end)
     local p = path_of(b)
     ExecuteInGameThread(function()
@@ -1460,13 +1460,16 @@ function M.result_key()
             return false
         end
     end
-    if not M.result_said then return false end
+    -- A task's result too stays under a newer conversation (GPT review).
+    if other or not M.result_said then return false end
     for _, r in ipairs(FindAllOf("WBP_AwayMission_ChallengeResult_C") or {}) do
         local rp = r:IsValid() and path_of(r)
         -- Only the result whose story was said: the next task's panel can
         -- be up with its placeholder text first (Fable review, 2026-11-09).
-        local story = nil
+        -- The same fallback as result_poll when TargetText is empty (GPT).
+        local story = ""
         pcall(function() story = plain(r.DialogueTypewriterText.TargetText:ToString()) end)
+        if story == "" then story = plain(text_of(r.DialogueTypewriterText)) end
         if rp and rp:find("^/Engine/Transient%.") and screen.shown(r) and story == M.result_story then
             require("speech").say(M.result_said, true)
             if require("hints").fresh("line_arrows") then require("speech").say("Enter continues.", false) end
@@ -1561,7 +1564,9 @@ local function result_poll()
                                 print("[VoyagerAccess] mission result reward: " .. late .. "\n")
                                 require("speech").say("Reward: " .. late, false)
                                 require("dialogue").remember(base .. " Reward: " .. late .. ".")
-                                M.result_said = base .. " Reward: " .. late .. "."
+                                -- Only for this watcher's own task: an older
+                                -- watcher outlived the next result (GPT review).
+                                if M.result_story == story then M.result_said = base .. " Reward: " .. late .. "." end
                             end
                         end)
                         if not done and tries > 1 then

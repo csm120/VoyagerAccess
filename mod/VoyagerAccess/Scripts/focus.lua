@@ -2338,7 +2338,9 @@ local function poll()
     -- resumed at once; "Closed. RESUME" was said anyway (VM, 2026-10-15).
     if path:find("WBP_PauseMenu_C", 1, true) and os.clock() < (M.undo_pause_until or 0) then return end
     -- go_back is putting a room's hero back and says the result itself.
-    if os.clock() < (M.hush_focus_until or 0) then return end
+    -- Only until the player's next key (Fable review, 2026-11-09: a Down
+    -- inside the hush moved focus and the new place was never said).
+    if M.hushed(os.clock(), require("keys").key_count, { ["until"] = M.hush_focus_until or 0, key = M.hush_key }) then return end
     -- An Overview tab switch: said after the new tab (view.overview_tab).
     -- Any focus, not by path: the Q Challenges entries may have the game
     -- instance as their outer, as the event options do.
@@ -2918,18 +2920,21 @@ local function activate()
                 end)
                 return
             end
-            click(target)
             -- A choice clicked just as it came up can be ignored by the
             -- game: Enter 40 ms after the choices appeared did nothing for
             -- 20 s (Unity, VM, 2026-11-09; Casey's play, 2026-11-08). If it
             -- is still up 1.2 s later with nothing said and no other key,
             -- it is clicked once more.
+            -- Everything is taken BEFORE the click (GPT review): a click that
+            -- puts the next choices on the same widgets at once would
+            -- otherwise hand the retry the new choice's words.
             local keys = require("keys")
             local key_at, at, again = keys.key_count, os.clock(), cpath or current
             -- The same choice by its words too: the next set can come back on
             -- the same button unheard (distress call, 2026-10-15; Fable review).
             local was_path = current
             local label_at = label_for(resolve(was_path), was_path)
+            click(target)
             ExecuteInGameThreadWithDelay(1200, function()
                 pcall(function()
                     local c2 = resolve(again)
@@ -3575,7 +3580,7 @@ end
 function M.restore_slot_hero()
     local before = M.slot_before
     if not before then return end
-    M.hush_focus_until = os.clock() + 1
+    M.hush(1)
     ExecuteInGameThreadWithDelay(500, function()
         M.hush_focus_until = 0
         pcall(function()
@@ -3585,8 +3590,84 @@ function M.restore_slot_hero()
             M.slot_before = nil
             print("[VoyagerAccess] back: " .. before.hero .. " removed from the slot\n")
             speech.say(require("tr").fill("{s} removed", before.hero) .. ". " .. l, true)
+            -- The slot is in that line: the focus look after it said
+            -- "Away team slot 2 of 3, empty." again (VM, 2026-11-09).
+            M.hush(0.8)
         end)
     end)
+end
+
+-- Whether focus speech is held: before h.until, and while no key has been
+-- pressed since the hold began (h.key; nil for holds that ignore keys).
+function M.hushed(now, key_count, h)
+    return now < (h["until"] or 0) and (h.key == nil or key_count == h.key)
+end
+
+-- Hold focus speech for a moment, ended early by the player's next key.
+function M.hush(seconds)
+    M.hush_focus_until = os.clock() + seconds
+    M.hush_key = require("keys").key_count
+end
+
+-- One look of Backspace's slot emptying (clear_away_slot): "close" the hero
+-- list now, "wait" for it (it fades in), or "give_up" (another key was
+-- pressed, or no list came; GPT and Fable reviews, 2026-11-09).
+function M.slot_clear_step(s)
+    if not s.same_key then return "give_up" end
+    if s.list_shown then return "close" end
+    if (s.tries_left or 0) > 0 then return "wait" end
+    return "give_up"
+end
+
+-- The hero on a filled away team slot that Backspace empties, or nil: the
+-- away team's own slots only (WBP_AwayMissionLoadout), not a battle's.
+function M.slot_clear_hero(path, label)
+    if not (path and label and path:find("WBP_AwayMissionLoadout_C_%d+") and path:find("%.OpenSelectionButton$")) then return nil end
+    return label:match("^Away team slot %d+ of %d+: ([^,%.]+)")
+end
+
+-- Backspace on a filled away team slot empties it. With every slot filled
+-- the game starts the mission on Enter on any slot (game 2.2), so a hero
+-- could not be changed (Casey, 2026-11-09). A click still opens the slot's
+-- hero list, and closing that list without a choice takes the hero out, as
+-- Backspace in the list does (VM, 2026-11-09). Then "Tom Paris removed" and
+-- the slot are said (restore_slot_hero).
+local function clear_away_slot()
+    local okl, label = pcall(require("awaymission").slot_label, current or "")
+    local hero = M.slot_clear_hero(current, okl and label or nil)
+    local b = hero and resolve(current)
+    if not (b and require("screen").shown(b)) then return false end
+    M.slot_before = { path = current, hero = hero }
+    print("[VoyagerAccess] back: emptying the slot of " .. hero .. "\n")
+    local keys = require("keys")
+    M.hush(1.5)
+    local key_at = keys.key_count
+    click(b)
+    -- Looks every 200 ms for up to 1.2 s (the list fades in), and stops at
+    -- the player's next key, so a list opened later is never closed by this.
+    local function look(tries_left)
+        pcall(function()
+            local list = nil
+            for _, w in ipairs(FindAllOf("WBP_AwayMissionHeroPickerSelection_C") or {}) do
+                if w:IsValid() and require("screen").shown(w) then list = w break end
+            end
+            local step = M.slot_clear_step({ same_key = keys.key_count == key_at, list_shown = list ~= nil, tries_left = tries_left })
+            if step == "close" then
+                list:CallBackAction()
+                M.restore_slot_hero()
+            elseif step == "wait" then
+                ExecuteInGameThreadWithDelay(200, function() look(tries_left - 1) end)
+            else
+                print("[VoyagerAccess] back: slot not emptied (" .. (keys.key_count == key_at and "no hero list" or "another key") .. ")\n")
+                M.slot_before = nil
+                M.hush_focus_until = 0
+                -- Say where focus is, so a list left open is not silent.
+                if keys.key_count == key_at then M.reannounce() end
+            end
+        end)
+    end
+    ExecuteInGameThreadWithDelay(400, function() look(4) end)
+    return true
 end
 
 -- Backspace: return focus to the button Enter was last pressed on. The game
@@ -3594,6 +3675,7 @@ end
 local function go_back()
     crumb.at("key: backspace")
     if require("qtrials").back(current) then return end
+    if clear_away_slot() then return end
     if require("awaymission").is_hero_button(current or "") then M.restore_slot_hero() end
     -- A hero list (a room's WBP_RoomHeroPickerSelection, the away team's
     -- WBP_AwayMissionHeroPickerSelection): close it the way Escape does,
@@ -3616,7 +3698,7 @@ local function go_back()
                     local keep = cls:find("Room", 1, true) and M.room_hero_before
                     -- Quiet until the line below: "Assign a hero" came twice,
                     -- once from focus and once after "Chakotay removed" (demo).
-                    if keep then M.hush_focus_until = os.clock() + 0.6 end
+                    if keep then M.hush(0.6) end
                     w:CallBackAction()
                     if keep then
                         ExecuteInGameThreadWithDelay(400, function()

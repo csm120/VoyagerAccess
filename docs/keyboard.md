@@ -180,7 +180,9 @@ follows them.
     a slot is still empty. Once every slot is filled, the game starts the
     mission on Enter wherever you are, so filled slots say "Team complete.
     Enter starts the mission"; Start Mission is also there (End, or Down
-    from the last slot). Up from the first slot goes through the
+    from the last slot). To change a hero then, Backspace on their slot
+    empties it ("Tom Paris removed. Away team slot 2 of 3, empty.") and
+    Enter on the empty slot chooses again. Up from the first slot goes through the
     mission's recommended skills, each recommended trait and each challenge
     as lines; Up and Down move, Home goes to the first line, and Down from
     the last line or End goes back to the slots.

@@ -2,6 +2,15 @@
 
 ## Monday November 9th 2026
 
+Version 0.4.2
+
+- New: Backspace on a filled away team slot takes that hero off the team, like "Tom Paris removed. Away team slot 2 of 3, empty." Once every slot is filled, Enter on any slot starts the mission, so this is how you change a hero then: empty the slot, then Enter on it to choose someone else.
+- Fixed: when the game ignored Enter on a choice, the second press that 0.4.1 added could in rare timing land on the next set of choices instead. It now presses only the choice you heard.
+- Fixed: Up and Down after an away mission could repeat an older task's result instead of the conversation you're in now.
+- Fixed: a key pressed right after "Tom Paris removed" or a hero leaving a room is said again instead of going quiet.
+
+## Monday November 9th 2026
+
 Version 0.4.1
 
 - Fixed: once every away team slot is filled, the game starts the mission when you press Enter on any slot, not only on Start Mission, and there's no way back. The slots used to say "Team complete: End moves to Start Mission", which made it sound like Enter would change the hero. They now say "Team complete. Enter starts the mission." While a slot is still empty, Enter on a filled slot still lets you change its hero.
