@@ -15,6 +15,7 @@ return {
     ["Not available: {s}"] = "使用不可: {s}",
     ["{s} {n} of {n}"] = "{1} {3}中{2}",
     [". Team complete"] = "。チーム完成",
+    [". Enter starts the mission"] = "。Enterでミッションを開始します",
     [": End moves to Start Mission"] = "。Endでミッション開始ボタンへ移動",
     [", empty"] = "、空き",
     [". Enter to choose a hero"] = "。Enterでヒーローを選択",
@@ -193,6 +194,8 @@ return {
     ["This line does not move on with Enter. Shift+Enter skips to the next choice."] = "この台詞はEnterでは進みません。Shift+Enterで次の選択肢へスキップします。",
     ["Skipping"] = "スキップ中",
     ["Nothing to skip"] = "スキップするものがありません",
+    ["The line has not moved on yet."] = "このセリフはまだ先に進んでいません。",
+    ["Already selected."] = "選択済みです。",
 
     -- difficulty.lua
     [" preset"] = " プリセット",

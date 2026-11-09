@@ -15,6 +15,7 @@ return {
     ["Not available: {s}"] = "Недоступно: {s}",
     ["{s} {n} of {n}"] = "{s} {n} из {n}",
     [". Team complete"] = ". Группа собрана",
+    [". Enter starts the mission"] = ". Enter начинает миссию",
     [": End moves to Start Mission"] = ": End переходит к кнопке начала высадки",
     [", empty"] = ", пусто",
     [". Enter to choose a hero"] = ". Enter, чтобы выбрать героя",
@@ -193,6 +194,8 @@ return {
     ["This line does not move on with Enter. Shift+Enter skips to the next choice."] = "Эта реплика не продолжается клавишей Enter. Shift плюс Enter переходит к следующему выбору.",
     ["Skipping"] = "Пропускаю",
     ["Nothing to skip"] = "Нечего пропускать",
+    ["The line has not moved on yet."] = "Реплика ещё не сменилась.",
+    ["Already selected."] = "Уже выбрано.",
 
     -- difficulty.lua
     [" preset"] = ", набор настроек",

@@ -564,6 +564,32 @@ local function poi_detail(parts)
     return table.concat(out, ". ")
 end
 
+-- A planet's or ship's own detail panel (WBP_PlanetDetailView_C,
+-- WBP_ShipDetailView_C), read on its own: the place and its system as
+-- poi_detail says them, then the rest. Read with no layout it said
+-- "Kazon Fighter. Raider. System. 4,832.0. Online" (demo, VM, 2026-11-08;
+-- the planet's too, full game, 2026-11-09). It notes nothing found for the
+-- map list: "Online" is not something the point holds.
+local function body_detail(parts)
+    local out, place, system = {}, nil, nil
+    for _, p in ipairs(parts) do
+        if p.name == "LocationNameTextBlock" and not place then place = p.text
+        elseif p.name == "SystemNameTextBlock" and not system then system = require("system").spoken_number(p.text) end
+    end
+    if place then out[1] = place .. (system and (", in system " .. system) or "") end
+    for _, p in ipairs(parts) do
+        local t = (p.text or ""):gsub("%s+$", "")
+        -- The "System" label by its name too, for other languages (Fable
+        -- review): System_TextBLock on the ship's panel, Population_1 on
+        -- the planet's (widget dump 26128946).
+        if p.name ~= "LocationNameTextBlock" and p.name ~= "SystemNameTextBlock" and p.name ~= "System_TextBLock"
+            and p.name ~= "Population_1" and t ~= "System" and t ~= "" then
+            out[#out + 1] = t
+        end
+    end
+    return table.concat(out, ". ")
+end
+
 -- A point-of-interest event: title and description only; its options are
 -- read one at a time as focus moves (events.lua).
 -- The resources named by the reward icons under path, in order
@@ -2142,6 +2168,10 @@ LAYOUTS.WBP_MissionInfoWidget_C = function(parts, path)
     return without_buttons(kept, path)
 end
 for _, c in ipairs(SAVE_WARNINGS) do LAYOUTS[c] = LAYOUTS.WBP_PauseMenu_Confirms_C end
+LAYOUTS.WBP_PlanetDetailView_C, LAYOUTS.WBP_ShipDetailView_C = body_detail, body_detail
+-- A ship wreck's panel in the demo ("Ship Wreck. System. 8,112.0", VM,
+-- 2026-11-09): the same three fields.
+LAYOUTS.WBP_GenericLocationDetailView_C = body_detail
 
 -- True while an event window's text has changed since it was last read:
 -- the poll is about to read it and say the focused button after it. Focus

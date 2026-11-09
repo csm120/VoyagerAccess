@@ -987,9 +987,17 @@ M.pause_menu_up = pause_menu_up
 -- shows it again (Casey's play, 2026-11-07: both were silent). The menu
 -- fades out and was still shown 500 ms later (VM, 2026-11-08), so it is
 -- looked at every 250 ms for up to 2 s; another key in between ends it.
+-- Whether anything was said since t (the Escape that closed the pause
+-- menu): the game's own focus can come back and be said before the menu is
+-- seen gone (an event's option was said twice, VM, 2026-11-09).
+function M.pause_said(t)
+    return require("speech").said_since(t) == true
+end
+
 function M.view_after_pause()
     local keys = require("keys")
     local key_at = keys.key_count
+    local esc_at = os.clock()
     local function look(n)
         pcall(function()
             if keys.key_count ~= key_at then
@@ -999,6 +1007,28 @@ function M.view_after_pause()
             if not pause_menu_up() then
                 print("[VoyagerAccess] pause menu closed, view again\n")
                 require("help").view_again()
+                -- Over a window the view is "other" and says nothing: an
+                -- away mission's outcome was silent after the pause menu
+                -- closed (VM, 2026-11-09). The window's button, the focused
+                -- button, or the line or result under it, once the view
+                -- look (400 ms) has had its turn.
+                ExecuteInGameThreadWithDelay(700, function()
+                    pcall(function()
+                        if keys.key_count ~= key_at then return end
+                        local b = current and not current:find("WBP_PauseMenu_C", 1, true) and resolve(current)
+                        local pick = M.pause_fallback({
+                            view_said = (require("help").view_said_at or -100) >= esc_at,
+                            said = M.pause_said(esc_at),
+                            virtual = M.virtual_active() and virtual ~= nil,
+                            focus_shown = b ~= nil and b ~= false and require("screen").shown(b),
+                        })
+                        if not pick then return end
+                        print("[VoyagerAccess] pause menu closed over a window: " .. pick .. "\n")
+                        if pick == "window" then M.say_window_button()
+                        elseif pick == "focus" then M.reannounce()
+                        elseif not require("awaymission").result_key() then require("dialogue").line_key() end
+                    end)
+                end)
             elseif n > 0 then
                 ExecuteInGameThreadWithDelay(250, function() look(n - 1) end)
             end
@@ -1007,8 +1037,32 @@ function M.view_after_pause()
     ExecuteInGameThreadWithDelay(250, function() look(7) end)
 end
 
+-- A clicked choice still up 1.2 s later with nothing said and no other key:
+-- the game ignored the click, so it is clicked once more (activate).
+function M.choice_retry_ok(s)
+    return s.same_key == true and not s.said and s.shown == true and s.same_label == true
+end
+
+-- After the pause menu closed with no view line: what to say instead.
+-- "window" (a mod button list), "focus" (a focused game button), "line"
+-- (an away result or conversation line), or nil when something spoke.
+function M.pause_fallback(s)
+    if s.view_said or s.said then return nil end
+    if s.virtual then return "window" end
+    if s.focus_shown then return "focus" end
+    return "line"
+end
+
 -- The window list's button again, if one is open (popups.lua after a
 -- tutorial over the window closes). True when one was said.
+-- After Escape, whether the window's button is said again (900 ms later):
+-- the same key count, no pause menu, no view line and nothing else said
+-- since the key, the button still shown and focus still on it.
+function M.escape_repeat_ok(s)
+    return s.same_key == true and not s.pause and not s.view_said and not s.said
+        and s.shown == true and s.same_focus == true
+end
+
 function M.say_window_button()
     if not virtual then return false end
     local w = StaticFindObject(virtual.window)
@@ -2865,6 +2919,40 @@ local function activate()
                 return
             end
             click(target)
+            -- A choice clicked just as it came up can be ignored by the
+            -- game: Enter 40 ms after the choices appeared did nothing for
+            -- 20 s (Unity, VM, 2026-11-09; Casey's play, 2026-11-08). If it
+            -- is still up 1.2 s later with nothing said and no other key,
+            -- it is clicked once more.
+            local keys = require("keys")
+            local key_at, at, again = keys.key_count, os.clock(), cpath or current
+            -- The same choice by its words too: the next set can come back on
+            -- the same button unheard (distress call, 2026-10-15; Fable review).
+            local was_path = current
+            local label_at = label_for(resolve(was_path), was_path)
+            ExecuteInGameThreadWithDelay(1200, function()
+                pcall(function()
+                    local c2 = resolve(again)
+                    -- RightButton only on a choice widget (cpath); an away
+                    -- mission choice's path is already the button.
+                    local t2 = c2
+                    if c2 and cpath then
+                        local rb = c2.RightButton
+                        if rb and rb:IsValid() then t2 = rb end
+                    end
+                    local fb = resolve(was_path)
+                    local ok = M.choice_retry_ok({
+                        same_key = keys.key_count == key_at,
+                        said = speech.said_since(at),
+                        shown = c2 ~= nil and require("screen").shown(c2),
+                        same_label = label_at ~= nil and fb ~= nil and label_for(fb, was_path) == label_at,
+                    })
+                    if ok and t2 then
+                        print("[VoyagerAccess] enter: choice not taken, clicking it again\n")
+                        click(t2)
+                    end
+                end)
+            end)
             return
         end
     end
@@ -3369,6 +3457,25 @@ local function activate()
             end, 900)
         end
         click(b)
+        -- Enter on the choice already in use (the Mess Hall's "Normal Food
+        -- Rations, selected") changes nothing, and the key said nothing
+        -- (Casey's play, 2026-11-08). Casey, 2026-11-09: say "Already
+        -- selected", when focus stayed, the label did not change, nothing
+        -- was said and no other key came.
+        if before and before:find(", selected", 1, true) then
+            local keys = require("keys")
+            local at, key_at = os.clock(), keys.key_count
+            ExecuteInGameThreadWithDelay(700, function()
+                pcall(function()
+                    if current ~= path or keys.key_count ~= key_at or speech.said_since(at) then return end
+                    local now = resolve(path)
+                    if not (now and require("screen").shown(now)) then return end
+                    if label_for(now, path) ~= before then return end
+                    print("[VoyagerAccess] enter: already selected\n")
+                    speech.say("Already selected.", true)
+                end)
+            end)
+        end
         if analyze then
             if before and before:find("^Analysis") then speech.say("Analysis stopped", true) end
             if before and (before:find("^Analysis") or before:find("^Unexplored")) then return end
@@ -3989,21 +4096,26 @@ function M.install()
             -- 900 ms, and only if no view was said: a window fading out
             -- after Escape is still shown for a while (the pause menu was,
             -- over 500 ms, VM, 2026-11-08), and its closing says the view.
+            -- A focused game button too: Escape on the Bridge's side mission
+            -- window left it open and said nothing (VM, 2026-11-09).
             local win, key_at, esc_at = M.virtual_active() and M.virtual_window(), keys.key_count, os.clock()
-            if win then
-                ExecuteInGameThreadWithDelay(900, function()
-                    pcall(function()
-                        if keys.key_count ~= key_at or pause_menu_up() then return end
-                        if (require("help").view_said_at or -100) >= esc_at then return end
-                        local w = StaticFindObject(win)
-                        if not (w and w:IsValid() and require("screen").shown(w)) then return end
-                        if virtual and virtual.window == win then
-                            print("[VoyagerAccess] escape: window stays open, its button again\n")
-                            say_virtual(true)
-                        end
-                    end)
+            local was = current
+            ExecuteInGameThreadWithDelay(900, function()
+                pcall(function()
+                    local target = win and StaticFindObject(win) or resolve(was)
+                    local state = {
+                        same_key = keys.key_count == key_at,
+                        pause = pause_menu_up(),
+                        view_said = (require("help").view_said_at or -100) >= esc_at,
+                        said = speech.said_since(esc_at),
+                        shown = target ~= nil and target:IsValid() and require("screen").shown(target),
+                        same_focus = win and (virtual ~= nil and virtual.window == win) or (not win and current == was),
+                    }
+                    if not M.escape_repeat_ok(state) then return end
+                    print("[VoyagerAccess] escape: window stays open, its button again\n")
+                    if win then say_virtual(true) else M.reannounce() end
                 end)
-            end
+            end)
             return
         end
         local targets = {}
@@ -4042,6 +4154,9 @@ function M.install()
     local function line_only()
         local b = current and resolve(current)
         if b and require("screen").shown(b) then return false end
+        -- An away mission task's result first (VM, 2026-11-09: silent).
+        local oka, saida = pcall(away.result_key)
+        if oka and saida then return true end
         local ok, said = pcall(require("dialogue").line_key)
         return ok and said
     end

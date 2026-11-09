@@ -15,6 +15,7 @@ return {
     ["Not available: {s}"] = "Niedostępne: {s}",
     ["{s} {n} of {n}"] = "{s} {n} z {n}",
     [". Team complete"] = ". Zespół kompletny",
+    [". Enter starts the mission"] = ". Enter rozpoczyna misję",
     [": End moves to Start Mission"] = ": End przechodzi do Rozpocznij misję",
     [", empty"] = ", puste",
     [". Enter to choose a hero"] = ". Enter, aby wybrać bohatera",
@@ -193,6 +194,8 @@ return {
     ["This line does not move on with Enter. Shift+Enter skips to the next choice."] = "Enter nie przechodzi dalej w tej kwestii. Shift+Enter przeskakuje do następnego wyboru.",
     ["Skipping"] = "Pomijanie",
     ["Nothing to skip"] = "Nie ma czego pominąć",
+    ["The line has not moved on yet."] = "Kwestia jeszcze nie przeszła dalej.",
+    ["Already selected."] = "Już wybrane.",
 
     -- difficulty.lua
     [" preset"] = ", ustawienie wstępne",

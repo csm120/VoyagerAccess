@@ -784,6 +784,36 @@ function M.speaker()
     return last_speaker
 end
 
+-- Which open windows R reads again.
+function M.repeat_windows(windows)
+    -- An event up: only the event. R over Initiations added the map panel
+    -- behind it, "Unknown, in system 5 oh 8 8 point 1. Online" (Casey's
+    -- play, 2026-11-08).
+    local only = {}
+    for _, p in ipairs(windows) do
+        if p:find("WBP_POIMultipleChoice_C", 1, true) then only[#only + 1] = p end
+    end
+    if #only > 0 then return only end
+    -- A battle's result: only the result. Not the auto-resolve readout left
+    -- behind it ("Combat result: ... Combat autoresolve. ...", Casey,
+    -- 2026-11-08), nor the order wheel still open when the battle ended
+    -- ("Combat result: ... HELM. ACTIONS. INITIATE REPAIRS ...", VM,
+    -- 2026-11-09).
+    local result = false
+    for _, p in ipairs(windows) do
+        if p:find("CombatResultView", 1, true) or p:find("WBP_BattleResultLCARS_C", 1, true) then result = true end
+    end
+    if not result then return windows end
+    -- A tutorial over the result is still read (Fable review, 2026-11-09).
+    for _, p in ipairs(windows) do
+        if p:find("CombatResultView", 1, true) or p:find("WBP_BattleResultLCARS_C", 1, true)
+            or p:find("WBP_TutorialInfoWidget_C", 1, true) or p:find("WBP_TUT_", 1, true) then
+            only[#only + 1] = p
+        end
+    end
+    return only
+end
+
 function M.repeat_line()
     -- In the tech tree, its current item (or the open panel): R repeated the
     -- build ring's last line there (firefly82, 2026-10-23).
@@ -821,28 +851,7 @@ function M.repeat_line()
         end
         local okw, text = pcall(function()
             local popups, out = require("popups"), {}
-            -- An event up: only the event. R over Initiations added the map
-            -- panel behind it, "Unknown, in system 5 oh 8 8 point 1. Online"
-            -- (Casey's play, 2026-11-08).
-            local windows = popups.open_windows()
-            local events = {}
-            for _, p in ipairs(windows) do
-                if p:find("WBP_POIMultipleChoice_C", 1, true) then events[#events + 1] = p end
-            end
-            if #events > 0 then windows = events end
-            -- A battle's result: not the auto-resolve readout left behind it
-            -- ("Combat result: ... Combat autoresolve. ...", Casey, 2026-11-08).
-            local has_result = false
-            for _, p in ipairs(windows) do
-                if p:find("CombatResultView", 1, true) then has_result = true end
-            end
-            if has_result then
-                local kept = {}
-                for _, p in ipairs(windows) do
-                    if not p:find("AutoResolveWidget", 1, true) then kept[#kept + 1] = p end
-                end
-                windows = kept
-            end
+            local windows = M.repeat_windows(popups.open_windows())
             for _, p in ipairs(windows) do
                 -- In dialogue, only the away mission summary (the mission
                 -- window is a dialogue): R gave the last line, not the
@@ -972,6 +981,40 @@ function M.continue()
         speech.say("This line does not move on with Enter. Shift+Enter skips to the next choice.", true)
     end
     inject_continue()
+    -- The game can hold a finished line and ignore Enter for minutes (a
+    -- scripted moment: Chardis's "They're here!", about three minutes,
+    -- Casey's play, 2026-11-08), and the key said nothing. Casey,
+    -- 2026-11-09: say so. Only when the same line is still up M.HELD_MS
+    -- later, nothing was said since and no other key was pressed.
+    if elsewhere or not line then return end
+    local at = os.clock()
+    local okk, keys = pcall(require, "keys")
+    local key_at = okk and keys.key_count or nil
+    ExecuteInGameThreadWithDelay(M.HELD_MS, function()
+        pcall(function()
+            if okk and keys.key_count ~= key_at then return end
+            if speech.said_since(at) then return end
+            -- Choices that came up under the same line are a move on.
+            local okc, list = pcall(shown_choices)
+            if okc and list and #list > 0 then return end
+            local now = nil
+            local nw = M.active()
+            pcall(function() now = (nw.DialogueSpeakerText:GetText():ToString()) .. "|" .. nw.DialogueText:GetText():ToString() end)
+            if M.line_held(line, now) then
+                print("[VoyagerAccess] dialogue: line held by the game after Enter\n")
+                speech.say("The line has not moved on yet.", true)
+            end
+        end)
+    end)
+end
+
+-- How long after Enter a line still up counts as held. 1.2 s said it before
+-- a scene change that took 1.38 s (Janeway to Carey, VM, 2026-11-09).
+M.HELD_MS = 3000
+
+-- The same conversation line is still up after Enter (M.continue).
+function M.line_held(before, now)
+    return before ~= nil and now ~= nil and before == now
 end
 
 -- Shift+Enter: "hold to skip". The game's skip actions need a 1.0 s hold of

@@ -90,6 +90,14 @@ function M.recent_lines(seconds)
     end
     return out
 end
+-- Whether anything was said at or after os.clock() time t: a key whose
+-- answer would come from the game (a new line, a view) is quiet otherwise.
+function M.said_since(t)
+    for i = #M.recent, 1, -1 do
+        if M.recent[i].at >= t then return true end
+    end
+    return false
+end
 function M.say(text, interrupt, built)
     if type(text) ~= "string" then return end
     M.recent[#M.recent + 1] = { text = text, at = os.clock() }

@@ -1,5 +1,21 @@
 # New in Voyager Access
 
+## Monday November 9th 2026
+
+Version 0.4.1
+
+Fixes from a long test day on a test computer, most of them from the away team and battle screens.
+
+- Fixed: once every away team slot is filled, the game starts the mission when you press Enter on any slot, not only on Start Mission, and there's no way back. The slots used to say "Team complete: End moves to Start Mission", which made it sound like Enter would change the hero. They now say "Team complete. Enter starts the mission." While a slot is still empty, Enter on a filled slot still lets you change its hero.
+- New: Enter on a conversation line the game is holding says "The line has not moved on yet." instead of nothing. It waits 3 seconds first, so a slow scene change doesn't set it off.
+- New: Enter on a choice that's already in use, like the Mess Hall ration you already serve, says "Already selected."
+- Fixed: Enter on a conversation choice right as the choices appeared could be ignored by the game, and nothing happened. If the choice is still there a moment later and nothing else happened, it's pressed once more.
+- Fixed: R on a battle's result read the order wheel too when it was still open behind the result. You hear only the result now, plus any tutorial on top of it.
+- Changed: Up and Down on an away mission task's result say the result again, the way they repeat a conversation line, and at the end of a mission they say the mission's outcome.
+- Fixed: closing the pause menu over a window, like an event, a task's result or a mission's outcome, said nothing. You hear the window's button, the result or the outcome again.
+- Changed: Escape on a window it doesn't close, like a side mission's offer, says the window's button again instead of nothing.
+- Fixed: a planet's, a ship's or a wreck's own panel could read its system as "System. 8,112.0". It says "in system 8 1 1 2" like the rest of the map.
+
 ## Sunday November 8th 2026, later
 
 Version 0.4.0

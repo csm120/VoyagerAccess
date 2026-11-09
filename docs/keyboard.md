@@ -59,10 +59,12 @@ follows them.
    by that same press).
 2. Menus and settings: Up, Down, Home, End, Enter, Backspace; Left and Right
    change a setting. Menu items and room buttons say their position, for
-   example "Dismantle, 2 of 3".
+   example "Dismantle, 2 of 3". Enter on a choice already in use, such as
+   the Mess Hall's ration, says "Already selected."
 3. Dialogue: Enter continues, Shift+Enter skips ahead. On a line with no
    choices, Up, Down, Home and End say the line again ("Enter continues."
-   the first times). When a call comes in, the mod says "Incoming call. To
+   the first times). When the game holds a line and Enter does not move it
+   on, the mod says "The line has not moved on yet." When a call comes in, the mod says "Incoming call. To
    answer, press H, then Enter." H, in the ship view or System Map, opens
    the waiting call as a click on the game's call button does; Enter on the
    call ("Incoming call: <name>") starts the conversation. With no call, H
@@ -174,10 +176,11 @@ follows them.
    Shield Hacking ready"), pauses, energy ("Engine 1 of 2, 2 spare") and the game's battle
    messages ("An enemy ship has fled combat, Captain.") are spoken as they
    happen.
-11. Away team selection: Enter on a slot chooses or changes its hero. Once
-    every slot is filled, filled slots say "Team complete: End moves to
-    Start Mission"; Enter on Start Mission (also Down from the last slot)
-    starts the mission. Up from the first slot goes through the
+11. Away team selection: Enter on a slot chooses or changes its hero while
+    a slot is still empty. Once every slot is filled, the game starts the
+    mission on Enter wherever you are, so filled slots say "Team complete.
+    Enter starts the mission"; Start Mission is also there (End, or Down
+    from the last slot). Up from the first slot goes through the
     mission's recommended skills, each recommended trait and each challenge
     as lines; Up and Down move, Home goes to the first line, and Down from
     the last line or End goes back to the slots.

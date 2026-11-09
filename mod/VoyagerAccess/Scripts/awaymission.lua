@@ -271,6 +271,11 @@ function M.slot_label(path)
         -- and only Start Mission starts (player report, 0.3.82, 2026-10-24),
         -- so the hint names the way there. Under a new hint key: anyone who
         -- had heard the old one twice would never have heard this one.
+        -- Superseded again on game 2.2 (VM, 2026-11-09, four of four): with
+        -- every slot filled, the game takes Enter on any slot as Start
+        -- Mission (the loadout closed before the mod read the key); with a
+        -- slot empty, Enter on a filled slot opens its hero list. Said on
+        -- every filled slot of a full team, since the start cannot be undone.
         local full = true
         pcall(function()
             L.HeroPickers:ForEach(function(_, e)
@@ -279,7 +284,7 @@ function M.slot_label(path)
             end)
         end)
         if full and path:find("WBP_AwayMissionLoadout_C", 1, true) then
-            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete" .. require("hints").text("team_end", ": End moves to Start Mission") .. "."
+            return head .. ": " .. (hero:gsub("%.?%s*$", "")) .. ". Team complete" .. ". Enter starts the mission" .. "."
         end
         return head .. ": " .. hero
     end
@@ -1430,6 +1435,46 @@ end
 -- panel is in the window from the start with placeholder text, so it is
 -- read only while shown and only when the story changes.
 local last_result = nil
+M.result_said = nil   -- the last result said, with its late reward
+
+-- An arrow over a task's result: the result again, as a conversation line
+-- with no choices does (dialogue.line_key). Up, Down, Left and Right said
+-- nothing there; only R repeated it (VM, 2026-11-09).
+function M.result_key()
+    -- The mission's outcome first: the last task's result stays shown under
+    -- it, and the arrows said that task again (VM, 2026-11-09). Its summary,
+    -- as R says it.
+    -- Not once another conversation is the active one: the outcome could stay
+    -- shown under the line after the mission (Fable review, 2026-11-09).
+    local okd, d = pcall(function() return require("dialogue").active() end)
+    local other = okd and d and d:IsValid() and not d:GetFullName():find("AwayMission", 1, true)
+    for _, o in ipairs(other and {} or FindAllOf("WBP_AwayMissionOutcome_C") or {}) do
+        local op = o:IsValid() and path_of(o)
+        if op and op:find("^/Engine/Transient%.") and screen.shown(o) then
+            local ok, summary = pcall(M.outcome_text, op)
+            if ok and summary and summary ~= "" then
+                require("speech").say(summary, true)
+                if require("hints").fresh("line_arrows") then require("speech").say("Enter continues.", false) end
+                return true
+            end
+            return false
+        end
+    end
+    if not M.result_said then return false end
+    for _, r in ipairs(FindAllOf("WBP_AwayMission_ChallengeResult_C") or {}) do
+        local rp = r:IsValid() and path_of(r)
+        -- Only the result whose story was said: the next task's panel can
+        -- be up with its placeholder text first (Fable review, 2026-11-09).
+        local story = nil
+        pcall(function() story = plain(r.DialogueTypewriterText.TargetText:ToString()) end)
+        if rp and rp:find("^/Engine/Transient%.") and screen.shown(r) and story == M.result_story then
+            require("speech").say(M.result_said, true)
+            if require("hints").fresh("line_arrows") then require("speech").say("Enter continues.", false) end
+            return true
+        end
+    end
+    return false
+end
 
 local function result_poll()
     for _, r in ipairs(FindAllOf("WBP_AwayMission_ChallengeResult_C") or {}) do
@@ -1490,6 +1535,7 @@ local function result_poll()
                 print("[VoyagerAccess] mission result: " .. text .. "\n")
                 require("speech").say_long(text)
                 require("dialogue").remember(text)
+                M.result_said, M.result_story = text, story
                 -- "+150" deuterium showed on screen but was not in the
                 -- result that was read (2026-10-14): the reward can appear
                 -- after the text. Look again, anywhere on screen.
@@ -1515,6 +1561,7 @@ local function result_poll()
                                 print("[VoyagerAccess] mission result reward: " .. late .. "\n")
                                 require("speech").say("Reward: " .. late, false)
                                 require("dialogue").remember(base .. " Reward: " .. late .. ".")
+                                M.result_said = base .. " Reward: " .. late .. "."
                             end
                         end)
                         if not done and tries > 1 then
