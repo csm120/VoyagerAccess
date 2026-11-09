@@ -454,6 +454,7 @@ return {
     [" until {s} is upgraded"] = " hasta que se mejore {s}",
     [", amount {s}"] = ", cantidad {s}",
     [", in system {s}"] = ", en el sistema {s}",
+    ["In system {s}"] = "En el sistema {s}",
     ["Resources"] = "Recursos",
     ["Outcome: {s}"] = "Resultado: {s}",
     ["{n} {s} stored"] = "{n} {s} almacenados",

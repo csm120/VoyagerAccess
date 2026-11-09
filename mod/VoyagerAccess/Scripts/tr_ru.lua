@@ -479,6 +479,7 @@ return {
     [" until {s} is upgraded"] = ", пока не будет улучшен отсек {s}",
     [", amount {s}"] = ", количество {s}",
     [", in system {s}"] = ", в системе {s}",
+    ["In system {s}"] = "В системе {s}",
     ["Resources"] = "Ресурсы",
     ["Outcome: {s}"] = "Результат: {s}",
     ["{n} {s} stored"] = "{n} {s} на складе",

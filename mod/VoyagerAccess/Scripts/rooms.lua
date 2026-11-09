@@ -275,7 +275,8 @@ function M.research_label(path)
         if n and n:match("^%d+$") then label = label .. ", " .. n .. (n == "1" and " cycle" or " cycles") end
         local costs = costs_under(path)
         if costs ~= "" then label = label .. ", costs " .. costs end
-        return label .. ". Enter crafts it."
+        -- No "Enter crafts it." after each blueprint (Casey, 2026-11-08: not needed).
+        return label .. "."
     end
     if path:find("WBP_RoomMgmt_Analyze_Button_C_%d+$") then
         local by = texts_under(path)

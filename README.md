@@ -95,7 +95,7 @@ Ship view:
 2. Home and End go to the first and last room on the deck.
 3. J: a list of all the ship's rooms, each with its name first, then its state and deck, opening on the room you are on; Enter goes to one. Page Up, Page Down, Left or Right Arrow close the list and move in the ship view from the room the list is on.
 4. Enter opens the room. Its window reads its state and the energy it uses, and each button reads what it costs and why it cannot be used yet. Left and Right Arrow switch the room's tabs. Escape closes the room.
-5. A ruined room or empty building space opens a ring of actions; Up and Down Arrow move through it and Enter picks one. On empty space, each room you could build says how many spaces wide it is and whether it fits there, and Enter builds it. Escape closes the ring.
+5. A ruined room or empty building space opens a ring of actions; Up and Down Arrow move through it and Enter picks one. On empty space, each room you could build says its name, why it can't be built if it can't, what it costs to build, how many spaces wide it is and whether it fits there, then what it does and its description, and Enter builds it. Escape closes the ring.
 6. The game's own room keys act on the room you moved to, and each room says which it offers: E is its quick action, F upgrades it and T demolishes it. A tap of E switches power; repairing, clearing debris, upgrading and demolishing take the key held down, so those rooms say "Hold E: Repair" or "Hold F: Upgrade". When the game turns an upgrade down for missing resources, you also hear what is short, like "Upgrade needs: Dilithium, 5 of 20", whether you held F or pressed Upgrade on the room's Management tab.
 
 System Map and Sector Map:

@@ -454,6 +454,7 @@ return {
     [" until {s} is upgraded"] = "，升级{s}后才能得知",
     [", amount {s}"] = "，数量{s}",
     [", in system {s}"] = "，位于星系{s}",
+    ["In system {s}"] = "位于星系{s}",
     ["Resources"] = "资源",
     ["Outcome: {s}"] = "结果：{s}",
     ["{n} {s} stored"] = "已储存{n}{s}",

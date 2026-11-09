@@ -821,7 +821,29 @@ function M.repeat_line()
         end
         local okw, text = pcall(function()
             local popups, out = require("popups"), {}
-            for _, p in ipairs(popups.open_windows()) do
+            -- An event up: only the event. R over Initiations added the map
+            -- panel behind it, "Unknown, in system 5 oh 8 8 point 1. Online"
+            -- (Casey's play, 2026-11-08).
+            local windows = popups.open_windows()
+            local events = {}
+            for _, p in ipairs(windows) do
+                if p:find("WBP_POIMultipleChoice_C", 1, true) then events[#events + 1] = p end
+            end
+            if #events > 0 then windows = events end
+            -- A battle's result: not the auto-resolve readout left behind it
+            -- ("Combat result: ... Combat autoresolve. ...", Casey, 2026-11-08).
+            local has_result = false
+            for _, p in ipairs(windows) do
+                if p:find("CombatResultView", 1, true) then has_result = true end
+            end
+            if has_result then
+                local kept = {}
+                for _, p in ipairs(windows) do
+                    if not p:find("AutoResolveWidget", 1, true) then kept[#kept + 1] = p end
+                end
+                windows = kept
+            end
+            for _, p in ipairs(windows) do
                 -- In dialogue, only the away mission summary (the mission
                 -- window is a dialogue): R gave the last line, not the
                 -- summary (2026-10-14).

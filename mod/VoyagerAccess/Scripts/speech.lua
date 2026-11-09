@@ -80,8 +80,20 @@ end
 -- phrases over the line, 36 to 77 ms for one new tech tree line (timing
 -- log, 2026-10-24), and over the game's texts as well, which it can change
 -- (German "die Betrieb" for the game's "die Operation", 2026-10-24).
+-- The last lines said, for a window that would repeat a name just heard
+-- (popups.place_heard): { text, at } with os.clock, at most 30.
+M.recent = {}
+function M.recent_lines(seconds)
+    local out, now = {}, os.clock()
+    for _, l in ipairs(M.recent) do
+        if now - l.at <= seconds then out[#out + 1] = l.text end
+    end
+    return out
+end
 function M.say(text, interrupt, built)
     if type(text) ~= "string" then return end
+    M.recent[#M.recent + 1] = { text = text, at = os.clock() }
+    if #M.recent > 30 then table.remove(M.recent, 1) end
     local asked = interrupt
     text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
     -- Parts joined with ". " after text that already ended a sentence read

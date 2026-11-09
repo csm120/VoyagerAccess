@@ -564,6 +564,7 @@ function say_view(v)
     if after_name then text = here end
     view.toggled, view.nav_named = nil, nil
     print("[VoyagerAccess] view: " .. text .. "\n")
+    M.view_said_at, M.view_text = os.clock(), text
     speech.say(text, not after_name)
 end
 

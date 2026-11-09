@@ -978,6 +978,7 @@ local function run(action, p)
             return
         end
         speech.say("Scanning " .. name, true)
+        pcall(require("popups").poi_heard, name, "scan")
         -- Why a scan is refused: the game builds its message from the
         -- missing scanner tags (Ability.Scan.CanScan when Stellar
         -- Cartography is damaged or off; "The scan did not finish" was all
@@ -1008,14 +1009,14 @@ local function run(action, p)
                 for _, x in ipairs(points()) do if x.path == path then q = x end end
                 if not q then return end
                 if explored(q.actor) then
+                    -- The panel read again after the scan has said it:
+                    -- "Found Spatial Anomaly, Our sensors..." repeated the
+                    -- panel's whole text 0.7 s later (Casey, 2026-10-26), and
+                    -- "Found Deuterium" followed "Resources: Deuterium, ..."
+                    -- (Casey, 2026-11-08).
+                    if found[q.path] and found[q.path] ~= before then return end
                     local res = resources(q.poi)
-                    if res == "" then
-                        -- The panel read again after the scan has said it:
-                        -- "Found Spatial Anomaly, Our sensors..." repeated the
-                        -- panel's whole text 0.7 s later (Casey, 2026-10-26).
-                        if found[q.path] and found[q.path] ~= before then return end
-                        res = found[q.path] or ""
-                    end
+                    if res == "" then res = found[q.path] or "" end
                     -- The full game's event IDs are not ResourceEvent_Generated_*,
                     -- so "nothing found" followed a panel listing Tritanium
                     -- (Q Trial, VM, 2026-10-14); the panel says what was found.
@@ -1434,6 +1435,8 @@ local function select_in_game(p, done)
     -- The panel may say the same as when it was last read (the same point
     -- again): forgotten so that it is read, put back if nothing came.
     local forgotten = require("popups").forget("POIDetailView")
+    -- The list line has just said the point's name; the panel says its system.
+    pcall(function() require("popups").poi_heard(name_of(p.actor), "select") end)
     local job = { path = path, done = done }
     selecting = job
     local function stale()

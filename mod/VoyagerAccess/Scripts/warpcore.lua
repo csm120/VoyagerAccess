@@ -68,6 +68,26 @@ function M.label(path)
                 end
             end)
         end
+        -- Another unlocked tier: its figures from the tier data. A sighted
+        -- player selects it and sees them in the "Currently selected tier"
+        -- panel before switching it on; the mod moves focus itself, so that
+        -- panel stays on the running tier (Casey, 2026-11-08). PowerLevels'
+        -- first entry is Gray Mode (60, 120, 180 ... read live).
+        if ok1 and selected ~= level and level > 0 and ok2 and level <= max then
+            pcall(function()
+                local d = nil
+                for _, m in ipairs(FindAllOf("STVModifier_MainEngineering") or {}) do
+                    if m:IsValid() then
+                        m.PowerLevels:ForEach(function(i, e) if i == level + 1 then d = e:get() end end)
+                        if d then break end
+                    end
+                end
+                local e, per = d and d.EnergyProductionPerCycle, d and d.EnergyProducedPerDeuterium
+                if e and e > 0 and per and per > 0 then
+                    text = text .. string.format(", makes %d energy, burns %d deuterium per cycle", e, math.ceil(e / per))
+                end
+            end)
+        end
         if ok2 and level > max then text = text .. ", locked" end
     end
     return text

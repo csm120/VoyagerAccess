@@ -583,6 +583,24 @@ local radial_error = {}
 -- hover.
 local install_ring_hover   -- below
 
+-- A room to build: where it fits and its place in the ring go after its
+-- name and reason, before the description and costs (Casey, 2026-11-08:
+-- "Missing technology" was followed by everything else before "3 of 5").
+-- check is the description's first words (construction.ring_text); without
+-- it both go at the end, as before.
+function M.ring_order(text, check, fit, place)
+    local head = {}
+    if fit and fit ~= "" then head[#head + 1] = (fit:gsub("%.%s*$", "")) end
+    if place and place ~= "" then head[#head + 1] = place end
+    if #head == 0 then return text end
+    local add = table.concat(head, ". ")
+    -- A short description ends inside check, its full stop dropped in text.
+    check = check and (check:gsub("[%.%s]+$", ""))
+    local at = (check and check ~= "") and text:find(check, 1, true) or nil
+    if at then return text:sub(1, at - 1) .. add .. ". " .. text:sub(at) end
+    return text:gsub("%.%s*$", "") .. ". " .. add
+end
+
 function M.radial_focus(b, path)
     local menu = path:match("^(.-WBP_RadialMenu_C_%d+)%.")
     -- The segment's class is loaded now that focus is on one: hook its hover
@@ -690,9 +708,8 @@ function M.radial_focus(b, path)
             -- A room to build: its width and whether it fits at the selected
             -- space (construction.lua).
             local okf, fit = pcall(require("construction").fit_text, nb)
-            if okf and fit then text = text:gsub("%.%s*$", "") .. ". " .. fit end
-            local place = ring_place(nb)
-            if place ~= "" then text = text .. ". " .. place end
+            if not okf then fit = nil end
+            text = M.ring_order(text, okr and ring and ring.check or nil, fit, ring_place(nb))
             -- The hover's reading only when it adds something: a room whose
             -- centre gave no other reason is not said twice.
             if hovered and radial_said[path] == text then return end
@@ -1416,7 +1433,23 @@ function M.virtual_enter()
         and last_real and last_real:find("WBP_PauseMenu_C", 1, true) and last_real:find("%.MainMenuButton$") then
         M.undo_pause_until = os.clock() + 5
     end
+    local win_path, clicked_at, key_at = virtual.window, os.clock(), require("keys").key_count
     click(b)
+    -- The window's button closed it: the view again, as Escape does
+    -- (Casey's play, 2026-11-08: CLOSE on "hero unavailable" said nothing
+    -- until he pressed V). Only if no view was said since the click and no
+    -- other key came; the view look stays quiet over another window.
+    ExecuteInGameThreadWithDelay(600, function()
+        pcall(function()
+            if require("keys").key_count ~= key_at then return end
+            local w = win_path and StaticFindObject(win_path)
+            if w and w:IsValid() and require("screen").shown(w) then return end
+            local help = require("help")
+            if (help.view_said_at or -100) >= clicked_at then return end
+            print("[VoyagerAccess] enter: window closed by its button, view again\n")
+            help.view_again()
+        end)
+    end)
     -- Some windows close with no event the mod can hook (an info card's
     -- Close: no CloseInfoWidget, OnCloseClicked or CallOnCloseEvent came,
     -- VM, 2026-10-21): popups reads their state. It is final as the click
@@ -1676,6 +1709,23 @@ local function wire_rows(path)
         end)
         if enabled and not require("warpcore").handles(path_of(b)) then list[#list + 1] = b end
     end
+    -- A battle's result over Auto Resolve: the result's buttons only. The
+    -- auto-resolve buttons stay shown behind it and were linked to its
+    -- Proceed, so Up went to a Proceed and torpedo buttons that do nothing
+    -- (Casey's play, 2026-11-08). Links left from before are stopped, once,
+    -- before the result's own links are set (below): stopping them on every
+    -- focus change undid the link between Again and Proceed (review).
+    local has_result = false
+    for _, b in ipairs(list) do
+        if path_of(b):find(".CombatResultView.", 1, true) then has_result = true end
+    end
+    if has_result then
+        local kept = {}
+        for _, b in ipairs(list) do
+            if not path_of(b):find(".AutoResolveWidget.", 1, true) then kept[#kept + 1] = b end
+        end
+        list = kept
+    end
     -- Focus on a disabled button moves on to the next usable one the way
     -- the player was going.
     pcall(function()
@@ -1708,6 +1758,14 @@ local function wire_rows(path)
     pcall(function() M.number_buttons(list, names) end)
     if wired[key] == sig then return end
     wired[key] = sig
+    if has_result then
+        for _, b in ipairs(list) do
+            pcall(function()
+                b:SetNavigationRuleBase(NAV_UP, 3)
+                b:SetNavigationRuleBase(NAV_DOWN, 3)
+            end)
+        end
+    end
     -- A button is in a row when the nearest panel it shares with a
     -- neighbor lays them side by side. A grid with several rows (the full
     -- game may have more heroes) is still walked in widget order.
@@ -3924,7 +3982,30 @@ function M.install()
         -- closed (VM, 2026-10-16). Its back action closes it, as the
         -- game's Escape would.
         local b = resolve(current)
-        if b and require("screen").shown(b) then return end
+        if b and require("screen").shown(b) then
+            -- A window the game's Escape does not close (a mission's result
+            -- with only CONTINUE): its button again, so the key is not
+            -- silent (Casey's play, 2026-11-08: two Escapes said nothing).
+            -- 900 ms, and only if no view was said: a window fading out
+            -- after Escape is still shown for a while (the pause menu was,
+            -- over 500 ms, VM, 2026-11-08), and its closing says the view.
+            local win, key_at, esc_at = M.virtual_active() and M.virtual_window(), keys.key_count, os.clock()
+            if win then
+                ExecuteInGameThreadWithDelay(900, function()
+                    pcall(function()
+                        if keys.key_count ~= key_at or pause_menu_up() then return end
+                        if (require("help").view_said_at or -100) >= esc_at then return end
+                        local w = StaticFindObject(win)
+                        if not (w and w:IsValid() and require("screen").shown(w)) then return end
+                        if virtual and virtual.window == win then
+                            print("[VoyagerAccess] escape: window stays open, its button again\n")
+                            say_virtual(true)
+                        end
+                    end)
+                end)
+            end
+            return
+        end
         local targets = {}
         if M.virtual_active() and M.virtual_window() then targets[#targets + 1] = M.virtual_window() end
         if require("rooms").window_open() then

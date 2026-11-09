@@ -479,6 +479,7 @@ return {
     [" until {s} is upgraded"] = "、{s}をアップグレードするまで",
     [", amount {s}"] = "、量 {s}",
     [", in system {s}"] = "、星系 {s}",
+    ["In system {s}"] = "星系 {s}",
     ["Resources"] = "資源",
     ["Outcome: {s}"] = "結果: {s}",
     ["{n} {s} stored"] = "{2} {1} を貯蔵",

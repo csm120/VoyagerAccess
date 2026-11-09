@@ -1,5 +1,23 @@
 # New in Voyager Access
 
+## Sunday November 8th 2026, later
+
+Version 0.4.0
+
+Fixes from a long day of play, from the Kazon Raider to the Swarm.
+
+- Changed: in the construction ring, a room says what it costs to build right after its name and why it can't be built, then whether it fits and its place in the list. What the room does and its description come last, so Down skips them.
+- Changed: Enter on a point on the System Map no longer says the point's name again after the list just did. You hear "In system 4 8 3 2" and the rest.
+- Changed: after a scan, you hear only what the scan found, not the point's name and system again, and no "Found" line after the panel already named it.
+- Changed: when an event moves on to its next step, or you arrive at a point whose story the scan already read, the story isn't read again. You go straight to the options.
+- Changed: an event or away mission leaves out a mission's text you heard a moment ago in the map line, and an away mission names its place only once.
+- New: each warp core tier you've unlocked says what it makes and burns, like "Tier 2, makes 180 energy, burns 36 deuterium per cycle", the way a sighted player sees it in the selected tier panel.
+- Fixed: on a battle's result after Auto Resolve, Up and Down could wander into the Auto Resolve buttons behind it, where Proceed and Enter did nothing. The arrows stay on the result's own Proceed now, and R reads only the result.
+- Fixed: K in battle could name two abilities on one key, like "3, Cloaking Prototype" and "3, Instant Shield Recharge", after a hero was swapped in the battle setup. You hear one ability per key.
+- Changed: Enter on a window's close button says where you are again, like Escape does, and Escape on a window that only closes with its button says that button again instead of nothing.
+- Changed: R during an event reads the event only, not the map panel behind it.
+- Changed: the workshop no longer says "Enter crafts it." after each blueprint.
+
 ## Sunday November 8th 2026
 
 Version 0.3.99

@@ -203,6 +203,27 @@ end
 -- short (K): key, ability and state only, no hero; I twice was too long to
 -- listen through for the keys, and arrows in battle are the game's energy
 -- keys, which end a pause (Casey, 2026-10-29).
+-- One ability per key: a slot whose hero was swapped in the setup kept the
+-- old hero's widget, and K said "3, Cloaking Prototype ... 3, Instant
+-- Shield Recharge, ready in 26 seconds", the second never moving (Casey's
+-- play, 2026-11-08). The one on screen wins, else the newer widget (object
+-- numbers count down). items: { i, shown, num, text }, returned by key.
+function M.one_per_key(items)
+    local best = {}
+    for _, it in ipairs(items) do
+        local b = best[it.i]
+        if not b then best[it.i] = it
+        elseif (it.shown and not b.shown)
+            or (it.shown == b.shown and (it.num or 0) < (b.num or 0)) then
+            best[it.i] = it
+        end
+    end
+    local out = {}
+    for _, it in pairs(best) do out[#out + 1] = it end
+    table.sort(out, function(a, b) return a.i < b.i end)
+    return out
+end
+
 function M.abilities(short)
     local list = {}
     -- Not checked as shown: screen.shown said no while they were on screen.
@@ -222,7 +243,8 @@ function M.abilities(short)
                     state = "ready in " .. seconds(ab.CooldownLeft)
                 end
                 local okv, vis = pcall(function() return require("screen").shown(x) end)
-                list[#list + 1] = { i = x.Index, key = x.Index .. "|" .. name .. "|" .. hero, shown = okv and vis,
+                local num = tonumber(x:GetFullName():match("_(%d+)$")) or 0
+                list[#list + 1] = { i = x.Index, num = num, key = x.Index .. "|" .. name .. "|" .. hero, shown = okv and vis,
                     text = short and string.format("%d, %s, %s", x.Index + 1, name, state)
                         or string.format("%d, %s, %s, %s", x.Index + 1, name, hero, state) }
             end)
@@ -249,6 +271,7 @@ function M.abilities(short)
         end
         list = kept
     end
+    list = M.one_per_key(list)
     local out = {}
     for _, it in ipairs(list) do out[#out + 1] = it.text end
     if short then return #out > 0 and (table.concat(out, ". ") .. ".") or nil end

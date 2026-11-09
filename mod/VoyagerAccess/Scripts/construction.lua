@@ -278,6 +278,23 @@ end
 
 -- What the centre would say for a room choice: { text, check }, check being
 -- the start of the description, to tell whether a hover reached this room.
+-- The game's room description, split into its prose and its effects (the
+-- sentences with a figure: "Raises MORALE by +6 per CYCLE", "+3000
+-- Deuterium storage capacity"), so the effects can come first (Casey,
+-- 2026-11-08).
+function M.split_desc(desc)
+    local prose, effects = {}, {}
+    local pos = 1
+    local list = {}
+    for s, e in desc:gmatch("(.-[%.!%?])%s+()") do list[#list + 1] = s pos = e end
+    local rest = desc:sub(pos):gsub("^%s+", ""):gsub("%s+$", "")
+    if rest ~= "" then list[#list + 1] = rest end
+    for _, s in ipairs(list) do
+        if s:find("%d") then effects[#effects + 1] = s else prose[#prose + 1] = s end
+    end
+    return table.concat(prose, " "), table.concat(effects, " ")
+end
+
 function M.ring_text(b)
     local cmd = M.command_of(b)
     if not cmd then return nil end
@@ -296,8 +313,14 @@ function M.ring_text(b)
     local parts = { require("ship").type_name(t) }
     local why = M.blocked(cmd, cm, cfg, tc)
     if why then parts[#parts + 1] = why end
-    if desc ~= "" then parts[#parts + 1] = desc end
-    parts[#parts + 1] = string.format("Operation: energy %d, crew %d", math.floor(cfg.EnergyCostWhenActive + 0.5), math.floor(cfg.RequiredCrewMembersToOperate + 0.5))
+    -- Construction (right after the reason), then the fit and the place
+    -- (check is the part after Construction), effect, operation, then
+    -- the description (Casey,
+    -- 2026-11-08); check is the first words after the reason, where
+    -- focus.ring_order puts the fit and the place in the list.
+    local prose, effects = M.split_desc(desc)
+    local first = #parts + 1
+    local operation = string.format("Operation: energy %d, crew %d", math.floor(cfg.EnergyCostWhenActive + 0.5), math.floor(cfg.RequiredCrewMembersToOperate + 0.5))
     local build = {}
     cfg.RequiredResourcesToBuild:ForEach(function(_, e)
         local r = e:get()
@@ -306,9 +329,14 @@ function M.ring_text(b)
     local wt, cy = cfg.RequiredWorkTeamsToBuild, cfg.CyclesToBuild
     build[#build + 1] = wt .. (wt == 1 and " work team" or " work teams")
     build[#build + 1] = cy .. (cy == 1 and " cycle" or " cycles")
+    -- What it costs to build first of all (Casey, 2026-11-08: "I have to
+    -- hear what elements it needs way down after the description").
     parts[#parts + 1] = "Construction: " .. table.concat(build, ", ")
+    if effects ~= "" then parts[#parts + 1] = effects end
+    parts[#parts + 1] = operation
+    if prose ~= "" then parts[#parts + 1] = prose end
     for i, s in ipairs(parts) do parts[i] = s:gsub("%.%s*$", "") end
-    return { text = table.concat(parts, ". "), check = desc:sub(1, 30), why = why and why:gsub("%.%s*$", "") }
+    return { text = table.concat(parts, ". "), check = (parts[first + 1] or ""):sub(1, 30), why = why and why:gsub("%.%s*$", "") }
 end
 
 -- Enter on a room choice. True when the mod handled it (built, or said why

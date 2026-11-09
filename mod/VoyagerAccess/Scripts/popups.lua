@@ -372,6 +372,98 @@ end
 -- Ship Wreck. Upgrade ..."), so they are put in reading order by name
 -- (names read 2026-10-10): "Ship Wreck, System 7,104.0. Resources:
 -- Deuterium, amount unknown. Upgrade ...". Unnamed extras go last.
+-- A point's name the player has just heard, so its detail panel does not
+-- say it again (Casey, 2026-11-08: Enter on "Debris Field, not scanned, ..."
+-- said "Debris Field, in system ...", and a scan said "Scanning Debris
+-- Field" then "Debris Field, in system ..." again). system.lua calls
+-- poi_heard on Enter ("select": the system is still said) and on Scan
+-- ("scan": the Enter before it said the system). Used once, for 3 s.
+local poi_heard_now = nil
+function M.poi_heard(name, kind)
+    poi_heard_now = { name = name, kind = kind, t = os.clock() }
+end
+function M.poi_trim(text, path)
+    local h = poi_heard_now
+    if not (h and h.name and h.name ~= "" and type(text) == "string") then return text end
+    if not (path or ""):find("POIDetailView", 1, true) then return text end
+    if os.clock() - h.t > 3 then poi_heard_now = nil return text end
+    local lead = h.name .. ", in system "
+    if text:sub(1, #lead) ~= lead then return text end
+    poi_heard_now = nil
+    local system, rest = text:sub(#lead + 1):match("^(.-)%. (.*)$")
+    if not system then return text end
+    if h.kind == "scan" then return rest end
+    return "In system " .. system .. ". " .. rest
+end
+
+-- True when every sentence of new was in old: an event's next step opens a
+-- new window with the story the last one showed (Casey, 2026-11-08,
+-- Initiations: CONTINUE after "... Outcome: good." read the whole story
+-- again before the options).
+function M.event_repeat(old, new)
+    if type(old) ~= "string" or type(new) ~= "string" or new == "" then return false end
+    local seen = {}
+    for _, s in ipairs(M.sentences(old)) do seen[s] = true end
+    local any = false
+    for _, s in ipairs(M.sentences(new)) do
+        if not seen[s] then return false end
+        any = true
+    end
+    return any
+end
+-- text without its long sentences (40 characters or more) that heard
+-- contains: the System map line said a mission's text, and its away
+-- mission said it again 16 s later (Casey's play, 2026-11-08).
+-- Sentences, with the last one kept when it has no full stop.
+local function sentences(text)
+    local out, pos = {}, 1
+    for s, e in text:gmatch("(.-[%.!%?])%s+()") do
+        out[#out + 1] = s
+        pos = e
+    end
+    -- The loop's last match ends at pos; what follows is a tail without a
+    -- stop ("Recommended skills: Engineering").
+    local rest = text:sub(pos):gsub("^%s+", ""):gsub("%s+$", "")
+    if rest ~= "" then out[#out + 1] = rest end
+    return out
+end
+M.sentences = sentences
+function M.drop_heard(text, heard)
+    if type(text) ~= "string" or type(heard) ~= "string" or heard == "" then return text end
+    local keep, dropped = {}, false
+    for _, s in ipairs(sentences(text)) do
+        local body = s:gsub("[%.!%?]$", "")
+        if #body >= 40 and heard:find(body, 1, true) then dropped = true
+        else keep[#keep + 1] = s end
+    end
+    if not dropped then return text end
+    return table.concat(keep, " ")
+end
+-- True when an away mission's place line ("Drayan II, system 3 7 7 6 point
+-- 1.") names a place said in one of the recent lines: "Arrived at Drayan
+-- II" came 11 s before it (Casey's play, 2026-11-08).
+function M.place_heard(text, recent)
+    local name = type(text) == "string" and text:match("^(.-), system ")
+    if not name or name == "" then return false end
+    -- The whole name: "Drayan I" is not heard in "Drayan II" (review).
+    for _, l in ipairs(recent or {}) do
+        if type(l) == "string" then
+            local init = 1
+            while true do
+                local s, e = l:find(name, init, true)
+                if not s then break end
+                local before, after = l:sub(s - 1, s - 1), l:sub(e + 1, e + 1)
+                if not before:find("[%w']") and not after:find("[%w']") then return true end
+                init = e + 1
+            end
+        end
+    end
+    return false
+end
+local away_place = nil   -- { text, t }: an away mission's place line read last
+local last_event = nil   -- { path, text, t }: the event window read last
+local last_panel = nil   -- { text, t }: a point's detail panel read last
+
 local function poi_detail(parts)
     local exit = M.sector_exit_detail(parts)
     if exit then return exit end
@@ -2534,7 +2626,50 @@ local function read_window(p, reread)
         -- counts up: the whole summary came a second time with only
         -- "rank 1" now "rank 2" (demo, VM, 2026-10-15). Only the
         -- sentences that changed are said.
-        local say = text
+        local say = M.poi_trim(text, p)
+        -- An away mission's place line when the place was just said.
+        -- Each later step of the mission opens a new panel with the same
+        -- line ("while descending", 95 s later, Casey, 2026-11-08): once
+        -- in ten minutes.
+        if p:find("WBP_AwayMissionDetailView_C", 1, true) then
+            pcall(function()
+                local again = away_place and away_place.text == text and os.clock() - away_place.t < 600
+                if again or M.place_heard(say, speech.recent_lines(60)) then
+                    print("[VoyagerAccess] popup: away mission's place just said, not again\n")
+                    say = ""
+                end
+                away_place = { text = text, t = os.clock() }
+            end)
+        end
+        -- A mission's text the view line has just said is not said again.
+        if p:find("WBP_POIMultipleChoice_C", 1, true) or p:find("WBP_AwayMissionLoadout_C", 1, true) then
+            pcall(function()
+                local help = require("help")
+                if help.view_text and os.clock() - (help.view_said_at or -100) < 60 then
+                    local d = M.drop_heard(say, help.view_text)
+                    if d ~= say then
+                        print("[VoyagerAccess] popup: left out what the view line said\n")
+                        say = d
+                    end
+                end
+            end)
+        end
+        if p:find("WBP_POIMultipleChoice_C", 1, true) then
+            local le, lp = last_event, last_panel
+            if le and le.path ~= p and os.clock() - le.t < 30 and M.event_repeat(le.text, text) then
+                print("[VoyagerAccess] popup: the event's next step, story not read again\n")
+                say = ""
+            -- The scan's panel said the story, then the event on arrival
+            -- said it again (Falling Station, Casey's play, 2026-11-08).
+            elseif lp and os.clock() - lp.t < 120 and M.event_repeat(lp.text, text) then
+                print("[VoyagerAccess] popup: the event's story was said by the scan, not read again\n")
+                say = ""
+            end
+            last_event = { path = p, text = text, t = os.clock() }
+            last_panel = nil
+        elseif p:find("POIDetailView", 1, true) then
+            last_panel = { text = text, t = os.clock() }
+        end
         if outcome and last_text[p] then
             local old = {}
             for s in (last_text[p] .. " "):gmatch("(.-%.)%s+") do old[s] = true end
@@ -2597,7 +2732,7 @@ local function read_window(p, reread)
         if p:find("Tutorial", 1, true) or p:find("WBP_TUT_", 1, true) then
             speech.say_protected(say)
         else
-            speech.say_long(say, first_event and true or nil)
+            if say ~= "" then speech.say_long(say, first_event and true or nil) end
         end
         -- An offer that opened over the construction ring left focus
         -- on the ring behind it, and its options could not be reached
