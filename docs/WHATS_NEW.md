@@ -4,8 +4,6 @@
 
 Version 0.4.1
 
-Fixes from a long test day on a test computer, most of them from the away team and battle screens.
-
 - Fixed: once every away team slot is filled, the game starts the mission when you press Enter on any slot, not only on Start Mission, and there's no way back. The slots used to say "Team complete: End moves to Start Mission", which made it sound like Enter would change the hero. They now say "Team complete. Enter starts the mission." While a slot is still empty, Enter on a filled slot still lets you change its hero.
 - New: Enter on a conversation line the game is holding says "The line has not moved on yet." instead of nothing. It waits 3 seconds first, so a slow scene change doesn't set it off.
 - New: Enter on a choice that's already in use, like the Mess Hall ration you already serve, says "Already selected."
