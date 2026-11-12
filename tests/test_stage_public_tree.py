@@ -50,6 +50,18 @@ def check_code():
     return text[start:start + m.end()] if m else None
 
 
+def throws_after_cut(text):
+    """Lines that throw between the end of check_code's cut and the script's
+    Push-Location (where the commit part starts)."""
+    start = text.find("$swaps = [ordered]@{")
+    m = re.search(r"^if \(\$other\).*$", text[start:], re.M) if start >= 0 else None
+    end = text.find("\nPush-Location $out", start)
+    if m is None or end < 0:
+        raise AssertionError("cut end or Push-Location not found in the script")
+    tail = text[start + m.end():end]
+    return [line for line in tail.splitlines() if re.search(r"\bthrow\b", line)]
+
+
 def run_check(folder):
     code = "$ErrorActionPreference = 'Stop'\n$out = $env:VA_OUT\n" + check_code()
     with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as f:
@@ -102,6 +114,43 @@ class PublishedTreeTests(unittest.TestCase):
             out = run_check(d)
         self.assertNotEqual(out.returncode, 0)
         self.assertIn("LEFT: bad.py:1", out.stdout)
+
+    def test_no_refusal_after_the_cut(self):
+        # Fable, 0.4.3 release review (low): a refusal added below the cut
+        # would never run here. Nothing between the cut and Push-Location may
+        # throw.
+        self.assertEqual(throws_after_cut(script_text()), [])
+
+    def test_a_refusal_after_the_cut_is_found(self):
+        # Negative twin: the same look over a script with one more refusal
+        # after the cut must find it, or the pass above proves nothing.
+        text = script_text().replace(
+            "\nPush-Location $out", "\nif ($late) { throw 'late refusal' }\nPush-Location $out", 1)
+        self.assertNotEqual(text, script_text())
+        self.assertEqual(len(throws_after_cut(text)), 1)
+
+    def test_check_refuses_extraction_code(self):
+        # Negative twin for the extraction refusal; the call is assembled so
+        # this published file never spells it.
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "mod").mkdir()
+            (Path(d) / "mod" / "bad.lua").write_text(
+                "local a = " + "Load" + "Asset(" + "'x')\n", encoding="utf-8")
+            out = run_check(d)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("EXTRACT:", out.stdout)
+        self.assertIn("bad.lua", out.stdout)
+
+    def test_check_refuses_the_other_mod(self):
+        # Negative twin for the other-mod refusal; the name is assembled so
+        # this published file never spells it.
+        with tempfile.TemporaryDirectory() as d:
+            (Path(d) / "voyager").mkdir()
+            (Path(d) / "voyager" / "bad.py").write_text(
+                "# like " + "Hearth" + "stone\n", encoding="utf-8")
+            out = run_check(d)
+        self.assertNotEqual(out.returncode, 0)
+        self.assertIn("OTHER MOD: bad.py:1", out.stdout)
 
     def test_check_refuses_a_secret_word(self):
         # Negative twin for the secret-word refusal. The word is assembled so
