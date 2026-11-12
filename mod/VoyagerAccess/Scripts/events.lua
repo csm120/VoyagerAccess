@@ -30,7 +30,7 @@ local OUTCOMES = { [0] = "excellent", [1] = "good", [2] = "average", [3] = "bad"
 local function plain(s)
     s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", "\""):gsub("&#39;", "'")
-    return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+    return (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 local function text_of(w)
@@ -58,16 +58,22 @@ local function option_for(b, wording)
         -- always sent the full game to the demo's wording scan below, whose
         -- GetOptionDescription crashed the game at a Q Trial's Trading
         -- Station (3 of 3, VM, 2026-10-15).
-        has_current = false
-        pcall(function()
+        local found = false
+        local walked = pcall(function()
             local c, depth = b:GetClass(), 0
-            while c and c:IsValid() and depth < 4 and not has_current do
+            while c and c:IsValid() and depth < 4 and not found do
                 c:ForEachProperty(function(p)
-                    if p:GetFName():ToString() == "CurrentOption" then has_current = true end
+                    if p:GetFName():ToString() == "CurrentOption" then found = true end
                 end)
                 c, depth = c:GetSuperStruct(), depth + 1
             end
         end)
+        -- Kept only from a whole walk: one that threw (the button torn down
+        -- as it was looked at) sent every later option in the session to
+        -- the scan below, which crashed the game 3 of 3 (Fable review,
+        -- 2026-11-10). This option is left unread; the next look tries again.
+        if not walked and not found then return nil end
+        has_current = found
     end
     if has_current then
         local ok, o = pcall(function() return b.CurrentOption end)

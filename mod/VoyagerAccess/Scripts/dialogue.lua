@@ -85,7 +85,7 @@ end
 local function plain(s)
     s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", "\""):gsub("&#39;", "'")
-    return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+    return (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 -- The open dialogue window, or nil. Use it within the current tick only.
@@ -228,6 +228,9 @@ local function say_line(w, speaker, line)
             -- the field empty when the window's class was hooked late (Tuvok's
             -- "Until completion, it would be logical..."; demo, VM, 2026-10-22).
             local function look(tries)
+                -- A newer line came meanwhile (Enter within the looks): this
+                -- one is not said after it (Fable review, 2026-11-10).
+                if last_line ~= line then return end
                 local said = false
                 pcall(function()
                     local w2 = StaticFindObject(wp)
@@ -309,6 +312,11 @@ local function on_window(kind)
                 end
                 local w = StaticFindObject(p)
                 if not (w and w:IsValid()) then return end
+                -- A conversation new to the mod closes its own lists (C,
+                -- Ctrl+F1, Ctrl+F12, J; Casey, 2026-11-10).
+                if window_path ~= p then
+                    pcall(function() require("focus").dismiss_mod_lists("conversation") end)
+                end
                 window_path = p
                 -- last_line is kept across a short close (a window on top),
                 -- but not for long: a recurring conversation with the same

@@ -541,6 +541,9 @@ local function points()
     local ship = voyager()
     local from = ship and ship:K2_GetActorLocation()
     local list = {}
+    -- Asked once, not once per point: each answer is a FindAllOf on the
+    -- game thread (Fable review, 2026-11-10).
+    local sector = M.sector()
     for _, c in ipairs(FindAllOf("STVPointOfInterestBase") or {}) do
         if c:IsValid() and path_of(c):find("PersistentLevel", 1, true) then
             local a = c:GetOwner()
@@ -548,7 +551,7 @@ local function points()
                 local cls = a:GetClass():GetFName():ToString()
                 -- The Sector Map lists star systems, the System Map the
                 -- rest (2026-10-14).
-                local want = (cls == "BP_STVSolarSystem_C") == M.sector()
+                local want = (cls == "BP_STVSolarSystem_C") == sector
                 -- Voyager herself; in Q Trials her class is
                 -- BP_SectorVoyager_Sandbox_C, listed as "SectorVoyager
                 -- Sandbox, scanned" (VM, 2026-10-14).
@@ -837,7 +840,9 @@ local function on_started()
         end
     end)
     pending, waiting = nil, nil
-    if not name then return end
+    -- A move with no name the mod can find still ends the old trip, or
+    -- "Halfway to" and "Arrived at" named the old destination.
+    if not name then trip = nil return end
     trip = { name = name, path = path, progress = 0, half = false }
     print("[VoyagerAccess] course: under way to " .. name .. "\n")
     if not battle_up() then speech.say("Under way to " .. name, false) end
@@ -922,6 +927,19 @@ end
 function M.travel_status()
     local t = trip
     if not t then return nil end
+    -- The game's own answer: after Voyager was destroyed mid-trip, a load
+    -- or the main menu, I still said "Traveling to ..." (Fable review,
+    -- 2026-11-10). A trip that had moved is dropped; one at 0 is kept, in
+    -- case the journey has not started its travel yet.
+    local okj, moving = pcall(function()
+        local j = FindFirstOf("STVJourneySubsystem")
+        if j and j:IsValid() then return j:IsTravelling() end
+        return nil
+    end)
+    if okj and moving == false then
+        if (t.progress or 0) > 0 then trip = nil end
+        return nil
+    end
     local pct = math.floor((t.progress or 0) * 100 + 0.5)
     return "Traveling to " .. t.name .. string.format(", %d percent of the way", math.max(0, math.min(100, pct)))
 end

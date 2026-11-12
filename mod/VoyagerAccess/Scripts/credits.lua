@@ -54,6 +54,12 @@ local function say_item(interrupt)
 end
 
 function M.open()
+    -- The widget gone without BP_OnDeactivated reaching the hook: the list
+    -- kept the arrows over the main menu, and close() could not end it
+    -- (Fable review, 2026-11-10).
+    if items and not credits_widget() then
+        items, index, shown_path, credits_path = nil, nil, nil, nil
+    end
     return items ~= nil
 end
 

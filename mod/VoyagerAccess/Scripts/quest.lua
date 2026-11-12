@@ -147,9 +147,22 @@ end
 -- as a new objective (Outbreak, VM, 2026-10-16). And a countdown inside the
 -- goal: "Complete all of the following tasks within 36 CYCLES" was said as
 -- "Done: ..." every cycle (Scorpion, VM, 2026-10-17).
+-- And in every language: a number right before the game's cycle word
+-- ("innerhalb von 36 ZYKLEN", "36サイクル以内", "12 cycles left.") is masked;
+-- "within" matched English only, and a German goal was said as changed on
+-- every cycle (Fable review, 2026-11-10). Chinese puts 个 between them.
+local function mask_cycle_counts(s)
+    local okt, text = pcall(require, "text")
+    if not (okt and type(text) == "table" and text.starts_cycle_word) then return s end
+    return (s:gsub("([0-9]+)([ \t]*)()", function(n, sp, at)
+        local rest = s:sub(at, at + 24)
+        if rest:sub(1, 3) == "\228\184\170" then rest = rest:sub(4) end
+        if text.starts_cycle_word(rest) then return "#" .. sp end
+    end))
+end
 local function bare(s)
     -- "(1,000/900)" has a comma (Deuterium running low, VM, 2026-10-17).
-    return (s:gsub(", %d+ cycles? left", ""):gsub("%s*%([%d,]+/[%d,]+%)", ""):gsub("%s*%([%d,]+%)", "")
+    return mask_cycle_counts(s:gsub(", %d+ cycles? left", ""):gsub("%s*%([%d,]+/[%d,]+%)", ""):gsub("%s*%([%d,]+%)", "")
         :gsub("([Ww]ithin) %d+ ", "%1 "))
 end
 
@@ -398,19 +411,24 @@ function M.request_look()
     end)
 end
 
-local hooked = {}
+local hooked, tries = {}, {}
 local function hook_widget(path, names)
     local w = StaticFindObject(path)
     if not (w and w:IsValid()) then return end
     local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
     if not cpath or hooked[cpath] then return end
-    hooked[cpath] = true
+    -- Marked hooked only once a hook is in, tried up to five times: a first
+    -- try before the class's functions loaded was never repeated (Fable
+    -- review, 2026-11-10; view.lua's fix of 2026-10-21).
+    tries[cpath] = (tries[cpath] or 0) + 1
+    if tries[cpath] > 5 then return end
     local got = {}
     for _, fn in ipairs(names) do
         if StaticFindObject(cpath .. ":" .. fn) and pcall(RegisterHook, cpath .. ":" .. fn, function() M.request_look() end) then
             got[#got + 1] = fn
         end
     end
+    if #got > 0 or tries[cpath] == 5 then hooked[cpath] = true end
     print("[VoyagerAccess] quest: " .. cpath:match("([%w_]+)$") .. " events: " .. table.concat(got, ", ") .. "\n")
     M.request_look()
 end

@@ -7,6 +7,7 @@ that was already there (another mod's UE4SS, say) is backed up first, so
 uninstall leaves the game folder exactly as it was found.
 """
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -97,6 +98,19 @@ def _manifest_path(data_dir, appid):
     return Path(data_dir) / "installs" / f"{appid}.json"
 
 
+def _write_manifest(path, manifest):
+    """Through a temporary file and os.replace, as launchopts.edit_file
+    does: install rewrites the manifest about twice per file, and a kill
+    during an in-place write left it truncated, so every mod file then
+    looked like another mod's (pre-merge review, 2026-11-10)."""
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        tmp.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
 def load_manifest(data_dir, appid):
     try:
         return json.loads(_manifest_path(data_dir, appid).read_text(encoding="utf-8"))
@@ -122,6 +136,20 @@ def install(bin_dir, payload_dir, data_dir, appid, game_running=None, version=No
     # UE4SS wrote into them (UE4SS.log).
     created = set(old.get("created", [])) | {
         p.name for p in payload_dir.iterdir() if p.is_dir() and not (bin_dir / p.name).exists()}
+    path = _manifest_path(data_dir, appid)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    def record(files, done_version):
+        _write_manifest(path, {"version": done_version, "bin_dir": str(bin_dir),
+                               "files": sorted(files), "backed_up": sorted(backed_up),
+                               "created": sorted(created)})
+    # Recorded as each file goes in, with the old version, so an install
+    # cut off part way (a file locked by antivirus, setup's taskkill) does
+    # not make the mod's own files look like another mod's to the next try,
+    # which backed them up and had uninstall put them back (Fable review,
+    # 2026-11-10). The version is written only once all are in.
+    copied = set(ours)
+    record(copied, old.get("version"))
     for rel in new_files:
         target = bin_dir / rel
         if target.exists() and rel not in ours and rel not in backed_up:
@@ -129,17 +157,21 @@ def install(bin_dir, payload_dir, data_dir, appid, game_running=None, version=No
             dest.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(target, dest)
             backed_up.add(rel)
+            # Before the copy, which could fail half written: the next try
+            # must not back that up over the real one.
+            record(copied, old.get("version"))
+        # Recorded before the copy (pre-merge review, 2026-11-10): a file
+        # cut off half written is then ours, not another mod's to back up.
+        if rel not in copied:
+            copied.add(rel)
+            record(copied, old.get("version"))
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(payload_dir / rel, target)
     # Files an earlier version installed that this one no longer ships.
     for rel in ours - set(new_files):
         _remove(bin_dir, rel, backup_dir, rel in backed_up)
         backed_up.discard(rel)
-    path = _manifest_path(data_dir, appid)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"version": version, "bin_dir": str(bin_dir), "files": new_files,
-                                "backed_up": sorted(backed_up), "created": sorted(created)},
-                               indent=1), encoding="utf-8")
+    record(new_files, version)
 
 
 SCRIPTS_REL = "ue4ss/Mods/VoyagerAccess/Scripts"
@@ -159,7 +191,7 @@ def patch_scripts(bin_dir, scripts_dir, data_dir, appid):
         shutil.copy2(src, target / src.name)
         files.add(f"{SCRIPTS_REL}/{src.name}")
     manifest["files"] = sorted(files)
-    _manifest_path(data_dir, appid).write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+    _write_manifest(_manifest_path(data_dir, appid), manifest)
     return True
 
 
@@ -188,6 +220,13 @@ def uninstall(bin_dir, data_dir, appid, game_running=None):
         raise GameRunning()
     bin_dir = Path(bin_dir)
     backup_dir = Path(data_dir) / "backup" / appid
+    if not bin_dir.is_dir():
+        # The game folder was deleted (or the game uninstalled): nothing of
+        # ours is left in it, and copying a backup back into it failed on
+        # every try (pre-merge review, 2026-11-10).
+        shutil.rmtree(backup_dir, ignore_errors=True)
+        _manifest_path(data_dir, appid).unlink()
+        return
     backed_up = set(manifest["backed_up"])
     for rel in sorted(manifest["files"], key=lambda r: -r.count("/")):
         _remove(bin_dir, rel, backup_dir, rel in backed_up)

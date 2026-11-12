@@ -70,7 +70,7 @@ local function tokens(root)
             local name = w:GetFName():ToString()
             -- The dim leading zeros on number panels (firefly82).
             if t ~= "" and not name:find("^FillDigits") and screen.shown(w, root) then
-                local s = (text.prep(t):gsub("<[^>]*>", ""):gsub("{/n}", " "):gsub("%s+", " "):match("^%s*(.-)%s*$"))
+                local s = (text.prep(t):gsub("<[^>]*>", ""):gsub("{/n}", " "):gsub("[ \t\r\n\f\v]+", " "):match("^[ \t\r\n\f\v]*(.-)[ \t\r\n\f\v]*$"))
                 if s ~= "" then out[#out + 1] = { kind = "text", name = name, value = s } end
             end
             return

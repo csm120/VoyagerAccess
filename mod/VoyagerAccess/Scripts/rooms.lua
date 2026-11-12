@@ -25,7 +25,7 @@ end
 local function plain(s)
     s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
     -- "[MAIN ENGINEERING]" marks a highlighted name; drop the brackets.
-    return (s:gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+    return (s:gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 -- Buttons whose only text is a picture.
@@ -522,11 +522,24 @@ function M.hero_label(path)
     if by.TraitText and by.TraitText ~= "" then head = head .. ", " .. by.TraitText end
     -- Injured or Severely Injured over the portrait, as in the away team
     -- list (awaymission.lua plaque_text, 2026-10-17).
+    -- Whether the hero is injured comes from the hero manager (Injured 3,
+    -- Severely Injured 4, as awaymission.lua's CONDITIONS), not from the
+    -- English letters "injur", which no other language has (Fable review,
+    -- 2026-11-10). The word test is kept only when the manager cannot say.
+    local injured = nil
+    pcall(function()
+        local id = b.CurrentCharacter
+        local m = FindFirstOf("STVHeroManager")
+        if id ~= nil and m and m:IsValid() then
+            injured = m:DoesHeroHaveCondition(id, 3) == true or m:DoesHeroHaveCondition(id, 4) == true
+        end
+    end)
     pcall(function()
         local st = plaque.HeroRoomText
         if st and st:IsValid() and screen.shown(st) then
             local s = plain(text_of(st))
-            if s ~= "" and s:sub(1, 1) ~= "#" and s:lower():find("injur") then head = name .. ", " .. require("tr").lower(s) .. head:sub(#name + 1) end
+            if injured == nil then injured = s:lower():find("injur") ~= nil end
+            if s ~= "" and s:sub(1, 1) ~= "#" and injured then head = name .. ", " .. require("tr").lower(s) .. head:sub(#name + 1) end
         end
     end)
     parts[#parts + 1] = head

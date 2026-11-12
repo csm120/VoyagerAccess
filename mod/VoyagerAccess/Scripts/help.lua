@@ -15,8 +15,8 @@ local HELP = {
     story = "The story is read a line at a time. Shift+Enter skips it. R repeats the last line.",
     dialogue = "Enter continues. Shift+Enter skips to the choices. R repeats the last line. "
         .. "On choices, Up and Down move and Enter picks one.",
-    ship = "Up and Down change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
-        .. "Enter opens the room. V switches to the System Map. N lists the places to go, such as the Sector Map, the Overview and Research. H opens a waiting call, and Enter answers it. I says where you are; I twice lists the room's details. "
+    ship = "Up and Down, or Page Up and Page Down, change deck. Left and Right move along the deck. Home and End go to the ends of the deck. "
+        .. "Enter opens the room. J lists the ship's rooms. V switches to the System Map. N lists the places to go, such as the Sector Map, the Overview and Research. H opens a waiting call, and Enter answers it. I says where you are; I twice lists the room's details. "
         .. "E is the room's quick action. Hold F to upgrade it, or T to demolish it.",
     system = "Up and Down move through the points of interest. Home and End go to the nearest and the farthest. "
         .. "Enter opens Scan and Set course. Shift+Enter sets course at once. Backspace closes that list. V switches to the ship. N lists the places to go, such as the Sector Map, the Overview and Research. H opens a waiting call, and Enter answers it.",
@@ -527,6 +527,12 @@ local function view_look(attempt)
                     ExecuteInGameThreadWithDelay(500, function()
                         if view_token == mine then view_look(attempt + 1) end
                     end)
+                else
+                    -- Said once per view change: leaving() compares the
+                    -- game state with InGame's value, 3, and a patch that
+                    -- renumbers the enum would silence these lines with
+                    -- nothing in the log (Fable review, 2026-11-10).
+                    print("[VoyagerAccess] view: " .. tostring(v) .. " not said, the game still looked busy after 20 looks\n")
                 end
                 return
             end

@@ -61,7 +61,7 @@ local SPLIT = { shuttlebay = 7, aeroshuttlebay = 4, aeroshuttle = 4, aerowing = 
     turbolift = 5, transwarp = 5, nanoprobe = 4, lifeform = 4, lifesign = 4, lifesupport = 4, warpcore = 4,
     messhall = 4, shuttlecraft = 7, stardate = 4, homeworld = 4 }
 local function split_words(text)
-    return (text:gsub("%a+", function(w)
+    return (text:gsub("[A-Za-z]+", function(w)
         local l = w:lower()
         local base, tail = l, ""
         if not SPLIT[base] and l:sub(-1) == "s" then base, tail = l:sub(1, -2), "s" end
@@ -100,27 +100,34 @@ function M.said_since(t)
 end
 function M.say(text, interrupt, built)
     if type(text) ~= "string" then return end
-    M.recent[#M.recent + 1] = { text = text, at = os.clock() }
-    if #M.recent > 30 then table.remove(M.recent, 1) end
+    -- Recorded in M.recent only once it is written (below): a dropped
+    -- repeat or empty line counted as said, so the "say it again if nothing
+    -- was said" fallbacks stayed silent (Fable review, 2026-11-10).
+    local raw = text
     local asked = interrupt
-    text = text:gsub("[\r\n]+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+    -- Spaces are written out as ASCII, not %s, here and below: %s, %d, %a,
+    -- %u and %w test single bytes through the C locale, and under code
+    -- page 1252 or 1251 byte 0xA0 is %s, which broke "voilà" and cut the
+    -- last byte off "СЕКТОР" (Fable review, 2026-11-10; Gotcha 31). The
+    -- ASCII classes are what "C" gives, whatever locale the game runs in.
+    text = text:gsub("[\r\n]+", " "):gsub("^[ \t\r\n\f\v]+", ""):gsub("[ \t\r\n\f\v]+$", "")
     -- Parts joined with ". " after text that already ended a sentence read
     -- "two times).. With" and "Incoming!." (2026-10-14). Ellipses stay.
-    text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.(%s)", "%1%2"):gsub("%s+%.(%s)", ".%1"):gsub("%s+,", ","):gsub("%s+([;:!%?%)])", "%1")
-    text = text:gsub("^%s+", ""):gsub("%s+$", "")
+    text = (" " .. text .. " "):gsub("([^%.])%.%.([^%.])", "%1.%2"):gsub("([!?])%.([ \t\r\n\f\v])", "%1%2"):gsub("[ \t\r\n\f\v]+%.([ \t\r\n\f\v])", ".%1"):gsub("[ \t\r\n\f\v]+,", ","):gsub("[ \t\r\n\f\v]+([;:!%?%)])", "%1")
+    text = text:gsub("^[ \t\r\n\f\v]+", ""):gsub("[ \t\r\n\f\v]+$", "")
     -- And after a quote that already ended its sentence: "enhancements.".
     -- (Combat Capabilities, Q Trial, VM, 2026-10-17).
     text = text:gsub('([%.!%?]")%.', "%1"):gsub("([%.!%?]\226\128\157)%.", "%1")
     -- "Severely Injured & Sick" (Sickbay patients, VM, 2026-10-16): with
     -- punctuation off a screen reader may say nothing for the "&".
-    text = text:gsub("%s+&%s+", " " .. require("tr").word("and") .. " ")
+    text = text:gsub("[ \t\r\n\f\v]+&[ \t\r\n\f\v]+", " " .. require("tr").word("and") .. " ")
     -- Species 8472 is said digit by digit, as the crew and the Borg say it,
     -- not "eight thousand four hundred..." (Casey, 2026-10-17).
-    text = text:gsub("%f[%d]8472%f[%D]", "8 4 7 2")
+    text = text:gsub("%f[0-9]8472%f[^0-9]", "8 4 7 2")
     -- Every designation, digit by digit (Casey, 2026-10-18): "Species 116"
     -- is "Species 1 1 6", and registries such as "NX-01-A" or "NCC-74656"
     -- are read the same way.
-    local function spaced(d) return (d:gsub("%d", "%0 "):gsub(" $", "")) end
+    local function spaced(d) return (d:gsub("[0-9]", "%0 "):gsub(" $", "")) end
     -- The word in the game's other languages too ("Spezies 116" was read
     -- as a number in German, firefly82's review, 2026-10-19): German
     -- Spezies, French espèce, Polish gatunek.
@@ -129,38 +136,38 @@ function M.say(text, interrupt, built)
     -- Gatunek/Gatunku/Gatunkowi/Gatunkiem, Russian вид/вида/виду/виде/видом
     -- (sometimes with a no-break space), Japanese 生命体 with no space.
     -- Chinese puts no word right before the number.
-    local SPECIES = { "[Ss]pecies", "[Ss]pezies", "[Ee]sp\195\168ce", "[Ee]specie", "[Gg]atun%l*",
+    local SPECIES = { "[Ss]pecies", "[Ss]pezies", "[Ee]sp\195\168ce", "[Ee]specie", "[Gg]atun[a-z]*",
         "\208[\146\178]\208\184\208\180", "\208[\146\178]\208\184\208\180\208\176", "\208[\146\178]\208\184\208\180\209\131",
         "\208[\146\178]\208\184\208\180\208\181", "\208[\146\178]\208\184\208\180\208\190\208\188" }
     for _, word in ipairs(SPECIES) do
-        text = text:gsub("(" .. word .. "[%s\194\160]+)(%d+)", function(w, d) return w .. spaced(d) end)
+        text = text:gsub("(" .. word .. "[ \t\r\n\f\v\194\160]+)([0-9]+)", function(w, d) return w .. spaced(d) end)
     end
-    text = text:gsub("(\231\148\159\229\145\189\228\189\147)(%d+)", function(w, d) return w .. spaced(d) end)
-    text = text:gsub("%f[%w](%u%u%u?)%-(%d+)%-?(%u?)%f[%W]", function(p, d, l)
+    text = text:gsub("(\231\148\159\229\145\189\228\189\147)([0-9]+)", function(w, d) return w .. spaced(d) end)
+    text = text:gsub("%f[0-9A-Za-z]([A-Z][A-Z][A-Z]?)%-([0-9]+)%-?([A-Z]?)%f[^0-9A-Za-z]", function(p, d, l)
         return p .. " " .. spaced(d) .. (l ~= "" and (" " .. l) or "")
     end)
     -- French and other languages group thousands with a narrow or plain
     -- no-break space ("-1 170", U+202F or U+00A0), which a reader may say
     -- as two numbers (VM, French, 2026-10-17). Joined between digits.
-    text = text:gsub("(%d)\226\128\175(%d)", "%1%2"):gsub("(%d)\194\160(%d)", "%1%2")
+    text = text:gsub("([0-9])\226\128\175([0-9])", "%1%2"):gsub("([0-9])\194\160([0-9])", "%1%2")
     -- 19 tech descriptions start "[NOT WORKING YET]" (text scan, 2026-10-15),
     -- which a synthesizer may spell out letter by letter.
-    text = text:gsub("%[NOT WORKING YET%]%s*", "Not working yet: ")
+    text = text:gsub("%[NOT WORKING YET%][ \t\r\n\f\v]*", "Not working yet: ")
     -- The game's "Lvl" before a number ("Stellar Cartography Lvl 1" on a
     -- dialogue choice was read "Lvl"; Casey's play, 2026-11-07).
-    text = text:gsub("%f[%w]Lvl%.?(%s*%d)", "level%1")
+    text = text:gsub("%f[0-9A-Za-z]Lvl%.?([ \t\r\n\f\v]*[0-9])", "level%1")
     -- A placeholder the game left unfilled ("{AlliedShipÍnitialCost}", text
     -- scan) is dropped, and logged so new ones show up.
     text = text:gsub("{[^{}]+}", function(p)
         print("[VoyagerAccess] placeholder: " .. p .. "\n")
         return ""
-    end):gsub("%[%s*%]", ""):gsub("%(%s*%)", ""):gsub("  +", " ")
+    end):gsub("%[[ \t\r\n\f\v]*%]", ""):gsub("%([ \t\r\n\f\v]*%)", ""):gsub("  +", " ")
     -- Brackets round a name: "the [TECH TREE]" (room descriptions) and
     -- "[Sick bay] got damaged" (a sabotage toast), VM, 2026-10-16.
     -- Placeholders like "[{Shuttle}]" are left to their readers.
     -- A bracket before a new sentence ends one: "[WARNING: You need 2 heroes
     -- for this away mission] Send away team" ran together (VM, 2026-10-17).
-    text = text:gsub("%[([^%[%]{}]-[^%.!%?%[%]{}])%]%s+(%u)", "%1. %2")
+    text = text:gsub("%[([^%[%]{}]-[^%.!%?%[%]{}])%][ \t\r\n\f\v]+([A-Z])", "%1. %2")
     text = text:gsub("%[([^%[%]{}]+)%]", "%1")
     -- English only: in German it changed the game's own words ("Holo
     -- deck", "Aero shuttle-Rampe"; firefly82's review, 2026-10-20).
@@ -196,6 +203,8 @@ function M.say(text, interrupt, built)
     if not interrupt and last_text and #text >= 12 and #last_text > #text and os.clock() - last_at < 3
         and last_text:sub(-#text) == text then return end
     last_text, last_at = text, os.clock()
+    M.recent[#M.recent + 1] = { text = raw, at = os.clock() }
+    if #M.recent > 30 then table.remove(M.recent, 1) end
     -- Only what came by itself (sent queued, or a window read): a key's own
     -- answer, said with interrupt, is cut by the next line as before. A
     -- line asked to interrupt but queued here came by itself too (a view
@@ -236,7 +245,7 @@ end
 -- (2026-10-11). Queued after anything already speaking.
 function M.say_long(text, interrupt)
     if type(text) ~= "string" or text == "" then return end
-    local _, words = text:gsub("%S+", "")
+    local _, words = text:gsub("[^ \t\r\n\f\v]+", "")
     if interrupt then hold_until = 0 end
     in_long = true
     pcall(M.say, text, interrupt == true)

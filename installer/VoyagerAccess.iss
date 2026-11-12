@@ -99,20 +99,105 @@ Filename: "{app}\{#MyAppExeName}"; Flags: nowait skipifnotsilent
 ; (Casey, 2026-10-11). Silent installs never show it.
 Filename: "{app}\{#MyAppExeName}"; Parameters: "--start-game"; Description: "Start Star Trek: Voyager - Across the Unknown"; Flags: postinstall nowait skipifsilent
 
-[UninstallRun]
-Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM {#MyAppExeName}"; Flags: runhidden; RunOnceId: "StopHelper"
-Filename: "{app}\{#MyAppExeName}"; Parameters: "--uninstall-mod"; RunOnceId: "RemoveMod"
+; The mod and the launch options come out in CurUninstallStepChanged
+; ([Code]), not [UninstallRun], whose exit code Inno Setup ignores: a failed
+; --uninstall-mod then deleted VoyagerAccess.exe while Steam's launch option
+; still started it (Fable review, 2026-11-10).
 
 [UninstallDelete]
 Type: filesandordirs; Name: "{localappdata}\VoyagerAccess"
+; The updater's downloads (app.py fetch_update; Fable review, 2026-11-10).
+Type: filesandordirs; Name: "{%TEMP}\VoyagerAccessUpdater"
 
 [Code]
+// Stops the helper, then takes the mod and the launch options out. This
+// runs at usUninstall, after the player has answered Yes to Inno Setup's
+// own "completely remove" question (InitializeUninstall comes before that
+// question, so answering No there left the mod half removed; pre-merge
+// review, 2026-11-10). Abort stops the uninstall from here before anything
+// is deleted, so the exe the launch option starts and the record of what
+// to undo both stay. Exit 1 (the game left running, Steam would not close)
+// stops it; exit 3 (app.py UNINSTALL_ERROR: a file that will not go,
+// anything unexpected, the same on every try) asks whether to uninstall
+// anyway. An exe that will not start at all does not block the uninstall.
+// The helper is stopped first: one waiting for a Steam game to close would
+// otherwise set the launch options again once Steam closes for the edit.
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  ResultCode: Integer;
+begin
+  if CurUninstallStep <> usUninstall then
+    exit;
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if not Exec(ExpandConstant('{app}\{#MyAppExeName}'), '--uninstall-mod', '', SW_SHOWNORMAL,
+      ewWaitUntilTerminated, ResultCode) then
+    Log('--uninstall-mod could not be started; uninstalling anyway')
+  else if ResultCode = 3 then
+  begin
+    Log('--uninstall-mod exited 3 (an error that may repeat); asking');
+    if SuppressibleMsgBox('Voyager Access could not take all of its files back out of the game.'
+        + #13#10#13#10 + 'Uninstall Voyager Access anyway? Choose Yes to remove it now; Steam''s '
+        + '"Verify integrity of game files" puts the game''s own files right afterwards. '
+        + 'Choose No to stop, and nothing is uninstalled.', mbError, MB_YESNO, IDNO) <> IDYES then
+      Abort;
+  end
+  else if ResultCode = 4 then
+  begin
+    // app.py LAUNCH_FILE_ERROR: Steam's settings file could not be changed
+    // (read-only, for example). The helper has already named the file and
+    // what to do, so no "close the game" box, which could not help here.
+    Log('--uninstall-mod exited 4 (a Steam settings file could not be changed); uninstall stopped');
+    Abort;
+  end
+  else if ResultCode <> 0 then
+  begin
+    Log(Format('--uninstall-mod exited %d; uninstall stopped', [ResultCode]));
+    SuppressibleMsgBox('Voyager Access could not take the mod or its Steam launch options back '
+      + 'out of the game, so nothing was uninstalled. Close the game, and any other game '
+      + 'running in Steam, then uninstall Voyager Access again.', mbError, MB_OK, IDOK);
+    Abort;
+  end;
+  // A helper stopped while it waited for a Steam game to close leaves its
+  // one-time sign-in entry (app.py _run_once) pointing at this exe. Kept
+  // when the uninstall stops, so that setup still finishes at sign-in.
+  RegDeleteValue(HKEY_CURRENT_USER, 'Software\Microsoft\Windows\CurrentVersion\RunOnce', 'Voyager Access');
+end;
+
 // The waiting helper keeps VoyagerAccess.exe open; stop it so the files
 // can be replaced. The new copy is started again by [Run].
+// Whether the game is running (both exes in voyager\steam.py GAME_EXES).
+function GameRunning(): Boolean;
+var
+  Locator, Service, Procs: Variant;
+begin
+  Result := False;
+  try
+    Locator := CreateOleObject('WbemScripting.SWbemLocator');
+    Service := Locator.ConnectServer('.', 'root\CIMV2');
+    Procs := Service.ExecQuery('SELECT ProcessId FROM Win32_Process WHERE '
+      + 'Name = ''STVoyagerSteam-Win64-Shipping.exe'' OR Name = ''STVoyager-Win64-Shipping.exe''');
+    Result := Procs.Count > 0;
+  except
+    Log('Could not check whether the game is running: ' + GetExceptionMessage);
+  end;
+end;
+
+// A silent run is an update the helper started when the game closed. If
+// the game is running again by now, its helper is serving it: refuse
+// instead of killing that helper, and leave update-deferred.txt so the
+// helper does not count this as a failed update; it installs at the next
+// close (Fable review and Casey, 2026-11-10).
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   ResultCode: Integer;
 begin
+  if WizardSilent and GameRunning() then
+  begin
+    ForceDirectories(ExpandConstant('{localappdata}\VoyagerAccess'));
+    SaveStringToFile(ExpandConstant('{localappdata}\VoyagerAccess\update-deferred.txt'), 'game running', False);
+    Result := 'The game is running. The Voyager Access update installs when the game closes.';
+    exit;
+  end;
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM {#MyAppExeName}', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
   Result := '';
 end;

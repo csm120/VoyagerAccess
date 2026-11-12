@@ -29,7 +29,7 @@ end
 
 local function plain(s)
     s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
-    return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+    return (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 local function sentences(parts)
@@ -846,7 +846,9 @@ local function ensure_chance_hook()
             print("[VoyagerAccess] away: success chance " .. last_chance.value .. (c and " (critical check)" or "") .. "\n")
         end)
     end)
-    if StaticFindObject(NO_HEROES_HOOK) then
+    -- Once only: with the chance hook failing, this ran again on every
+    -- label read and added a hook each time (Fable review, 2026-11-10).
+    if not cleared_by_game and StaticFindObject(NO_HEROES_HOOK) then
         cleared_by_game = pcall(RegisterHook, NO_HEROES_HOOK, function()
             last_chance = nil
             print("[VoyagerAccess] away: no heroes selected, chance cleared\n")
@@ -1554,6 +1556,10 @@ local function result_poll()
                     local base = text:gsub("%s*Reward: [^%.]*%.", "")
                     local function count(s) return s == "" and 0 or select(2, s:gsub(", ", "")) + 1 end
                     local function look(tries, last_n)
+                        -- The next task's result reuses the panel: this
+                        -- watcher ends there, or that task's reward was said
+                        -- twice (Fable review, 2026-11-10).
+                        if M.result_story ~= story then return end
                         local done, n = false, last_n
                         pcall(function()
                             local late = choice_rewards(rp, "WBP_ResourceReward_AwayMissionChallengeResult_C")
@@ -1690,6 +1696,10 @@ function M.mission_poll()
     local away = okw and w and w:GetClass():GetFName():ToString():find("AwayMission", 1, true) ~= nil
     if not away then
         mission_sig = nil
+        -- The same task's result after a save is loaded, or met again, is
+        -- said again (Fable review, 2026-11-10: it was silent for good).
+        last_result = nil
+        M.result_said, M.result_story = nil, nil
         return
     end
     result_poll()

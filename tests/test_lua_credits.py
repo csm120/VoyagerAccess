@@ -79,6 +79,19 @@ class CreditsTextTests(unittest.TestCase):
         self.assertTrue(M.close())
         self.assertTrue(lua.globals().closed_by_mod)
 
+    # Fable review, 2026-11-10 (mod finding 3): if the credits widget went
+    # away without BP_OnDeactivated reaching the hook, the list kept the
+    # arrows over the main menu until the game was restarted.
+    def test_list_ends_when_the_credits_widget_is_gone(self):
+        lua, M, _ = self.run_credits(False)
+        lua.execute("credits.IsValid = function() return false end")
+        self.assertFalse(M.open())
+
+    def test_list_stays_while_the_credits_are_up(self):
+        # Negative twin.
+        _, M, _ = self.run_credits(False)
+        self.assertTrue(M.open())
+
 
 if __name__ == "__main__":
     unittest.main()

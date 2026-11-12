@@ -296,6 +296,209 @@ class RelaunchMarkerTests(unittest.TestCase):
             self.assertIsNone(updater.relaunch_target(marker))
 
 
+class FailedUpdateTests(unittest.TestCase):
+    """Fable review 2026-11-10: a setup that fails on the player's computer
+    must not close the game at the main menu on every launch."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.saved = (app.UPDATE_MARKER, app.FAILED_UPDATE, app.fetch_update,
+                      getattr(app, "UPDATE_DEFERRED", None))
+        app.UPDATE_MARKER = Path(self.tmp.name) / "pending-update.json"
+        app.FAILED_UPDATE = Path(self.tmp.name) / "failed-update.json"
+        app.UPDATE_DEFERRED = Path(self.tmp.name) / "update-deferred.txt"
+        app.fetch_update = lambda: ("9.9.9", Path("setup.exe"), None)
+
+    def tearDown(self):
+        app.UPDATE_MARKER, app.FAILED_UPDATE, app.fetch_update, app.UPDATE_DEFERRED = self.saved
+        self.tmp.cleanup()
+
+    def fail_once(self):
+        updater.write_marker(app.UPDATE_MARKER, "9.9.9")
+        return app.update_news().text
+
+    def early_session(self):
+        now = [1000.0]
+        s = app.PlaySession(clock=lambda: now[0], threads=False, at_menu=lambda: True)
+        now[0] += 10
+        s.step(lambda text: None, lambda found: False)
+        return s
+
+    def test_failed_version_never_restarts_at_the_menu(self):
+        self.assertIn("did not finish", self.fail_once())
+        s = self.early_session()
+        self.assertFalse(s.restart)
+        self.assertTrue(s.offered)       # still offered on F12 and at close
+
+    def test_without_a_failure_the_early_restart_stays(self):
+        # Negative twin: nothing failed, so the main menu restart still happens.
+        self.assertTrue(self.early_session().restart)
+
+    def test_a_newer_release_than_the_failed_one_restarts(self):
+        self.fail_once()
+        app.fetch_update = lambda: ("9.9.10", Path("setup.exe"), None)
+        self.assertTrue(self.early_session().restart)
+
+    def test_second_failure_names_the_manual_install(self):
+        first = self.fail_once()
+        second = self.fail_once()
+        self.assertNotIn("download", first.lower())
+        self.assertIn("download", second.lower())
+
+    # Casey, 2026-11-10: a silent setup refuses while the game is running
+    # (it leaves update-deferred.txt), and that refusal is not a failure.
+    def defer_once(self):
+        app.UPDATE_DEFERRED.write_text("game running", encoding="utf-8")
+        updater.write_marker(app.UPDATE_MARKER, "9.9.9")
+        return app.update_news().text
+
+    def test_refusal_while_the_game_runs_is_not_counted(self):
+        said = self.defer_once()
+        self.assertIn("game was running", said)
+        self.assertFalse(app.UPDATE_DEFERRED.exists())
+        self.assertEqual(app.failed_update(), (None, 0))
+        # A later session that did not hear the waited line still takes the
+        # normal update path (negative twin for the test below).
+        self.assertTrue(self.early_session().restart)
+        # A real failure after it is the first, not "again".
+        self.assertNotIn("did not finish again", self.fail_once())
+
+    # Coordinator decision under Casey's standing approval, 2026-11-11 (Codex
+    # finding 2 on the 0.4.3 release prep): a session that said "It installs
+    # when you close the game" keeps its word, so it never closes the game at
+    # the main menu to install. F12 and closing the game still install it.
+    def waited_session(self):
+        now = [1000.0]
+        s = app.PlaySession(clock=lambda: now[0], threads=False, at_menu=lambda: True,
+                            waited=True)
+        now[0] += 10
+        said = []
+        s.step(said.append, lambda found: False)
+        return s, said
+
+    def test_a_session_told_the_update_waited_never_restarts_at_the_menu(self):
+        s, said = self.waited_session()
+        self.assertFalse(s.restart)
+        self.assertTrue(s.offered)
+        self.assertTrue(any("installs when you close the game" in t for t in said))
+        s.key({app.RESTART_KEY})          # F12 still installs it now
+        self.assertTrue(s.restart)
+
+    # Fable release review 2026-11-11, low 7: the waited check compared
+    # update_news()'s text with a constant, so joining or translating that
+    # line would silently bring the main-menu restart back. update_news()
+    # now returns a flag beside the text, and play_session uses the flag.
+    def test_update_news_flags_a_waited_update(self):
+        app.UPDATE_DEFERRED.write_text("game running", encoding="utf-8")
+        updater.write_marker(app.UPDATE_MARKER, "9.9.9")
+        news = app.update_news()
+        self.assertTrue(news.waited)
+        self.assertIn("game was running", news.text)
+
+    def test_update_news_does_not_flag_a_failure_or_an_update(self):
+        updater.write_marker(app.UPDATE_MARKER, "9.9.9")
+        self.assertFalse(app.update_news().waited)          # a real failure
+        updater.write_marker(app.UPDATE_MARKER, app.__version__)
+        self.assertFalse(app.update_news().waited)          # a good update
+
+    def sessions_made(self, calls):
+        made = []
+
+        class Stop(Exception):
+            pass
+
+        def fake(**kwargs):
+            made.append(kwargs)
+            raise Stop
+        saved = app.PlaySession
+        app.PlaySession = fake
+        try:
+            for kwargs in calls:
+                with self.assertRaises(Stop):
+                    app.play_session(**kwargs)
+        finally:
+            app.PlaySession = saved
+        return [m.get("waited", False) for m in made]
+
+    def test_play_session_uses_the_flag_not_the_text(self):
+        text = self.defer_once()
+        # The same words without the flag (a joined or translated copy) do
+        # not decide it; only the flag does.
+        self.assertEqual(self.sessions_made([dict(news=text), dict(news=text, waited=True),
+                                             dict(news=None)]), [False, True, False])
+
+    def test_launch_game_passes_the_flag_from_update_news(self):
+        self.launch_during_setup([["VoyagerAccessSetup.exe"], ["VoyagerAccessSetup.exe"]])
+        self.assertEqual(self.waited_flags, [True])
+
+    def test_launch_game_does_not_flag_a_real_failure(self):
+        # Negative twin: no setup refused, so no flag.
+        self.launch_during_setup([])
+        self.assertEqual(self.waited_flags, [False])
+
+    def test_refusals_never_reach_the_manual_install(self):
+        self.defer_once()
+        self.assertNotIn("download", self.defer_once().lower())
+
+    # Pre-merge review 2026-11-10, L1: the refusal only happens when a new
+    # session's game is already starting, and that session's helper read the
+    # marker right after its Popen, before setup reached PrepareToInstall and
+    # wrote update-deferred.txt. So the race the refusal was for still
+    # counted as a failed update.
+    def launch_during_setup(self, setup_polls):
+        import subprocess
+        names = list(setup_polls)
+        news = []
+
+        def process_names():
+            if names:
+                return names.pop(0)
+            if setup_polls:     # setup has just refused and exited
+                app.UPDATE_DEFERRED.write_text("game running", encoding="utf-8")
+            return []
+        saved = (subprocess.Popen, app.single_instance, app.keep_installed, app.prepare_session_files,
+                 app.modfiles.game_is_running, app.clear_game_state, app.play_session,
+                 app._process_names, app.time.sleep)
+        subprocess.Popen = lambda cmd: None
+        app.single_instance = lambda: True
+        app.keep_installed = lambda: None
+        app.prepare_session_files = lambda f: None
+        app.modfiles.game_is_running = lambda: True
+        app.clear_game_state = lambda: None
+        self.waited_flags = []
+        app.play_session = lambda news=None, greeting=None, waited=False: (
+            news_said.append(news) or self.waited_flags.append(waited) or 0)
+        news_said = news
+        app._process_names = process_names
+        app.time.sleep = lambda s: None
+        updater.write_marker(app.UPDATE_MARKER, "9.9.9")
+        try:
+            app.launch_game(["game.exe"])
+        finally:
+            (subprocess.Popen, app.single_instance, app.keep_installed, app.prepare_session_files,
+             app.modfiles.game_is_running, app.clear_game_state, app.play_session,
+             app._process_names, app.time.sleep) = saved
+        return news[0]
+
+    def test_setup_refusing_as_the_game_starts_is_not_counted(self):
+        said = self.launch_during_setup([["VoyagerAccessSetup.exe"], ["VoyagerAccessSetup.exe"]])
+        self.assertIn("game was running", said)
+        self.assertEqual(app.failed_update(), (None, 0))
+        self.assertFalse(app.UPDATE_DEFERRED.exists())
+
+    def test_no_setup_running_still_counts_a_failure(self):
+        # Negative twin: a setup that really did not finish is still counted.
+        said = self.launch_during_setup([])
+        self.assertIn("did not finish", said)
+        self.assertEqual(app.failed_update(), ("9.9.9", 1))
+
+    def test_a_good_update_forgets_the_failure(self):
+        self.fail_once()
+        updater.write_marker(app.UPDATE_MARKER, app.__version__)
+        self.assertIn("was updated", app.update_news().text)
+        self.assertFalse(app.FAILED_UPDATE.exists())
+
+
 class LaunchModeTests(unittest.TestCase):
     """Steam runs '"VoyagerAccess.exe" --launch %command% -dx11'."""
 
@@ -339,6 +542,51 @@ class LaunchModeTests(unittest.TestCase):
             finally:
                 app.DEFAULT_FILE, subprocess.Popen, app.single_instance, app.keep_installed = saved
         self.assertEqual(seen, [""])
+
+    # Fable review 2026-11-10, helper low 11: anything but OSError before the
+    # Popen (a manifest of the wrong shape, say) meant Play in Steam did
+    # nothing at all.
+    def test_game_starts_when_the_session_files_break(self):
+        import subprocess
+        saved = (subprocess.Popen, app.single_instance, app.prepare_session_files)
+        started = []
+
+        def broken(f):
+            raise KeyError("files")
+        subprocess.Popen = lambda cmd: started.append(cmd)
+        app.single_instance = lambda: False      # second copy: start the game and return
+        app.prepare_session_files = broken
+        try:
+            with self.assertLogs("voyager", "ERROR"):
+                app.launch_game(["game.exe"])
+        finally:
+            subprocess.Popen, app.single_instance, app.prepare_session_files = saved
+        self.assertEqual(started, [["game.exe"]])
+
+    def test_game_starts_when_the_mod_check_breaks(self):
+        import subprocess
+        saved = (subprocess.Popen, app.single_instance, app.keep_installed)
+        started = []
+
+        def broken():
+            raise KeyError("files")
+        subprocess.Popen = lambda cmd: started.append(cmd)
+        app.single_instance = lambda: True
+        app.keep_installed = broken
+        saved_rest = (app.prepare_session_files, app.update_news, app.modfiles.game_is_running,
+                      app.GAME_START_SECONDS)
+        app.prepare_session_files = lambda f: None
+        app.update_news = lambda: None
+        app.modfiles.game_is_running = lambda: False
+        app.GAME_START_SECONDS = -1
+        try:
+            with self.assertLogs("voyager", "ERROR"):
+                app.launch_game(["game.exe"])
+        finally:
+            subprocess.Popen, app.single_instance, app.keep_installed = saved
+            (app.prepare_session_files, app.update_news, app.modfiles.game_is_running,
+             app.GAME_START_SECONDS) = saved_rest
+        self.assertEqual(started, [["game.exe"]])
 
     def test_development_run_never_points_steam_at_python(self):
         self.assertIsNone(app.helper_exe())
@@ -534,14 +782,15 @@ class StartGameTests(unittest.TestCase):
 class UpdateNewsTests(unittest.TestCase):
     def test_update_news_names_ctrl_f12(self):
         # Casey, 2026-10-11: when the version is spoken, say Ctrl+F12 for what's new.
-        saved = app.UPDATE_MARKER
+        saved = app.UPDATE_MARKER, app.FAILED_UPDATE
         with tempfile.TemporaryDirectory() as d:
             app.UPDATE_MARKER = Path(d) / "pending-update.json"
+            app.FAILED_UPDATE = Path(d) / "failed-update.json"
             try:
                 updater.write_marker(app.UPDATE_MARKER, app.__version__)
-                news = app.update_news()
+                news = app.update_news().text
             finally:
-                app.UPDATE_MARKER = saved
+                app.UPDATE_MARKER, app.FAILED_UPDATE = saved
         self.assertIn(app.__version__, news)
         self.assertIn("Ctrl+F12", news)
 

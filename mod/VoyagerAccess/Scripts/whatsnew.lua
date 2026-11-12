@@ -41,8 +41,11 @@ end
 
 local items, index = nil, nil
 
+-- Built: the release notes are English and stay wholly English. The
+-- translation line pass swapped fragments in them ("Fixed: when the game
+-- ignored Eingabe on a choice"; Fable review and Casey, 2026-11-10).
 local function say_item()
-    speech.say(string.format("%s %d of %d", (items[index]:gsub("%.?%s*$", ".")), index, #items), true)
+    speech.say(string.format("%s %d of %d", (items[index]:gsub("%.?%s*$", ".")), index, #items), true, true)
 end
 
 function M.open()
@@ -73,6 +76,12 @@ end
 function M.edge(last)
     index = last and #items or 1
     say_item()
+end
+
+-- Closed without a word when an event, a conversation or the main menu
+-- comes up (focus.dismiss_mod_lists).
+function M.dismiss()
+    items = nil
 end
 
 function M.close()

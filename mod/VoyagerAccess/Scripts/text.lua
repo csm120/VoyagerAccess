@@ -123,7 +123,29 @@ function M.title(s)
     return ok and out or s
 end
 
-local IMG = '<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'
+-- Whether s has a letter in any script. Not s:find("%a"), which tests bytes
+-- through the C locale and found no letter in Russian, Japanese or Chinese
+-- text under "C" (Fable review, 2026-11-10). Text that is not valid UTF-8
+-- counts as letters.
+function M.has_letters(s)
+    if type(s) ~= "string" or s == "" then return false end
+    if s:find("[A-Za-z]") then return true end
+    local ok, found = pcall(function()
+        for _, c in utf8.codes(s) do
+            if c >= 0x80 and is_letter(c) then return true end
+        end
+        return false
+    end)
+    return (not ok) or found
+end
+
+-- A letter or a digit (s:find("%w") without the locale): a lone "+" or
+-- bullet, an icon's label, has none.
+function M.has_words(s)
+    return type(s) == "string" and (s:find("[0-9]") ~= nil or M.has_letters(s))
+end
+
+local IMG ='<[Ii][Mm][Gg]%s+[Ii][Dd]%s*=%s*"([%w_]+)"%s*/>'
 
 -- The game's own cycle words, from the text before every cycle icon in its
 -- eight languages (2026-10-29): CYCLE, ZYKLUS/ZYKLEN, CICLO, CYKL/CYKLÓW,
@@ -144,6 +166,29 @@ local function is_cycle_word(word)
     end
     for _, tail in ipairs(CYCLE_TAILS) do
         if #l >= #tail and l:sub(-#tail) == tail then return true end
+    end
+    return false
+end
+
+-- Whether s starts with the game's cycle word in any of its languages
+-- ("36 ZYKLEN", "36サイクル以内", "36 cycles left"): quest.lua masks the
+-- number before it, a countdown and not a new goal (Fable review,
+-- 2026-11-10). s may be cut off mid-letter; only its start is read.
+function M.starts_cycle_word(s)
+    if type(s) ~= "string" or s == "" then return false end
+    local parts = {}
+    pcall(function()
+        for _, c in utf8.codes(s) do
+            parts[#parts + 1] = utf8.char(lower_cp(c))
+            if #parts >= 8 then break end
+        end
+    end)
+    local l = table.concat(parts)
+    for _, stem in ipairs(CYCLE_STEMS) do
+        if l:sub(1, #stem) == stem then return true end
+    end
+    for _, tail in ipairs(CYCLE_TAILS) do
+        if l:sub(1, #tail) == tail then return true end
     end
     return false
 end

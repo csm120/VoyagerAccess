@@ -43,7 +43,7 @@ local function text(w)
     if not ok or type(s) ~= "string" or s:sub(1, 1) == "#" then return "" end
     s = require("text").prep(s)  -- icons beside numbers (text.lua)
     s = s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", "")
-    return (s:gsub("%s+", " "):match("^%s*(.-)%s*$"))
+    return (s:gsub("[ \t\r\n\f\v]+", " "):match("^[ \t\r\n\f\v]*(.-)[ \t\r\n\f\v]*$"))
 end
 
 local function sentence(s)

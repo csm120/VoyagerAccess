@@ -76,7 +76,9 @@ local GROUPS = {
     } },
     { "Away missions", {
         "Up and Down: the choices, their heroes and Confirm. Home and End: first and last",
+        "Left and Right, or Page Up and Page Down: the previous or next task",
         "Enter: pick a hero, or confirm",
+        "Backspace on a filled away team slot: empty it, so Enter can choose another hero",
         "After a result, Enter continues and R repeats it",
     } },
     { "Combat", {
@@ -136,6 +138,12 @@ end
 
 function M.repeat_item()
     say_item()
+end
+
+-- Closed without a word when an event, a conversation or the main menu
+-- comes up (focus.dismiss_mod_lists).
+function M.dismiss()
+    items = nil
 end
 
 function M.close()

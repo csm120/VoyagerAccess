@@ -1,5 +1,34 @@
 # New in Voyager Access
 
+## Wednesday November 11th 2026
+
+Version 0.4.3
+
+- Fixed: when an update's setup could not finish on your computer, Voyager Access found the same update at the next start and closed the game at the main menu to try again, every time you played. Now you hear "A Voyager Access update did not finish. It will try again when you close the game, or press F12." and your game is left alone. If it fails a second time, you're told to download the installer from the GitHub releases page and run it yourself.
+- Fixed: if the game would not close for an update, Voyager Access used to stop and leave the game with no speech. It now says "The game did not close. The Voyager Access update installs when you close the game." and keeps talking.
+- Changed: an update that installs after you close the game no longer stops Voyager Access if you have already started the game again. It waits, you hear "A Voyager Access update waited because the game was running. It installs when you close the game.", and it isn't counted as a failed update.
+- Fixed: uninstalling now takes the mod out only after you answer Yes to the uninstaller's "completely remove" question. Answering No used to leave the mod half removed.
+- Fixed: if the uninstaller can't put Steam's launch options back, for example because a game is still running in Steam, it stops and says so, and nothing is uninstalled. Before, Steam could be left trying to start a program that was gone, so the game wouldn't start at all. If files can't be taken out of the game folder, you're asked whether to uninstall anyway.
+- Fixed: uninstalling also removes downloaded update files and a leftover start-up entry.
+- Fixed: if something went wrong changing Steam's launch options, Steam could be left closed. It is now started again, and Steam's settings file is saved in a way that a crash or full disk can't leave half written.
+- Fixed: an install or update that was cut off part way could make a later uninstall put some of Voyager Access's own files back into the game folder. Each file is now recorded before it is copied.
+- Fixed: if the mod check before the game starts ran into an unexpected problem, pressing Play in Steam did nothing. The game now starts anyway.
+- Fixed: depending on your Windows settings, a window written in Russian, Japanese or Chinese could be silent, and letters like "à" or the Russian "Р" could come out wrong in anything read.
+- Fixed: reading an event's choices after a rare hiccup could switch every later choice to a slower way of reading that has crashed the game. Now only that one choice is skipped, and the next look tries again.
+- Fixed: in a long battle, Tab could say "Target" many times over if one of the game's battle signals failed to connect.
+- Fixed: after loading the save from before an away task and making the same choice, the result was silent. You hear it again now.
+- Fixed: a task's reward could be said twice when the next task's result came quickly.
+- Fixed: pressing Enter quickly through a conversation could make R and the arrows repeat an earlier line, or say it after the newer one.
+- Fixed: a few things that are meant to speak when nothing else did, like Escape repeating a window's button, the pause menu closing, and "Already selected.", sometimes stayed quiet.
+- Fixed: after Voyager was destroyed during a trip, a save was loaded, or you went back to the main menu, the I key still said you were travelling. It says nothing about a trip you're no longer on.
+- Fixed: with the game in German, a goal with a cycle countdown was said as "Changed" on every cycle. The same happened in English when the countdown had no comma.
+- Fixed: an injured hero in a room's list sounded fit when the game was in a language other than English.
+- Fixed: a hull of 1,000 or more made the I key say a figure like "hull 12000%", and in German the hull percentage lines in battle never came.
+- Fixed: the credits list could keep the arrows on the main menu until the game was restarted.
+- Changed: the C, Control+F1, Control+F12 and J lists now close by themselves when an event, a conversation or the main menu comes up, so the arrows move in what you've arrived at. A toast or report leaves the list open.
+- Changed: Control+F12's release notes stay in English when the game is in another language, instead of coming out half translated.
+- Changed: F1 in the ship view now names J and Page Up and Page Down. Control+F1's away missions group names Left and Right Arrow and Page Up and Page Down between tasks, and Backspace on a filled team slot. Two Control+F1 lines that stayed in English are now translated.
+
 ## Monday November 9th 2026
 
 Version 0.4.2

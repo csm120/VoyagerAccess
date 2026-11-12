@@ -172,7 +172,7 @@ local function lines()
         local n = text_of(passed.PassedCycle_TextBox)
         local label = nil
         for _, t in ipairs(screen.texts_in(passed)) do
-            if not label and t:find("%a") then label = t end
+            if not label and require("text").has_letters(t) then label = t end
         end
         -- The game's label is lower case on screen ("passed cycles"), and a
         -- line starting with it sounded cut off (VM, 2026-11-07).

@@ -155,7 +155,7 @@ end
 
 local function clean(s)
     s = require("text").prep(s)
-    return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+    return (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 -- "BioneuralGelPack" in the room configs (VM, 2026-10-16); the others read

@@ -5,9 +5,18 @@
 #      a build that would be silent stops here
 #   4. dist\installer\VoyagerAccessSetup.exe (Inno Setup)
 # Usage: powershell -File installer\build.ps1
+#   -LivePatching also builds VoyagerAccessMod.zip; leave it off while live
+#   patching is off (installer\release-files.ps1 says why).
+param([switch]$LivePatching)
 $ErrorActionPreference = 'Stop'
 $repo = Split-Path $PSScriptRoot -Parent
 Set-Location $repo
+
+# An old VoyagerAccessMod.zip goes first, so a build that fails part way
+# cannot leave one in dist\installer to be uploaded (Fable re-review, 2026-11-11).
+& (Join-Path $repo 'installer\release-files.ps1') -Out (Join-Path $repo 'dist\installer') `
+    -Scripts (Join-Path $repo 'build\payload\ue4ss\Mods\VoyagerAccess\Scripts') `
+    -Stage (Join-Path $repo 'build\modzip') -CleanOnly
 
 $version = (Select-String voyager\version.py -Pattern '__version__ = "([^"]+)"').Matches[0].Groups[1].Value
 $numeric = ($version -split '\.' | Select-Object -First 3) -join '.'
@@ -19,6 +28,15 @@ $numeric = ($version -split '\.' | Select-Object -First 3) -join '.'
 if (($version -split '\.').Count -eq 3) {
     $top = (Select-String docs\WHATS_NEW.md -Pattern '^Version (\S+)' | Select-Object -First 1).Matches[0].Groups[1].Value
     if ($top -ne $version) { throw "docs\WHATS_NEW.md starts with version ${top}, not ${version}: add this release's entry first" }
+    # And the tests and the translation tables pass, before anything is
+    # built or signed (Fable review and Casey, 2026-11-10). Without lupa
+    # every Lua test skips and the suite still passes, so it is required.
+    py -3.11 -c "import lupa"
+    if ($LASTEXITCODE) { throw "lupa is not installed, so the Lua tests would be skipped: no release build" }
+    py -3.11 -m unittest discover -s tests
+    if ($LASTEXITCODE) { throw "the tests failed: no release build" }
+    py -3.11 tools\check_translations.py
+    if ($LASTEXITCODE) { throw "check_translations.py found problems: no release build" }
 }
 
 # Authenticode (Azure Artifact Signing as Web Friendly Help LLC), before the
@@ -75,19 +93,9 @@ if ($sign) {
     if ($LASTEXITCODE) { throw "VoyagerAccessSetup.exe came out of Inno Setup unsigned" }
 }
 
-# The mod's scripts alone, for patching a running game, and a checksum file
-# beside each release file. The checksums used to be written by hand, and
-# 0.1.1's build left the 0.1.0 one in place (caught before upload).
+# The setup's checksum file, and the live-patch zip only with -LivePatching.
 $out = Join-Path $repo 'dist\installer'
-$zip = Join-Path $out 'VoyagerAccessMod.zip'
-Remove-Item $zip -ErrorAction SilentlyContinue
-$stage = Join-Path $repo 'build\modzip'
-Remove-Item $stage -Recurse -ErrorAction SilentlyContinue
-New-Item -ItemType Directory "$stage\Scripts" | Out-Null
-Copy-Item build\payload\ue4ss\Mods\VoyagerAccess\Scripts\*.lua "$stage\Scripts"
-Compress-Archive -Path "$stage\Scripts" -DestinationPath $zip
-foreach ($name in 'VoyagerAccessSetup.exe', 'VoyagerAccessMod.zip') {
-    $hash = (Get-FileHash (Join-Path $out $name) -Algorithm SHA256).Hash.ToLower()
-    [IO.File]::WriteAllText((Join-Path $out "$name.sha256"), "$hash  $name`n")
-}
+& (Join-Path $repo 'installer\release-files.ps1') -Out $out `
+    -Scripts (Join-Path $repo 'build\payload\ue4ss\Mods\VoyagerAccess\Scripts') `
+    -Stage (Join-Path $repo 'build\modzip') -LivePatching:$LivePatching
 Get-ChildItem $out | Select-Object Name, Length

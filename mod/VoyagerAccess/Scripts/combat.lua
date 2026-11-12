@@ -35,7 +35,7 @@ end
 
 local function plain(s)
     s = require("text").prep(s)  -- icons beside numbers, list line breaks (text.lua)
-    return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+    return (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
 end
 
 -- The combat screens the game has made (popups.on_widget, in M.install),
@@ -417,6 +417,17 @@ local function torpedoes(w)
     return n and (n .. (n == "1" and " torpedo" or " torpedoes")) or "no torpedoes"
 end
 
+-- "1,240 / 2,400" (or German "1.240 / 2.400", or a no-break space) as two
+-- numbers: grouping between digits is dropped first, or a hull of 1,000 or
+-- more read "hull 12000%" (Fable review, 2026-11-10).
+local function hull_numbers(s)
+    s = s:gsub("([0-9])\194\160([0-9][0-9][0-9])", "%1%2"):gsub("([0-9])\226\128\175([0-9][0-9][0-9])", "%1%2")
+    for _ = 1, 3 do
+        s = s:gsub("([0-9])[,%. ']([0-9][0-9][0-9])%f[^0-9]", "%1%2")
+    end
+    return s:match("([0-9]+)[ \t]*/[ \t]*([0-9]+)")
+end
+
 -- A ship's name and hull as a percentage ("Voyager, hull 97%"), for the
 -- short I.
 local function brief_ship(view)
@@ -424,7 +435,7 @@ local function brief_ship(view)
     local name = title(plain(text_of(view.ShipNameText)))
     if name == "" then return nil end
     local hull = plain(text_of(view.T_HullIntegrity))
-    local cur, max = hull:match("(%d+)%s*/%s*(%d+)")
+    local cur, max = hull_numbers(hull)
     if cur and tonumber(max) > 0 then
         hull = math.floor(tonumber(cur) * 100 / tonumber(max) + 0.5) .. "%"
     else
@@ -1036,7 +1047,7 @@ local function milestones_poll(w)
                 return c and c:IsValid() and c:GetFName():ToString() or nil
             end)
             local id = (okc and who) or name
-            local cur, max = plain(text_of(view.T_HullIntegrity)):gsub(",", ""):match("(%d+)%s*/%s*(%d+)")
+            local cur, max = hull_numbers(plain(text_of(view.T_HullIntegrity)))
             cur, max = tonumber(cur), tonumber(max)
             if name == "" or not (cur and max and max > 0) then return end
             local pct = math.floor(cur * 100 / max + 0.5)
@@ -1076,12 +1087,19 @@ end
 -- the pause is said then, not on the loop's next run up to half a second
 -- later. Hooked on the live window's class when it first shows.
 local pause_hooked = false
+-- The pause hook is tried again each poll until it is in, as before; the
+-- target, hit and status hooks once per session whatever they return: with
+-- the pause event gone (a patch renaming it) they were registered again on
+-- every 500 ms poll and piled up, so one Tab said the target once per poll
+-- gone by (Fable review, 2026-11-10).
+local hooks_tried = false
 local function ensure_pause_hook()
-    if pause_hooked then return end
+    if pause_hooked and hooks_tried then return end
     local w = main()
     if not w then return end
     local cpath = w:GetClass():GetFullName():match("^%S+%s+(.+)$")
-    pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function(_, paused, msg)
+    if not cpath then return end
+    if not pause_hooked then pause_hooked = pcall(RegisterHook, cpath .. ":OnCombatPauseChanged", function(_, paused, msg)
         -- Which message the screen shows under the heading (paused_text).
         local okm, m = pcall(function() return msg:get() end)
         if okm and type(m) == "number" then pause_message = m end
@@ -1104,7 +1122,9 @@ local function ensure_pause_hook()
             print("[VoyagerAccess] combat: pause event, paused " .. tostring(event_paused) .. ", message " .. tostring(pause_message) .. "\n")
             pcall(function() if M.active() then pause_poll(main()) end end)
         end)
-    end)
+    end) end
+    if hooks_tried then return end
+    hooks_tried = true
     print("[VoyagerAccess] combat: pause hook " .. (pause_hooked and "installed" or "not installed") .. "\n")
     -- The game's target change (Tab, or a new target after one is gone).
     local ok_t = pcall(RegisterHook, cpath .. ":OnSwitchedToEnemy", function()

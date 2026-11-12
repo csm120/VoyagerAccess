@@ -64,7 +64,7 @@ local function text(w)
     return (s:gsub("[ \t]+", " "):match("^%s*(.-)%s*$"))
 end
 
-local function one_line(s) return (s:gsub("%s+", " ")) end
+local function one_line(s) return (s:gsub("[ \t\r\n\f\v]+", " ")) end
 
 -- "ENABLED" read as a word, not shouted: capitals become "Enabled".
 local function word_case(s)

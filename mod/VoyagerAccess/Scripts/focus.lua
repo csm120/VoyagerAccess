@@ -514,7 +514,7 @@ local function radial_details(menu)
                 -- read as "+500 storage capacity +500 storage capacity"
                 -- (VM, 2026-10-15).
                 if ok and s then s = require("text").prep(s) end
-                s = (ok and s) and s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "") or ""
+                s = (ok and s) and s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", "") or ""
                 local res = tp:match("%.(%w+)Display%.WidgetTree_%d+%.AmountText$")
                 if res then
                     if s:match("%d") and not s:find("#", 1, true) and not gave[res] then
@@ -803,11 +803,16 @@ end
 
 install_ring_hover = function(b)
     ring_hooked = false
-    local cls = b and b:GetClass()
-    while cls and cls:IsValid() do
+    local cls, depth = b and b:GetClass(), 0
+    -- IsValid, not truth: StaticFindObject returns an invalid object when
+    -- nothing matches, so the climb never left the first class; and a depth
+    -- limit on the climb (Gotchas 2 and 3; Fable review, 2026-11-10).
+    while cls and cls:IsValid() and depth < 16 do
+        depth = depth + 1
         local fpath = cls:GetFullName():match("^%S+%s+(.+)$") .. ":BP_OnHovered"
         if ring_hooked_on[fpath] then ring_hooked = true; return end
-        if StaticFindObject(fpath) then
+        local f = StaticFindObject(fpath)
+        if f and f:IsValid() then
             local ok = pcall(RegisterHook, fpath, on_ring_hover)
             ring_hooked_on[fpath] = ok or nil
             ring_hooked = ok
@@ -1094,6 +1099,28 @@ local moved = nil          -- the last focus change: { from, at, keys, by_input 
 local function mod_list_open()
     return require("whatsnew").open() or require("hotkeys").open() or require("resources").list_open() or require("credits").open()
         or require("ship").list_open() or require("techtree").open()
+end
+
+-- The C, Ctrl+F1, Ctrl+F12 and J lists close without a word when an event
+-- window, a conversation or the main menu comes up: the arrows kept
+-- reading the list while the new window waited unnamed. A toast or a
+-- report leaves them open (Fable review and Casey, 2026-11-10). The window
+-- says itself; focus is no longer parked once no list is open.
+function M.dismiss_mod_lists(why)
+    local closed = {}
+    for _, l in ipairs({ { "whatsnew", "open", "dismiss" }, { "hotkeys", "open", "dismiss" },
+            { "resources", "list_open", "dismiss" }, { "ship", "list_open", "list_dismiss" } }) do
+        pcall(function()
+            local m = require(l[1])
+            if m[l[2]]() then
+                m[l[3]]()
+                closed[#closed + 1] = l[1]
+            end
+        end)
+    end
+    if #closed > 0 then
+        print("[VoyagerAccess] focus: " .. table.concat(closed, ", ") .. " list closed (" .. tostring(why) .. ")\n")
+    end
 end
 
 function M.park_focus()
@@ -1987,7 +2014,7 @@ label_for = function(b, path)
                 if tp and tp:sub(1, #prefix) == prefix then
                     local ok, s = pcall(function() return t:GetText():ToString() end)
                     if ok then s = require("text").prep(s) end  -- icons beside numbers (text.lua)
-                    s = ok and s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%s+", " ")
+                    s = ok and s:gsub("<[^>]*/>", ""):gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("[ \t\r\n\f\v]+", " ")
                         :gsub("%s+([%.,])", "%1"):match("^%s*(.-)%s*$") or ""
                     if s ~= "" then texts[#texts + 1] = s end
                 end
@@ -2709,8 +2736,9 @@ end
 -- The path of fname on obj's class or the nearest class above it that has
 -- it (a Blueprint's override is what runs), or nil.
 local function class_event(obj, fname)
-    local k = obj:GetClass()
-    while k and k:IsValid() do
+    local k, depth = obj:GetClass(), 0
+    while k and k:IsValid() and depth < 16 do   -- depth limit: Gotcha 2
+        depth = depth + 1
         local fp = path_of(k) .. ":" .. fname
         local f = StaticFindObject(fp)
         if f and f:IsValid() then return fp end
@@ -3366,7 +3394,7 @@ local function activate()
             local function plain(x)
                 local ok, s = pcall(function() return x:GetText():ToString() end)
                 if not ok or not s then return "" end
-                return (s:gsub("<[^>]*>", ""):gsub("%s+", " "):gsub("^ ", ""):gsub(" $", ""))
+                return (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", ""))
             end
             local parts = { plain(b.DLCTitleText), plain(b.DLCEntitlementState), plain(b.DLCDescription) }
             pcall(function()
@@ -3986,6 +4014,10 @@ end
 local details_wait = nil
 function M.install()
     local keys = require("keys")
+    require("popups").on_read(function(_, cls)
+        if cls == "WBP_POIMultipleChoice_C" then M.dismiss_mod_lists("event") end
+    end)
+    require("popups").on_widget("WBP_MainMenu_C", function() M.dismiss_mod_lists("main menu") end)
     require("popups").on_close(function(p)
         local w = details_wait
         if not (w and w.paths[p]) then return end

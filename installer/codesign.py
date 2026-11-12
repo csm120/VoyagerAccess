@@ -22,8 +22,8 @@ THE CERTIFICATES LAST THREE DAYS, so every signature is timestamped. Without
 the timestamp a signed release would turn invalid that weekend.
 
 NOTHING HERE IS ACE-SPECIFIC on purpose, so the same file serves Casey's other
-Windows apps. Set-up and history: C:\\OneDrive\\Downloads\\WFH\\review\\
-operations\\code-signing-setup.md.
+Windows apps. Set-up and history are kept in Casey's private business notes
+(code-signing-setup.md), not in this repository.
 """
 
 from __future__ import annotations

@@ -46,6 +46,9 @@ Voyager Access also keeps itself up to date. It checks for a new version when th
 1. If it finds the update right after the game starts, it waits for the main menu, then closes the game, updates and starts it again by itself. If you have already loaded a game by then, it leaves your game alone and works as in step 2.
 2. Otherwise you hear that the update is ready. It installs when you close the game, or you can press F12 to restart the game and install it right away. Because the game only saves at story points, Voyager Access never closes a game you are playing unless you press F12.
 3. After an update, you hear which version you now have.
+4. If an update's setup could not finish, you hear so at the next start, and Voyager Access does not close the game for it again; it tries once more when you close the game, or when you press F12. If it fails a second time, you are told to download the installer from the GitHub releases page and run it yourself.
+5. If you start the game again before an update has installed, the update waits, and you hear that it installs when you close the game.
+6. If the game will not close for an update, Voyager Access says so and keeps speaking; the update installs when you close the game.
 
 ## What's new
 
@@ -64,7 +67,7 @@ Everywhere:
 5. N: a list of places to go: ship, System Map, Sector Map, Overview, Research, Wait one cycle, and Tutorials (every tutorial you have seen so far).
 6. V: switch between the ship and the System Map.
 7. R: repeat the last line, tutorial or window.
-8. Escape: the game's own back and pause menu, just as for anyone else. Backspace closes a list Voyager Access opened without bringing up the pause menu.
+8. Escape: the game's own back and pause menu, just as for anyone else. Backspace closes a list Voyager Access opened without bringing up the pause menu. The C, Control+F1, Control+F12 and J lists also close by themselves when an event, a conversation or the main menu comes up, so the arrows move in what has just opened.
 9. F12: check for a Voyager Access update now. If one is found, you hear that it is ready; press F12 again to restart the game and install it.
 10. Control+F12: what's new in Voyager Access.
 11. Backtick (the key left of 1): copy a troubleshooting report to the clipboard. If speech has stopped altogether, the Start menu's Voyager Access folder has "Copy a troubleshooting report", which works without the game.
@@ -120,7 +123,9 @@ What the mod says on its own (a scan result, an objective, a conversation that s
 
 ## Uninstalling
 
-Use Windows Settings, Apps, Installed apps, Voyager Access, Uninstall. The uninstaller takes Voyager Access out of the game folder and puts back anything it replaced, removes the DirectX 11 setting if it added it, and leaves the game exactly as it was.
+Use Windows Settings, Apps, Installed apps, Voyager Access, Uninstall. The uninstaller takes Voyager Access out of the game folder and puts back anything it replaced, removes the DirectX 11 setting if it added it, and leaves the game exactly as it was. It also removes any downloaded Voyager Access updates.
+
+Close the game first, and any other game running in Steam, because the uninstaller has to restart Steam to put the launch options back. If it cannot, it says so and nothing is uninstalled, so Steam is never left starting a Voyager Access that is gone. If Steam's settings file cannot be changed, for example because it is set to read-only, the uninstaller names the file and stops; clear Read-only in that file's Properties and uninstall again. If it cannot take all of its files back out of the game folder, it asks whether to uninstall anyway; if you choose Yes, Steam's "Verify integrity of game files" puts the game's own files right afterwards.
 
 ## License
 

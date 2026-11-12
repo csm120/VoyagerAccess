@@ -209,8 +209,10 @@ local function plain(s)
     s = s:gsub("<[^>]*>", ""):gsub("%[([^%]]*)%]", "%1"):gsub("%?%?%?", "unknown")
     -- Text escapes the game leaves in ("Duranium &amp; Tritanium", 2026-10-11).
     s = s:gsub("&amp;", "&"):gsub("&lt;", "<"):gsub("&gt;", ">"):gsub("&quot;", "\""):gsub("&#39;", "'")
-    s = s:gsub("%s+", " "):gsub("^ ", ""):gsub(" $", "")
-    if not s:find("%w") then return "" end
+    -- ASCII spaces and text.has_words, not %s and %w: those follow the C
+    -- locale (Fable review, 2026-11-10).
+    s = s:gsub("[ \t\r\n\f\v]+", " "):gsub("^ ", ""):gsub(" $", "")
+    if not require("text").has_words(s) then return "" end
     return s
 end
 
@@ -2181,7 +2183,7 @@ function M.event_unread(button_path)
     local p = button_path and button_path:match("^(.-WBP_POIMultipleChoice_C_%d+)")
     if not (p and last_text[p]) then return false end
     local ok, text = pcall(M.text_under, p)
-    return ok and text ~= last_text[p] and text:find("%a") ~= nil
+    return ok and text ~= last_text[p] and require("text").has_letters(text)
 end
 
 -- What this module last said for the window at path, or nil (combat.lua:
@@ -2626,7 +2628,7 @@ local function read_window(p, reread)
     if quiet then
         last_text[p] = text
     elseif waiting then
-    elseif text:find("%a") and text ~= last_text[p] and not (reread and last_text[p] == nil and not outcome) then
+    elseif require("text").has_letters(text) and text ~= last_text[p] and not (reread and last_text[p] == nil and not outcome) then
         print("[VoyagerAccess] popup: " .. text .. " (" .. (p:match("([%w_]+)$") or "?") .. ")\n")
         -- A new event: its first option took focus and was spoken
         -- before the event's own text, so the option came first
@@ -3315,8 +3317,9 @@ local function hook_class(cls)
         print("[VoyagerAccess] popups: watching " .. name .. " as a kind of " .. base .. "\n")
     end
     local got, taken = {}, {}
-    local k = cls
-    while k and k:IsValid() do
+    local k, depth = cls, 0
+    while k and k:IsValid() and depth < 16 do   -- depth limit: Gotcha 2
+        depth = depth + 1
         local kpath = path_of(k)
         if not kpath or BASE[kpath] then break end
         k:ForEachFunction(function(f)

@@ -192,7 +192,16 @@ def edit_file(path, change):
     new = change(text)
     if new == text:
         return False
-    Path(path).write_bytes(new.encode("utf-8", errors="surrogateescape"))
+    # Written beside it and swapped in, so a failure part way (a full disk,
+    # a crash) leaves Steam's file whole, not truncated (Fable review,
+    # 2026-11-10).
+    import os
+    tmp = Path(str(path) + ".voyageraccess-tmp")
+    try:
+        tmp.write_bytes(new.encode("utf-8", errors="surrogateescape"))
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return True
 
 
