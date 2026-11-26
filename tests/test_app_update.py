@@ -466,7 +466,7 @@ class FailedUpdateTests(unittest.TestCase):
         app.modfiles.game_is_running = lambda: True
         app.clear_game_state = lambda: None
         self.waited_flags = []
-        app.play_session = lambda news=None, greeting=None, waited=False: (
+        app.play_session = lambda news=None, greeting=None, waited=False, **kw: (
             news_said.append(news) or self.waited_flags.append(waited) or 0)
         news_said = news
         app._process_names = process_names
@@ -633,6 +633,111 @@ class ReportTests(unittest.TestCase):
         self.assertIn("line two", text)
         self.assertIn("course: under way", text)
         self.assertNotIn("other", text)
+
+    def test_report_has_the_game_build(self):
+        # Ties a report to a game patch (skills review, 2026-11-07, item 14).
+        from voyager import steam
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / "helper.log").write_text("x\n", encoding="utf-8")
+            g = steam.Game("2643390", "Star Trek: Voyager - Across the Unknown", d, "26128946")
+            text = app.build_report(d / "helper.log", [], [], [g])
+            self.assertIn("app 2643390, build 26128946", text)
+            # Negative twin: no games found, no Game line.
+            self.assertNotIn("Game:", app.build_report(d / "helper.log", [], []))
+
+    def test_find_games_reads_the_build_id(self):
+        from voyager import steam
+        with tempfile.TemporaryDirectory() as d:
+            lib = Path(d)
+            (lib / "steamapps" / "common" / "Voyager" / steam.BIN_SUBDIR).mkdir(parents=True)
+            (lib / "steamapps" / "common" / "Voyager" / steam.BIN_SUBDIR / steam.GAME_EXES[0]).write_text("")
+            (lib / "steamapps" / "appmanifest_2643390.acf").write_text(
+                '"AppState"\n{\n\t"name"\t\t"Voyager"\n\t"installdir"\t\t"Voyager"\n\t"buildid"\t\t"26128946"\n}\n',
+                encoding="utf-8")
+            games = steam.find_games(lib)
+        self.assertEqual([g.buildid for g in games], ["26128946"])
+
+    @staticmethod
+    def _game(appid, root, build):
+        from voyager import steam
+        return steam.Game(appid, appid, Path(root) / "STVoyager" / "Binaries" / "Win64", build)
+
+    def test_unchecked_build_said_once(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            noted = d / "build-noted.txt"
+            g = self._game("2643390", d / "Voyager", "99999999")
+            # Steam starts STVoyager.exe from the install folder (helper log).
+            cmd = [str(d / "Voyager" / "STVoyager.exe")]
+            self.assertEqual(app.unchecked_build_note(cmd, [g], noted), (app.UNCHECKED_BUILD_LINE, "99999999"))
+            # Not marked until the line is spoken.
+            self.assertEqual(app.unchecked_build_note(cmd, [g], noted)[0], app.UNCHECKED_BUILD_LINE)
+            app.note_build("99999999", noted)
+            # The next launch on the same build says nothing.
+            self.assertEqual(app.unchecked_build_note(cmd, [g], noted), (None, None))
+
+    def test_checked_build_says_nothing(self):
+        # Negative twin: a build this release was checked against.
+        from voyager.version import CHECKED_BUILDS
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            g = self._game("2643390", d / "Voyager", CHECKED_BUILDS[0])
+            self.assertEqual(app.unchecked_build_note([str(d / "Voyager" / "STVoyager.exe")], [g], d / "n.txt"),
+                             (None, None))
+
+    def test_demo_folder_is_not_the_full_games(self):
+        # The full game's folder name starts the demo's (GPT review,
+        # 2026-11-25): a demo launch picked the full game.
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            full = self._game("2643390", d / "Star Trek Voyager - Across the Unknown", "99999999")
+            demo = self._game("4054540", d / "Star Trek Voyager - Across the Unknown Demo", "21907122")
+            demo_cmd = [str(d / "Star Trek Voyager - Across the Unknown Demo" / "STVoyager.exe")]
+            full_cmd = [str(d / "Star Trek Voyager - Across the Unknown" / "STVoyager.exe")]
+            self.assertIs(app.game_of_command(demo_cmd, [full, demo]), demo)
+            self.assertIs(app.game_of_command(full_cmd, [full, demo]), full)
+            self.assertEqual(app.unchecked_build_note(demo_cmd, [full, demo], d / "n.txt"), (None, None))
+
+    def test_failed_news_line_keeps_serving_and_is_not_marked(self):
+        # A news line that fails to speak must not end the session before
+        # serve (GPT review, 2026-11-25), and is not recorded as said.
+        from unittest import mock
+
+        class Broken:
+            def say(self, text, interrupt):
+                raise BrokenPipeError("speech")
+
+            def close(self):
+                pass
+
+            def unload(self):
+                pass
+        marked, served = [], []
+        with mock.patch.object(app, "open_speech", return_value=Broken()), \
+             mock.patch.object(app, "serve", side_effect=lambda *a, **k: served.append(1)), \
+             mock.patch.object(app.modfiles, "game_is_running", return_value=False):
+            app.play_session(news="The game was updated.", news_said=lambda: marked.append(1))
+        self.assertEqual(served, [1])
+        self.assertEqual(marked, [])
+
+    def test_refused_news_line_is_not_marked(self):
+        # Fable review, 2026-11-25: Tolk returns False when no reader took
+        # the line; the build was still marked as told.
+        from unittest import mock
+
+        class Refusing:
+            def say(self, text, interrupt):
+                return False
+
+            def unload(self):
+                pass
+        marked = []
+        with mock.patch.object(app, "open_speech", return_value=Refusing()), \
+             mock.patch.object(app, "serve", side_effect=lambda *a, **k: None), \
+             mock.patch.object(app.modfiles, "game_is_running", return_value=False):
+            app.play_session(news="The game was updated.", news_said=lambda: marked.append(1))
+        self.assertEqual(marked, [])
 
     def test_report_has_the_last_speech(self):
         # What the mod last said, beside the helper's log: it shows whether

@@ -73,19 +73,27 @@ function M.screen_up()
 end
 
 -- In battle: the combat screen is up and the hero setup before it is gone.
+-- A panel of the combat widget on screen; the whole check guarded, since
+-- a stale widget's IsValid can throw and stopped the battle poll (GPT
+-- review, 2026-11-25).
+local function panel_up(w, field)
+    local ok, up = pcall(function()
+        local x = w[field]
+        return x ~= nil and x:IsValid() and screen.shown(x) and true or false
+    end)
+    return ok and up
+end
+
 function M.active()
     local w = main()
     if not w then return false end
-    local ok, L = pcall(function() return w.HeroLoadout end)
-    if ok and L and L:IsValid() and screen.shown(L) then return false end
+    if panel_up(w, "HeroLoadout") then return false end
     -- Auto Resolve's window replaces the setup; the battle panels behind it
     -- hold placeholders ("Target: U.S.S. Voyager", "X torpedoes", VM,
     -- 2026-10-16).
-    local oka, A = pcall(function() return w.AutoResolveWidget end)
-    if oka and A and A:IsValid() and screen.shown(A) then return false end
+    if panel_up(w, "AutoResolveWidget") then return false end
     -- Over once the result is up (the target kept being read after it).
-    local okr, R = pcall(function() return w.CombatResultView end)
-    if okr and R and R:IsValid() and screen.shown(R) then return false end
+    if panel_up(w, "CombatResultView") then return false end
     return true
 end
 
@@ -146,14 +154,27 @@ local function panel_subsystems(view)
                 if not inside then return end
                 local s = x.MySubsystem
                 if not (s and s:IsValid()) then return end
-                local name = plain(text_of(x.SubsystemNameText))
-                if name == "" then return end
-                local cur, max = math.floor((x.CurrentHealth or 0) + 0.5), math.floor((x.MaxHealth or 0) + 0.5)
-                out[#out + 1] = string.format("%s %d of %d", name, cur, max)
+                local line = M.subsystem_text(x)
+                if line then out[#out + 1] = line end
             end)
         end
     end
     return #out > 0 and out or nil
+end
+
+-- One subsystem: "Shields 40 of 100", and ", repairing" while the game
+-- shows its SubsystemRepairImage (visual state review, 2026-11-25).
+function M.subsystem_text(x)
+    local name = plain(text_of(x.SubsystemNameText))
+    if name == "" then return nil end
+    local cur, max = math.floor((x.CurrentHealth or 0) + 0.5), math.floor((x.MaxHealth or 0) + 0.5)
+    local line = string.format("%s %d of %d", name, cur, max)
+    local ok, fix = pcall(function()
+        local i = x.SubsystemRepairImage
+        return i ~= nil and i:IsValid() and screen.shown(i) and true or false
+    end)
+    if ok and fix then line = line .. ", " .. require("tr").word("repairing") end
+    return line
 end
 
 local function ship_line(view, subs)
@@ -224,6 +245,26 @@ function M.one_per_key(items)
     return out
 end
 
+-- An ability the game draws as unavailable: WBP_ExtAbility's
+-- Disabled_Indicator or SubsystemDisabled_Indicator (the ability's
+-- Disabled and SubsystemDisabled states, ESTVSpaceCombatExtAbilityState).
+-- The timers alone said "ready" for one whose subsystem was down (visual
+-- state review, 2026-11-25). nil when neither is shown.
+local function unavailable(x)
+    local screen = require("screen")
+    local function on(name)
+        local ok, v = pcall(function()
+            local i = x[name]
+            return i ~= nil and i:IsValid() and screen.shown(i) and true or false
+        end)
+        return ok and v
+    end
+    local tr = require("tr")
+    if on("SubsystemDisabled_Indicator") then return tr.word("unavailable") .. ", " .. tr.word("subsystem down") end
+    if on("Disabled_Indicator") then return tr.word("unavailable") end
+    return nil
+end
+
 function M.abilities(short)
     local list = {}
     -- Not checked as shown: screen.shown said no while they were on screen.
@@ -240,7 +281,12 @@ function M.abilities(short)
                 if (ab.ActiveTimeLeft or 0) > 0 then
                     state = "active, " .. seconds(ab.ActiveTimeLeft) .. " left"
                 elseif (ab.CooldownLeft or 0) > 0 then
-                    state = "ready in " .. seconds(ab.CooldownLeft)
+                    -- Disabled while cooling down: both, the disabled first
+                    -- (GPT review, 2026-11-25: "ready in 12 seconds" alone).
+                    local u = unavailable(x)
+                    state = (u and (u .. ", ") or "") .. "ready in " .. seconds(ab.CooldownLeft)
+                else
+                    state = unavailable(x) or state
                 end
                 local okv, vis = pcall(function() return require("screen").shown(x) end)
                 local num = tonumber(x:GetFullName():match("_(%d+)$")) or 0
@@ -537,7 +583,10 @@ function M.destroyed_owner(sys, low)
     local best, best_share = nil, math.huge
     for _, view in ipairs({ w.PlayerView, w.EnemyView }) do
         for _, s in ipairs(panel_subsystems(view) or {}) do
-            local name, cur, max = s:match("^(.-) (%d+) of (%d+)$")
+            -- Not anchored at the end: ", repairing" may follow (GPT review,
+            -- 2026-11-25: a repairing Voyager was skipped, and its low
+            -- shields named the enemy).
+            local name, cur, max = s:match("^(.-) (%d+) of (%d+)")
             local a, b = name and name:lower() or "", sys:lower()
             if name and (a == b or a:sub(1, #b) == b or b:sub(1, #a) == a) then
                 local share = tonumber(cur) / math.max(tonumber(max), 1)
@@ -559,7 +608,7 @@ function M.repair_label(label)
     for _, s in ipairs(subs or {}) do
         -- By name only: the panel rounds (Warp Core 116) where the button
         -- says 115, and the maximum was left out (VM, 2026-10-16).
-        local name, max = s:match("^(.-) %d+ of (%d+)$")
+        local name, max = s:match("^(.-) %d+ of (%d+)")
         if name then
             local a, b = name:lower(), sys:lower()
             if a:sub(1, #b) == b or b:sub(1, #a) == a then
@@ -647,15 +696,50 @@ local said_goal = nil
 local ability_state = {}
 
 local function abilities_poll()
+    -- One ability can have two widgets (a hidden one left from the setup):
+    -- each poll looks at an ability once, and it is unavailable when any of
+    -- its widgets shows so, or the two flipped it ready, unavailable, ready
+    -- (GPT review, 2026-11-25; screen.shown is not reliable on these).
+    local widgets = {}
     for _, x in ipairs(FindAllOf("WBP_ExtAbility_C") or {}) do
-        if live(x) then
+        if live(x) then widgets[#widgets + 1] = x end
+    end
+    -- One widget stands for each ability: a shown one over a hidden one, so
+    -- the key said is the slot on screen (GPT review, 2026-11-25: a hidden
+    -- slot 1 widget listed first gave "1, ... ready" for slot 2).
+    local blocked, done, rep, order = {}, {}, {}, {}
+    for _, x in ipairs(widgets) do
+        pcall(function()
+            local ab = x.Ability
+            if ab and ab:IsValid() then
+                local k = path_of(ab)
+                local u = unavailable(x)
+                if u then blocked[k] = u end
+                local okv, vis = pcall(function() return screen.shown(x) end)
+                local shown = okv and vis and true or false
+                if not rep[k] then
+                    rep[k] = { x = x, shown = shown }
+                    order[#order + 1] = k
+                elseif shown and not rep[k].shown then
+                    rep[k] = { x = x, shown = shown }
+                end
+            end
+        end)
+    end
+    widgets = {}
+    for _, k in ipairs(order) do widgets[#widgets + 1] = rep[k].x end
+    for _, x in ipairs(widgets) do
+        do
             pcall(function()
                 local ab = x.Ability
                 if not (ab and ab:IsValid()) then return end
                 local key = path_of(ab)
+                if done[key] then return end
+                done[key] = true
                 local state = "ready"
                 if (ab.ActiveTimeLeft or 0) > 0 then state = "active"
-                elseif (ab.CooldownLeft or 0) > 0 then state = "cooldown" end
+                elseif (ab.CooldownLeft or 0) > 0 then state = "cooldown"
+                else state = blocked[key] or state end
                 local was = ability_state[key]
                 ability_state[key] = state
                 -- An instant ability goes straight from ready to its
@@ -663,7 +747,12 @@ local function abilities_poll()
                 -- 2026-10-16): that is "used".
                 local said = state
                 if was == "ready" and state == "cooldown" then said = require("tr").word("used") end
-                if was and was ~= state and said ~= "cooldown" then
+                -- Turning unavailable is not said on its own: if the game
+                -- marks every ability so during a pause or tutorial it would
+                -- be three lines at once (Fable review, 2026-11-25). K says
+                -- it, and the line back to "ready" is said.
+                local went_unavailable = state ~= "ready" and state ~= "active" and state ~= "cooldown"
+                if was and was ~= state and said ~= "cooldown" and not went_unavailable then
                     -- With its key first, as the ability bar shows it
                     -- (Casey, 2026-10-29).
                     local text = string.format("%d, %s %s", x.Index + 1, plain(ab.AbilityName:ToString()), said)
@@ -761,6 +850,28 @@ end
 -- its distance (Torp_Incoming, set by the widget's incomingTorpedo).
 -- Said once each time it appears, in the widget's own words.
 local torpedo_coming = false
+
+-- The game's own incoming torpedo panel (IncomingTorpedoWidget, a
+-- USTVTorpedoWidget): the subsystem it targets and its time to impact, as
+-- a sighted player sees them; nil when the panel is not on screen
+-- (unheard readers check, 2026-11-25). Said once, when the torpedo appears.
+function M.torpedo_details(w)
+    local out = {}
+    pcall(function()
+        local t = w.IncomingTorpedoWidget
+        if not (t and t:IsValid() and screen.shown(t)) then return end
+        for _, name in ipairs({ "TorpedoTargetText", "TorpedoImpactDurationText" }) do
+            local x = t[name]
+            if x and x:IsValid() and screen.shown(x) then
+                local s = plain(text_of(x))
+                if s ~= "" then out[#out + 1] = s end
+            end
+        end
+    end)
+    if #out == 0 then return nil end
+    return table.concat(out, ", ")
+end
+
 local function incoming_poll(w)
     local ok, on = pcall(function() return w.incomingTorpedo == true and screen.shown(w.Torp_Incoming) end)
     on = ok and on or false
@@ -778,6 +889,8 @@ local function incoming_poll(w)
             end, { no_lists = true, limit = 40 })
         end)
         if words == "" then words = "Torpedo incoming" end
+        local more = M.torpedo_details(w)
+        if more then words = words .. ", " .. more end
         print("[VoyagerAccess] combat: " .. words .. "\n")
         speech.say(words, false)
     end
@@ -861,11 +974,9 @@ end
 function M.setup_up()
     local w = main()
     if not w then return false end
-    local ok, L = pcall(function() return w.HeroLoadout end)
-    if ok and L and L:IsValid() and screen.shown(L) then return true end
+    if panel_up(w, "HeroLoadout") then return true end
     -- Auto Resolve's window belongs to the setup (VM, 2026-10-15).
-    local oka, A = pcall(function() return w.AutoResolveWidget end)
-    return oka and A and A:IsValid() and screen.shown(A) or false
+    return panel_up(w, "AutoResolveWidget")
 end
 
 local function put_back(why)
@@ -910,6 +1021,7 @@ end
 -- log), so module state is enough.
 local energy = { level = {}, max = {}, order = {}, selected = nil, said = 0 }
 local hooked = false
+local energy_hooked_changed = false   -- OnEnergyChangedEvent registered
 local energy_quiet_until = 0
 local was_active = false
 
@@ -989,6 +1101,10 @@ local function energy_hooks()
     -- poll would pile up hooks (review, 2026-10-16).
     hooked = true
     local ok, err = pcall(function()
+        -- Each hook is registered once only: when the first succeeded and the
+        -- second failed with "no UFunction", the retry must not register the
+        -- first again (2026-11-25 review).
+        if not energy_hooked_changed then
         RegisterHook(P .. "OnEnergyChangedEvent", function(s, new, max)
             local name = name_of(s)
             if not name then return end
@@ -1000,6 +1116,8 @@ local function energy_hooks()
                 ExecuteInGameThreadWithDelay(60, function() pcall(energy_say, name) end)
             end
         end)
+        energy_hooked_changed = true
+        end
         RegisterHook(P .. "SetSelected", function(s, b)
             if not b:get() then return end
             local name = name_of(s)
@@ -1157,12 +1275,21 @@ local function ensure_pause_hook()
     print("[VoyagerAccess] combat: status hook " .. (ok_s and "installed" or "not installed") .. "\n")
 end
 
+local setup_sync_logged = false
 local function poll()
-    M.setup_sync()
+    -- An error here must not skip every battle reader after it.
+    local ok_ss, err_ss = pcall(M.setup_sync)
+    if not ok_ss and not setup_sync_logged then
+        setup_sync_logged = true
+        print("[VoyagerAccess] combat: setup_sync failed: " .. tostring(err_ss) .. "\n")
+    end
     pcall(ensure_pause_hook)
     -- When the setup was last up: focus.lua does not open Orders on the
     -- Enter that started the battle.
-    if M.setup_up() then M.setup_last = os.time() end
+    -- Guarded too: setup_sync calls setup_up, and a throw there escaped
+    -- through this second read (GPT review, 2026-11-25).
+    local ok_up, up = pcall(M.setup_up)
+    if ok_up and up then M.setup_last = os.time() end
     if not hooked and M.screen_up() then energy_hooks() end
     if not M.active() then
         said_goal = nil said_target = nil said_pause = false ability_state = {} said_ammo = nil event_paused = nil

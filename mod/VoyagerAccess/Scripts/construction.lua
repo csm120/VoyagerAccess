@@ -35,6 +35,20 @@ end
 
 local ROOM_CONFIG = "/Game/STVoyager/ConstructionSideview/Data/DA_RoomConfig.DA_RoomConfig"
 
+-- The room config of the ship in play: the construction manager's
+-- RoomConfig. The Q Trials Equinox has its own (DA_RoomConfig_Equinox), and
+-- the campaign's, read by path, gave it Voyager's footprints and costs
+-- (mode guard review, 2026-11-25, A1). The path is the fallback.
+local function room_config()
+    local ok, rc = pcall(function()
+        local m = FindFirstOf("STVConstructionManager")
+        local c = m and m:IsValid() and m.RoomConfig
+        if c and c:IsValid() then return c end
+    end)
+    if ok and rc then return rc end
+    return StaticFindObject(ROOM_CONFIG)
+end
+
 local function empty(h)
     return h ~= nil and h:GetRoomType() == 0
 end
@@ -48,7 +62,7 @@ function M.extent(t)
     local w, d = 2, 1
     pcall(function()
         local out = {}
-        StaticFindObject(ROOM_CONFIG):GetRoomConfig(t, 0, out)
+        room_config():GetRoomConfig(t, 0, out)
         local e = out.OutConfig.Extent
         w, d = math.floor(e.X + 0.5), math.floor(e.Y + 0.5)
     end)
@@ -191,7 +205,7 @@ end
 function M.room_shortage(hull)
     local cm = FindFirstOf("STVConstructionManager")
     local rm = FindFirstOf("STVResourceManager")
-    local rc = StaticFindObject(ROOM_CONFIG)
+    local rc = room_config()
     if not (hull and hull:IsValid() and cm and rm and rc) then return nil end
     local t = hull:GetRoomType()
     local level = cm:GetRoomUpgradeLevelBySlot(hull:BP_GetSlotIndex())
@@ -266,7 +280,7 @@ end
 function M.shortages(b)
     local cmd = M.command_of(b)
     if not cmd then return nil end
-    local rc = StaticFindObject(ROOM_CONFIG)
+    local rc = room_config()
     if not (rc and rc:IsValid()) then return nil end
     local out = {}
     rc:GetRoomConfig(cmd.RoomType, 0, out)
@@ -299,7 +313,7 @@ function M.ring_text(b)
     local cmd = M.command_of(b)
     if not cmd then return nil end
     local t = cmd.RoomType
-    local rc = StaticFindObject(ROOM_CONFIG)
+    local rc = room_config()
     if not (rc and rc:IsValid()) then return nil end
     local tc = nil
     rc.Configs:ForEach(function(k, v) if k:get() == t then tc = v:get() end end)
@@ -363,7 +377,7 @@ function M.enter(b, label)
     -- cannot be made.
     local cm0 = FindFirstOf("STVConstructionManager")
     local okb, why = pcall(function()
-        local rc = StaticFindObject(ROOM_CONFIG)
+        local rc = room_config()
         local tc = nil
         rc.Configs:ForEach(function(k, v) if k:get() == cmd.RoomType then tc = v:get() end end)
         local out = {}

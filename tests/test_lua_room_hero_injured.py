@@ -43,11 +43,12 @@ function NotifyOnNewObject() end
 function ExecuteInGameThread(fn) fn() end
 function ExecuteInGameThreadWithDelay() end
 function LoopAsync() end
+card_texts = {}
 function no_texts(M)
     for i = 1, 255 do
         local n = debug.getupvalue(M.hero_label, i)
         if n == nil then break end
-        if n == "texts_under" then debug.setupvalue(M.hero_label, i, function() return {} end) end
+        if n == "texts_under" then debug.setupvalue(M.hero_label, i, function() return card_texts end) end
     end
 end
 """
@@ -69,9 +70,36 @@ class RoomHeroInjuredTests(unittest.TestCase):
         self.lua.execute("conditions[3] = true")
         self.assertTrue(self.M.hero_label(PATH).startswith("Tom Paris, verletzt"), self.M.hero_label(PATH))
 
-    def test_room_name_in_the_field_is_not_said(self):
-        # Negative twin: a fit hero's field (a room name) is still left out.
+    def test_room_the_hero_works_in_is_said(self):
+        # The plaque's ShowRoom puts the room a fit hero is assigned to in the
+        # same field; a sighted player sees it, and choosing that hero takes
+        # them out of it (Casey, 2026-11-25). It was left out.
         self.lua.execute('status = "Krankenstation"')
+        self.assertEqual(self.M.hero_label(PATH), "Tom Paris, assigned to Krankenstation.")
+
+    def test_bonus_without_a_percent_is_said(self):
+        # The Mess Hall card's "+6 MORALE per CYCLE" (VM, 2026-11-25): only
+        # a bonus with "%" was read, so a morale bonus was never said.
+        self.lua.execute('status = "#Hero Room asd"; card_texts = { HeroImpactPreviewRichText = "+6 MORALE per CYCLE." }')
+        self.assertEqual(self.M.hero_label(PATH), "Tom Paris. Plus 6 MORALE per CYCLE.")
+
+    def test_percent_bonus_said_once(self):
+        # Negative twin: a "%" bonus is still said, and only once.
+        # Both preview fields hold it, as the card has both (GPT review: the
+        # old loop then said it twice, and the test could tell).
+        self.lua.execute('status = "#Hero Room asd"; card_texts = { HeroImpactPreviewText = "+11% warp core repair rate.", '
+                         'HeroImpactPreviewRichText = "+11% warp core repair rate." }')
+        self.assertEqual(self.M.hero_label(PATH), "Tom Paris. Plus 11% warp core repair rate.")
+
+    def test_no_manager_says_the_card_text_alone(self):
+        # GPT review, 2026-11-25: with the hero manager missing, German
+        # "Verletzt" came out as "assigned to Verletzt".
+        self.lua.execute('status = "Verletzt"; FindFirstOf = function() return nil end')
+        self.assertEqual(self.M.hero_label(PATH), "Tom Paris, Verletzt.")
+
+    def test_unassigned_hero_has_no_room(self):
+        # Negative twin: the field holds the designer stand-in, nothing said.
+        self.lua.execute('status = "#Hero Room asd"')
         self.assertEqual(self.M.hero_label(PATH), "Tom Paris.")
 
 

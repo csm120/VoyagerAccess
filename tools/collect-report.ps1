@@ -17,6 +17,23 @@ $out.Add("Game running: " + [bool](Get-Process STVoyagerSteam-Win64-Shipping, ST
 $out.Add("Helper running: " + [bool](Get-Process VoyagerAccess))
 
 $steam = (Get-ItemProperty HKCU:\Software\Valve\Steam).SteamPath
+$libs = @("$steam\steamapps")
+Select-String -Path "$steam\steamapps\libraryfolders.vdf" -Pattern '"path"\s+"([^"]+)"' | ForEach-Object {
+    $libs += ($_.Matches[0].Groups[1].Value -replace '\\\\', '\') + '\steamapps'
+}
+$libs = $libs | Select-Object -Unique
+# Which patch the player is on, from Steam's manifest (skills review,
+# 2026-11-07, item 14): the full game, then the demo.
+foreach ($app in '2643390', '4054540') {
+    foreach ($lib in $libs) {
+        $acf = Join-Path $lib "appmanifest_$app.acf"
+        if (Test-Path $acf) {
+            $build = Select-String -Path $acf -Pattern '"buildid"\s+"(\d+)"' | Select-Object -First 1 | ForEach-Object { $_.Matches[0].Groups[1].Value }
+            $out.Add("Game: app $app, build " + $(if ($build) { $build } else { 'unknown' }))
+            break
+        }
+    }
+}
 $out.Add("")
 $out.Add("== Launch options ==")
 Get-ChildItem "$steam\userdata\*\config\localconfig.vdf" | ForEach-Object {
@@ -45,11 +62,7 @@ if (Test-Path $setupLog) {
     Get-Content $setupLog -Tail 25 | ForEach-Object { $out.Add($_) }
 }
 
-$libs = @("$steam\steamapps")
-Select-String -Path "$steam\steamapps\libraryfolders.vdf" -Pattern '"path"\s+"([^"]+)"' | ForEach-Object {
-    $libs += ($_.Matches[0].Groups[1].Value -replace '\\\\', '\') + '\steamapps'
-}
-foreach ($lib in ($libs | Select-Object -Unique)) {
+foreach ($lib in $libs) {
     Get-ChildItem "$lib\common" -Directory -Filter 'Star Trek Voyager - Across the Unknown*' | ForEach-Object {
         $log = Join-Path $_.FullName 'STVoyager\Binaries\Win64\ue4ss\UE4SS.log'
         if (Test-Path $log) {

@@ -1877,21 +1877,43 @@ local function wire_rows(path)
     end
 end
 
+-- Another module's check or label, guarded: one that throws on a widget
+-- variant from some mode must not abort every label after it (2026-11-25
+-- review). The first failure of each is logged; a check that throws counts
+-- as not matching, so the chain goes on to the next.
+local mod_failed = {}
+local function mod_try(what, fn, ...)
+    local ok, v = pcall(fn, ...)
+    if ok then return v end
+    if not mod_failed[what] then
+        mod_failed[what] = true
+        print("[VoyagerAccess] focus: " .. what .. " failed: " .. tostring(v) .. "\n")
+    end
+    return nil, true
+end
+-- A label from another module; on an error, the plain label instead.
+local function mod_label(what, b, path, fn, ...)
+    local v, failed = mod_try(what, fn, ...)
+    if failed then return with_value(label_of(path), b) end
+    return v
+end
+
 -- The spoken label for a focused button.
 label_for = function(b, path)
     local label
     -- Leaving the Q Trials setup: its title comes again on the next visit.
-    if not require("qtrials").handles(path) then require("qtrials").away() end
-    local work = require("rooms").workteam_label(path) or require("rooms").serving_label(path)
-        or require("rooms").research_label(path)
+    if not mod_try("qtrials.handles", require("qtrials").handles, path) then mod_try("qtrials.away", require("qtrials").away) end
+    local work = mod_try("rooms.workteam_label", require("rooms").workteam_label, path)
+        or mod_try("rooms.serving_label", require("rooms").serving_label, path)
+        or mod_try("rooms.research_label", require("rooms").research_label, path)
     local cls = b:GetClass():GetFName():ToString()
     if work then
         label = work
-    elseif require("difficulty").handles(path) then
+    elseif mod_try("difficulty.handles", require("difficulty").handles, path) then
         -- Says ", selected" itself, on presets only (difficulty.lua).
-        return require("difficulty").label(b, path)
-    elseif require("qtrials").handles(path) then
-        return require("qtrials").label(b, path)
+        return mod_label("difficulty.label", b, path, require("difficulty").label, b, path)
+    elseif mod_try("qtrials.handles", require("qtrials").handles, path) then
+        return mod_label("qtrials.label", b, path, require("qtrials").label, b, path)
     elseif cls == "WBP_IncomingCall_List_Button_C" then
         local t = b.NotificationText
         local ok, s = pcall(function() return t:GetText():ToString() end)
@@ -1913,16 +1935,16 @@ label_for = function(b, path)
             end
         end)
     elseif cls == "WBP_BioLab_Production_ItemDisplay_C" then
-        label = require("rooms").biolab_item_label(b)
+        label = mod_label("rooms.biolab_item_label", b, path, require("rooms").biolab_item_label, b)
     elseif cls == "WBP_LeaveSectorEntry_C" then
-        label = require("popups").leave_sector_entry(b)
+        label = mod_label("popups.leave_sector_entry", b, path, require("popups").leave_sector_entry, b)
     elseif path:find("WBP_MetaProgressionReward_C_%d+%.WidgetTree_%d+%.Button$") then
-        label = require("popups").meta_reward_label(b, path)
+        label = mod_label("popups.meta_reward_label", b, path, require("popups").meta_reward_label, b, path)
     elseif path:find("AutoResolveWidget%.WidgetTree_%d+%.Button_Torpedo%a+$") then
         -- "+" and "-" beside the torpedo count; said with the count and the
         -- survival chance they change (VM, 2026-10-15).
         local win = path:match("^(.-AutoResolveWidget)%.")
-        local t = win and require("popups").auto_resolve_text(win) or ""
+        local t = win and mod_try("popups.auto_resolve_text", require("popups").auto_resolve_text, win) or ""
         local tail = (t:match("(Survival chance [^%.]+)") or "") .. ". " .. (t:match("(Torpedoes added [^%.]+)") or "")
         label = (path:find("Add$") and "Add torpedo" or "Remove torpedo") .. ". " .. tail
     elseif cls == "WBP_Resource_C" then
@@ -1935,7 +1957,7 @@ label_for = function(b, path)
         v = okv and v and v:gsub("^0+(%d)", "%1") or ""
         label = (NAMES[key] or key) .. (v ~= "" and (" " .. v) or "")
     elseif cls == "WBP_AeroShuttleBay_TradeOffer_C" then
-        label = require("rooms").trade_offer_label(b)
+        label = mod_label("rooms.trade_offer_label", b, path, require("rooms").trade_offer_label, b)
     elseif cls == "WBP_ResourceSelectionButton_C" then
         -- A Cargo Bay's storage choice: only "+50" is text, the resource is
         -- its Icon (MI_UI_Duranium; VM, 2026-10-15). "Duranium, +50 storage".
@@ -1970,27 +1992,27 @@ label_for = function(b, path)
             end
         end)
     elseif cls == "WBP_Shuttle_Status_Button_C" then
-        label = require("rooms").shuttle_label(b, path) or with_value(label_of(path), b)
+        label = mod_try("rooms.shuttle_label", require("rooms").shuttle_label, b, path) or with_value(label_of(path), b)
     elseif cls == "WBP_SectorExitBonusFuel_Button_C" then
-        label = require("popups").bonus_fuel_label(b)
+        label = mod_label("popups.bonus_fuel_label", b, path, require("popups").bonus_fuel_label, b)
     elseif cls == "WBP_RadialButton_C" then
         -- Said after the hover, with the centre's details (radial_focus);
         -- the cached text here was said a second time (2026-10-14).
         label = ""
     elseif b:GetClass():GetFName():ToString() == "WBP_POISelectableOption_C" then
-        label = require("events").option_label(b)
-    elseif require("combat").handles(b, path) then
-        label = require("combat").button_label(b, path)
+        label = mod_label("events.option_label", b, path, require("events").option_label, b)
+    elseif mod_try("combat.handles", require("combat").handles, b, path) then
+        label = mod_label("combat.button_label", b, path, require("combat").button_label, b, path)
     elseif b:GetClass():GetFName():ToString() == "WBP_CombatAllyButton_C"
         or b:GetClass():GetFName():ToString() == "WBP_CombatAllyRecruitedButton_C" then
-        label = require("rooms").ally_label(b)
+        label = mod_label("rooms.ally_label", b, path, require("rooms").ally_label, b)
     elseif b:GetClass():GetFName():ToString() == "WBP_HUD_CyclesDisplay_C" then
         -- The HUD's cycle counter took the game's focus during an Overview
         -- tab switch and was read as a bare "24" (VM, 2026-10-17).
         local ok, n = pcall(function() return b.CyclesAmount:GetText():ToString() end)
         label = "Cycle counter" .. ((ok and n and n ~= "") and (", " .. n) or "")
     elseif b:GetClass():GetFName():ToString() == "WBP_Sandbox_Setup_QChallengesPlaque_Overview_C" then
-        label = require("qtrials").overview_plaque_label(b)
+        label = mod_label("qtrials.overview_plaque_label", b, path, require("qtrials").overview_plaque_label, b)
     elseif b:GetClass():GetFName():ToString() == "WBP_MultipleChoice_Button_C" then
         -- A side mission offer's options: the wording is rich text the
         -- plain label missed, so the options were silent (2026-10-14).
@@ -2045,18 +2067,18 @@ label_for = function(b, path)
                 if index and n > 1 then label = label:gsub("%.$", "") .. ", " .. index .. " of " .. n end
             end)
         end
-    elseif require("warpcore").handles(path) then
-        label = require("warpcore").label(path)
-    elseif require("awaymission").is_slot(path) then
-        label = require("awaymission").slot_label(path) or with_value(label_of(path), b)
-    elseif require("awaymission").is_hero_button(path) then
-        label = require("awaymission").hero_label(path) or with_value(label_of(path), b)
-    elseif require("rooms").is_hero_button(path) then
-        label = require("rooms").hero_label(path) or with_value(label_of(path), b)
-    elseif require("rooms").is_module_button(path) then
-        label = require("rooms").button_label(path, with_value(label_of(path), b) or "Button")
-    elseif require("dialogue").is_choice(path) then
-        label = require("dialogue").choice_label(path) or with_value(label_of(path), b)
+    elseif mod_try("warpcore.handles", require("warpcore").handles, path) then
+        label = mod_label("warpcore.label", b, path, require("warpcore").label, path)
+    elseif mod_try("awaymission.is_slot", require("awaymission").is_slot, path) then
+        label = mod_try("awaymission.slot_label", require("awaymission").slot_label, path) or with_value(label_of(path), b)
+    elseif mod_try("awaymission.is_hero_button", require("awaymission").is_hero_button, path) then
+        label = mod_try("awaymission.hero_label", require("awaymission").hero_label, path) or with_value(label_of(path), b)
+    elseif mod_try("rooms.is_hero_button", require("rooms").is_hero_button, path) then
+        label = mod_try("rooms.hero_label", require("rooms").hero_label, path) or with_value(label_of(path), b)
+    elseif mod_try("rooms.is_module_button", require("rooms").is_module_button, path) then
+        label = mod_label("rooms.button_label", b, path, require("rooms").button_label, path, with_value(label_of(path), b) or "Button")
+    elseif mod_try("dialogue.is_choice", require("dialogue").is_choice, path) then
+        label = mod_try("dialogue.choice_label", require("dialogue").choice_label, path) or with_value(label_of(path), b)
     else
         label = with_value(label_of(path), b)
     end
@@ -2067,9 +2089,9 @@ label_for = function(b, path)
     -- already says so ("Stellar Cartography on., selected", 2026-10-14).
     -- Nor on dialogue choices: the first one is Selected by default and read
     -- "Destroy the Array, selected" before anything was picked (2026-10-14).
-    if label and not label:find("selected", 1, true) and not require("rooms").is_module_button(path)
+    if label and not label:find("selected", 1, true) and not mod_try("rooms.is_module_button", require("rooms").is_module_button, path)
         and not path:find("AutoResolveWidget", 1, true)
-        and not require("dialogue").is_choice(path) then
+        and not mod_try("dialogue.is_choice", require("dialogue").is_choice, path) then
         local ok, sel = pcall(function() return b:GetSelected() end)
         -- Only in a group: a lone story card CONTINUE is Selected too and
         -- was read "CONTINUE, selected" (2026-10-14).
@@ -4053,18 +4075,41 @@ function M.install()
     -- Away mission choices: the game has no keyboard path, so the mod
     -- walks them (awaymission.lua).
     local away = require("awaymission")
+    -- Each module's check on a key, guarded (mod_try): one that throws in
+    -- some mode counts as not matching, and the key goes on to the next
+    -- check instead of doing nothing on every screen (2026-11-25 review).
+    local function ck(what, fn, ...)
+        return (mod_try(what, fn, ...))
+    end
+    -- A step that checks and acts at once (qtrials.step, choice_step, a
+    -- tab switch): one that throws may already have moved, so the key ends
+    -- there rather than going on to the next handler and moving twice
+    -- (Fable review, 2026-11-25).
+    -- Only its first failure ends the key: one that throws every time (a
+    -- game patch) would leave Up and Down doing nothing anywhere, so after
+    -- that the key goes on as it did (Fable review, 2026-11-25).
+    local act_failed = {}
+    local function act(what, fn, ...)
+        local v, failed = mod_try(what, fn, ...)
+        if failed then
+            if act_failed[what] then return nil end
+            act_failed[what] = true
+            return true
+        end
+        return v
+    end
     keys.on("enter", function()
         last_nav = "go_in"   -- a panel may animate open first; focus moves in after
-        if require("popups").close_tutorial() then return end
-        if require("whatsnew").open() then return require("whatsnew").close() end
-        if require("hotkeys").open() then return require("hotkeys").repeat_item() end
-        if require("credits").open() then return require("credits").repeat_item() end
-        if require("techtree").open() then return require("techtree").enter() end
-        if ship.list_open() then return ship.list_enter() end
-        if require("resources").list_open() then return require("resources").enter() end
-        if require("view").nav_open() then return require("view").nav_enter() end
-        if away.keys_active() then return away.mission_enter() end
-        if require("view").overview_list_repeat() then return end
+        if act("popups.close_tutorial", require("popups").close_tutorial) then return end
+        if ck("whatsnew.open", require("whatsnew").open) then return require("whatsnew").close() end
+        if ck("hotkeys.open", require("hotkeys").open) then return require("hotkeys").repeat_item() end
+        if ck("credits.open", require("credits").open) then return require("credits").repeat_item() end
+        if ck("techtree.open", require("techtree").open) then return require("techtree").enter() end
+        if ck("ship.list_open", ship.list_open) then return ship.list_enter() end
+        if ck("resources.list_open", require("resources").list_open) then return require("resources").enter() end
+        if ck("view.nav_open", require("view").nav_open) then return require("view").nav_enter() end
+        if ck("awaymission.keys_active", away.keys_active) then return away.mission_enter() end
+        if act("view.overview_list_repeat", require("view").overview_list_repeat) then return end
         if M.virtual_active() then return M.virtual_enter() end
         -- In battle with no wheel open, Enter opens Orders (combat.lua).
         -- Not while focus is in the battle setup (HeroLoadout): Enter on Auto
@@ -4075,7 +4120,7 @@ function M.install()
         -- reached the mod after focus had moved into it, and opened Orders
         -- (1 of 3 starts, Casey's machine, 2026-10-16).
         local recent_setup = os.time() - (require("combat").setup_last or -100) < 2
-        if require("combat").active() and not recent_setup and not (current and current:find(".HeroLoadout.", 1, true)) then
+        if ck("combat.active", require("combat").active) and not recent_setup and not (current and current:find(".HeroLoadout.", 1, true)) then
             local fb = resolve(current)
             if not (fb and require("screen").shown(fb)) then return require("combat").open_orders() end
         end
@@ -4296,23 +4341,23 @@ function M.install()
     -- Right change values. Page Up and Down change deck in the ship view.
     keys.on("up", function()
         pcall(require("combat").energy_key)
-        if away.briefing_step(M.path_before_key(), -1) then return end
-        if require("qtrials").step(current, -1) then return end
-        if require("popups").leave_sector_step(current, -1) then return end
-        if require("rooms").trade_offer_step(current, -1) then return end
-        if require("whatsnew").open() then require("whatsnew").step(-1)
-        elseif require("hotkeys").open() then require("hotkeys").step(-1)
-        elseif require("credits").open() then require("credits").step(-1)
-        elseif require("techtree").open() then require("techtree").step(-1)
-        elseif ship.list_open() then ship.list_step(-1)
-        elseif require("resources").list_open() then require("resources").step(-1)
-        elseif require("view").nav_open() then require("view").nav_step(-1)
-        elseif away.keys_active() then away.mission_step(-1)
-        elseif require("view").heroes_open() then require("view").hero_step(-1)
-        elseif require("view").overview_list_step(-1) then return
+        if act("awaymission.briefing_step", away.briefing_step, M.path_before_key(), -1) then return end
+        if act("qtrials.step", require("qtrials").step, current, -1) then return end
+        if act("popups.leave_sector_step", require("popups").leave_sector_step, current, -1) then return end
+        if act("rooms.trade_offer_step", require("rooms").trade_offer_step, current, -1) then return end
+        if ck("whatsnew.open", require("whatsnew").open) then require("whatsnew").step(-1)
+        elseif ck("hotkeys.open", require("hotkeys").open) then require("hotkeys").step(-1)
+        elseif ck("credits.open", require("credits").open) then require("credits").step(-1)
+        elseif ck("techtree.open", require("techtree").open) then require("techtree").step(-1)
+        elseif ck("ship.list_open", ship.list_open) then ship.list_step(-1)
+        elseif ck("resources.list_open", require("resources").list_open) then require("resources").step(-1)
+        elseif ck("view.nav_open", require("view").nav_open) then require("view").nav_step(-1)
+        elseif ck("awaymission.keys_active", away.keys_active) then away.mission_step(-1)
+        elseif ck("view.heroes_open", require("view").heroes_open) then require("view").hero_step(-1)
+        elseif act("view.overview_list_step", require("view").overview_list_step, -1) then return
         elseif M.virtual_active() then M.virtual_step(-1)
-        elseif require("warpcore").handles(current) and warpcore_shown() then require("warpcore").move(current, 1)
-        elseif require("dialogue").choice_step(current, -1) then last_dir = -1 last_nav = "arrow"
+        elseif ck("warpcore.handles", require("warpcore").handles, current) and warpcore_shown() then require("warpcore").move(current, 1)
+        elseif act("dialogue.choice_step", require("dialogue").choice_step, current, -1) then last_dir = -1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(-1)
         elseif map_mode() then if system.menu_open() then system.menu_step(-1) else system.step(-1) end
         elseif line_only() then return
@@ -4321,23 +4366,23 @@ function M.install()
     end)
     keys.on("down", function()
         pcall(require("combat").energy_key)
-        if away.briefing_step(M.path_before_key(), 1) then return end
-        if require("qtrials").step(current, 1) then return end
-        if require("popups").leave_sector_step(current, 1) then return end
-        if require("rooms").trade_offer_step(current, 1) then return end
-        if require("whatsnew").open() then require("whatsnew").step(1)
-        elseif require("hotkeys").open() then require("hotkeys").step(1)
-        elseif require("credits").open() then require("credits").step(1)
-        elseif require("techtree").open() then require("techtree").step(1)
-        elseif ship.list_open() then ship.list_step(1)
-        elseif require("resources").list_open() then require("resources").step(1)
-        elseif require("view").nav_open() then require("view").nav_step(1)
-        elseif away.keys_active() then away.mission_step(1)
-        elseif require("view").heroes_open() then require("view").hero_step(1)
-        elseif require("view").overview_list_step(1) then return
+        if act("awaymission.briefing_step", away.briefing_step, M.path_before_key(), 1) then return end
+        if act("qtrials.step", require("qtrials").step, current, 1) then return end
+        if act("popups.leave_sector_step", require("popups").leave_sector_step, current, 1) then return end
+        if act("rooms.trade_offer_step", require("rooms").trade_offer_step, current, 1) then return end
+        if ck("whatsnew.open", require("whatsnew").open) then require("whatsnew").step(1)
+        elseif ck("hotkeys.open", require("hotkeys").open) then require("hotkeys").step(1)
+        elseif ck("credits.open", require("credits").open) then require("credits").step(1)
+        elseif ck("techtree.open", require("techtree").open) then require("techtree").step(1)
+        elseif ck("ship.list_open", ship.list_open) then ship.list_step(1)
+        elseif ck("resources.list_open", require("resources").list_open) then require("resources").step(1)
+        elseif ck("view.nav_open", require("view").nav_open) then require("view").nav_step(1)
+        elseif ck("awaymission.keys_active", away.keys_active) then away.mission_step(1)
+        elseif ck("view.heroes_open", require("view").heroes_open) then require("view").hero_step(1)
+        elseif act("view.overview_list_step", require("view").overview_list_step, 1) then return
         elseif M.virtual_active() then M.virtual_step(1)
-        elseif require("warpcore").handles(current) and warpcore_shown() then require("warpcore").move(current, -1)
-        elseif require("dialogue").choice_step(current, 1) then last_dir = 1 last_nav = "arrow"
+        elseif ck("warpcore.handles", require("warpcore").handles, current) and warpcore_shown() then require("warpcore").move(current, -1)
+        elseif act("dialogue.choice_step", require("dialogue").choice_step, current, 1) then last_dir = 1 last_nav = "arrow"
         elseif ship_mode() then ship.deck(1)
         elseif map_mode() then if system.menu_open() then system.menu_step(1) else system.step(1) end
         elseif line_only() then return
@@ -4350,25 +4395,25 @@ function M.install()
         last_nav = "go_in"
         -- An away mission's tasks, as Page Up does (Casey, 2026-10-27); not
         -- behind an open mod list (F1, Ctrl+F12: GPT review, 2026-10-27).
-        if away.keys_active() and not away.mod_list_open() then return away.mission_task(-1) end
-        if require("qtrials").switch_ship(current, -1) then return end
-        if require("events").hero_step(current, -1) then return end
-        if require("techtree").open() then return require("techtree").switch_tab(-1) end
-        if require("popups").log_tab(-1) then return end
-        if require("view").overview_tab(-1) then return end
-        if rooms.window_open() then rooms.switch_tab(-1)
+        if ck("awaymission.keys_active", away.keys_active) and not ck("awaymission.mod_list_open", away.mod_list_open) then return away.mission_task(-1) end
+        if act("qtrials.switch_ship", require("qtrials").switch_ship, current, -1) then return end
+        if act("events.hero_step", require("events").hero_step, current, -1) then return end
+        if ck("techtree.open", require("techtree").open) then return require("techtree").switch_tab(-1) end
+        if act("popups.log_tab", require("popups").log_tab, -1) then return end
+        if act("view.overview_tab", require("view").overview_tab, -1) then return end
+        if ck("rooms.window_open", rooms.window_open) then rooms.switch_tab(-1)
         elseif ship_mode() then ship.list_leave() ship.step(-1) elseif not map_mode() then adjust(true) end
     end)
     keys.on("right", function()
         pcall(require("combat").energy_key)
         last_nav = "go_in"
-        if away.keys_active() and not away.mod_list_open() then return away.mission_task(1) end
-        if require("qtrials").switch_ship(current, 1) then return end
-        if require("events").hero_step(current, 1) then return end
-        if require("techtree").open() then return require("techtree").switch_tab(1) end
-        if require("popups").log_tab(1) then return end
-        if require("view").overview_tab(1) then return end
-        if rooms.window_open() then rooms.switch_tab(1)
+        if ck("awaymission.keys_active", away.keys_active) and not ck("awaymission.mod_list_open", away.mod_list_open) then return away.mission_task(1) end
+        if act("qtrials.switch_ship", require("qtrials").switch_ship, current, 1) then return end
+        if act("events.hero_step", require("events").hero_step, current, 1) then return end
+        if ck("techtree.open", require("techtree").open) then return require("techtree").switch_tab(1) end
+        if act("popups.log_tab", require("popups").log_tab, 1) then return end
+        if act("view.overview_tab", require("view").overview_tab, 1) then return end
+        if ck("rooms.window_open", rooms.window_open) then rooms.switch_tab(1)
         elseif ship_mode() then ship.list_leave() ship.step(1) elseif not map_mode() then adjust(false) end
     end)
     keys.on("j", function()
@@ -4385,22 +4430,22 @@ function M.install()
         if away.keys_active() and not away.mod_list_open() then away.mission_task(1) elseif ship_mode() then ship.list_leave() ship.deck(1) end
     end)
     local function home_end(last)
-        if require("whatsnew").open() then return require("whatsnew").edge(last) end
-        if require("hotkeys").open() then return require("hotkeys").edge(last) end
-        if require("credits").open() then return require("credits").edge(last) end
-        if require("techtree").open() then return require("techtree").edge(last) end
-        if ship.list_open() then return ship.list_edge(last) end
-        if require("resources").list_open() then return require("resources").edge(last) end
-        if require("view").nav_open() then return require("view").nav_edge(last) end
-        if away.keys_active() then return away.mission_edge(last) end
-        if require("view").heroes_open() then return require("view").hero_step(last and 1 or -1, true) end
-        if require("view").overview_list_step(last and 1 or -1, true) then return end
+        if ck("whatsnew.open", require("whatsnew").open) then return require("whatsnew").edge(last) end
+        if ck("hotkeys.open", require("hotkeys").open) then return require("hotkeys").edge(last) end
+        if ck("credits.open", require("credits").open) then return require("credits").edge(last) end
+        if ck("techtree.open", require("techtree").open) then return require("techtree").edge(last) end
+        if ck("ship.list_open", ship.list_open) then return ship.list_edge(last) end
+        if ck("resources.list_open", require("resources").list_open) then return require("resources").edge(last) end
+        if ck("view.nav_open", require("view").nav_open) then return require("view").nav_edge(last) end
+        if ck("awaymission.keys_active", away.keys_active) then return away.mission_edge(last) end
+        if ck("view.heroes_open", require("view").heroes_open) then return require("view").hero_step(last and 1 or -1, true) end
+        if act("view.overview_list_step", require("view").overview_list_step, last and 1 or -1, true) then return end
         if M.virtual_active() then return M.virtual_edge(last) end
         if ship_mode() then return ship.edge(last) end
-        if require("difficulty").edge(current, last) then return end
-        if require("qtrials").edge(current, last) then return end
-        if away.briefing_edge(current, last) then return end
-        if away.loadout_edge(current, last) then return end
+        if ck("difficulty.edge", require("difficulty").edge, current, last) then return end
+        if ck("qtrials.edge", require("qtrials").edge, current, last) then return end
+        if ck("awaymission.briefing_edge", away.briefing_edge, current, last) then return end
+        if ck("awaymission.loadout_edge", away.loadout_edge, current, last) then return end
         if map_mode() then
             if system.menu_open() then return system.menu_edge(last) end
             return system.edge(last)

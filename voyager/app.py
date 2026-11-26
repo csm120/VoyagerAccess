@@ -568,7 +568,74 @@ def launch_game(command):
     wait_for_setup()
     news = update_news()
     clear_game_state()
-    return play_session(news=news.text, waited=news.waited)
+    try:
+        build_line, build = unchecked_build_note(command)
+    except Exception:
+        log.exception("could not check the game's build")
+        build_line, build = None, None
+    text = " ".join(t for t in (news.text, build_line) if t) or None
+    # The build is marked as told only once the line was spoken (GPT
+    # review, 2026-11-25: marked first, a failed line was never said).
+    said = (lambda: note_build(build)) if build else None
+    return play_session(news=text, waited=news.waited, news_said=said)
+
+
+BUILD_NOTED = DATA_DIR / "build-noted.txt"
+UNCHECKED_BUILD_LINE = ("The game was updated. This version of Voyager Access has not been "
+                        "checked against it yet, so some screens may not be read.")
+
+
+def _noted(noted_file):
+    try:
+        return noted_file.read_text(encoding="utf-8").split()
+    except OSError:
+        return []
+
+
+def game_of_command(command, games):
+    """The installed game Steam started. Steam runs STVoyager.exe from the
+    game's install folder (helper log), so the folder is matched with its
+    separator: the full game's folder name is the start of the demo's
+    ("... Across the Unknown" and "... Across the Unknown Demo"; GPT review,
+    2026-11-25). With no match, the only installed game, else None."""
+    joined = " ".join(command).lower().replace("/", "\\")
+    found = []
+    for g in games:
+        root = str(Path(g.bin_dir).parents[2]).lower().rstrip("\\") + "\\"
+        if root in joined:
+            found.append((len(root), g))
+    if found:
+        return max(found, key=lambda f: f[0])[1]
+    return games[0] if len(games) == 1 else None
+
+
+def unchecked_build_note(command, games=None, noted_file=None):
+    """(line, build) to say once when the started game's Steam build is not
+    one this release was checked against, else (None, None). note_build
+    records it after the line is spoken, so it is said only the first time."""
+    from .version import CHECKED_BUILDS
+    noted_file = BUILD_NOTED if noted_file is None else noted_file
+    if games is None:
+        games = steam.find_games(steam.steam_path())
+    game = game_of_command(command, games)
+    if game is None or not game.buildid or game.buildid in CHECKED_BUILDS:
+        return None, None
+    if game.buildid in _noted(noted_file):
+        return None, None
+    log.info("game build %s (app %s) was not checked against %s", game.buildid, game.appid, __version__)
+    return UNCHECKED_BUILD_LINE, game.buildid
+
+
+def note_build(build, noted_file=None):
+    noted_file = BUILD_NOTED if noted_file is None else noted_file
+    noted = _noted(noted_file)
+    if build in noted:
+        return
+    try:
+        noted_file.parent.mkdir(parents=True, exist_ok=True)
+        noted_file.write_text(" ".join(noted + [build]), encoding="utf-8")
+    except OSError:
+        log.info("could not write %s", noted_file)
 
 
 SETUP_WAIT_SECONDS = 60
@@ -604,18 +671,35 @@ def attach_game():
     return play_session(greeting="Voyager Access speech started.")
 
 
-def play_session(news=None, greeting=None, waited=False):
+def play_session(news=None, greeting=None, waited=False, news_said=None):
     """Speaks and hands the mod its keys while the game runs; updates
     install when it closes. waited is update_news()'s flag: news promised
-    the update installs when the game closes, so no main-menu restart."""
+    the update installs when the game closes, so no main-menu restart.
+    news_said runs once the news line was spoken."""
     session = PlaySession(waited=waited)
     tolk = open_speech(DEFAULT_TOLK)
     heartbeat = HeartbeatWatch()
     try:
+        # A line that fails here must not end the session before serve:
+        # the player would have no speech at all (GPT review, 2026-11-25).
         if greeting:
-            tolk.say(greeting, True)
+            try:
+                tolk.say(greeting, True)
+            except Exception:
+                log.exception("the greeting could not be spoken")
         if news:
-            tolk.say(news, False)
+            try:
+                took = tolk.say(news, False)
+            except Exception:
+                log.exception("the news could not be spoken")
+            else:
+                # False: no reader took it; None (a speech object that does
+                # not say) counts as taken.
+                if news_said and took is not False:
+                    try:
+                        news_said()
+                    except Exception:
+                        log.exception("could not record the news as said")
 
         def keep_going():
             if not modfiles.game_is_running():
@@ -985,14 +1069,17 @@ def install_update(version, path, relaunch=None):
 REPORT_KEY = "grave"
 
 
-def build_report(helper_log, game_logs, configs):
+def build_report(helper_log, game_logs, configs, games=()):
     """What Casey needs to look into a problem on someone's computer: the
-    version, the game's launch options, the helper's log, and the mod's
-    lines from each game log (2026-10-11, backtick in the game)."""
+    version, the game's build, its launch options, the helper's log, and
+    the mod's lines from each game log (2026-10-11, backtick in the game)."""
     from . import launchopts
     import time as _time
-    out = ["Voyager Access report, " + _time.strftime("%Y-%m-%d %H:%M"), "Version: " + __version__,
-           "", "== Launch options =="]
+    out = ["Voyager Access report, " + _time.strftime("%Y-%m-%d %H:%M"), "Version: " + __version__]
+    # Which patch the player is on (skills review, 2026-11-07, item 14).
+    for g in games:
+        out.append("Game: %s, app %s, build %s" % (g.name, g.appid, g.buildid or "unknown"))
+    out += ["", "== Launch options =="]
     for cfg in configs:
         try:
             for line in launchopts.read_file(cfg).splitlines():
@@ -1063,7 +1150,7 @@ def copy_report():
     games = steam.find_games(steam.steam_path())
     text = build_report(DATA_DIR / "helper.log",
                         [Path(g.bin_dir) / "ue4ss" / "UE4SS.log" for g in games],
-                        launchopts.config_files(steam.steam_path()))
+                        launchopts.config_files(steam.steam_path()), games)
     ok = copy_to_clipboard(text)
     log.info("report copied to the clipboard" if ok else "report could not be copied")
     return ok

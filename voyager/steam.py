@@ -46,6 +46,9 @@ class Game:
     appid: str
     name: str
     bin_dir: Path       # ...\STVoyager\Binaries\Win64, where UE4SS goes
+    # Steam's build id from the manifest: ties a player's report to a game
+    # patch at once (skills review, 2026-11-07, item 14).
+    buildid: str = ""
 
 
 def steam_path():
@@ -85,7 +88,7 @@ def find_games(steam=None):
                 continue
             bin_dir = lib / "steamapps" / "common" / folder / BIN_SUBDIR
             if any((bin_dir / exe).is_file() for exe in GAME_EXES):
-                games.append(Game(appid, state.get("name", folder), bin_dir))
+                games.append(Game(appid, state.get("name", folder), bin_dir, state.get("buildid", "")))
                 break
     return games
 

@@ -1687,6 +1687,7 @@ local HINT = "To choose: Down to a hero and press Enter, then Down to Confirm an
     .. "A hero below the skill needed can still succeed, with less chance."
 
 -- When a new set of choices comes up, read the first one.
+local result_poll_logged = false
 function M.mission_poll()
     -- Choices and challenge results are parts of the away mission's
     -- dialogue window, which dialogue.lua knows from its events: outside it
@@ -1702,7 +1703,13 @@ function M.mission_poll()
         M.result_said, M.result_story = nil, nil
         return
     end
-    result_poll()
+    -- A different result panel (a DLC away mission) that throws must not
+    -- skip the task list line after it.
+    local okr, errr = pcall(result_poll)
+    if not okr and not result_poll_logged then
+        result_poll_logged = true
+        print("[VoyagerAccess] mission: result_poll failed: " .. tostring(errr) .. "\n")
+    end
     if not M.mission_active() then
         mission_sig = nil
         return

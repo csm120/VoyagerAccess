@@ -3283,9 +3283,17 @@ for _, c in ipairs(WATCH) do watched_set[c] = true end
 local class_seen = {}    -- class name -> true (hooked) or false (not watched)
 local hooked_fn = {}     -- function path -> true
 
+-- Counts each time the game shows or updates its red error toast: the game
+-- reuses one toast (WBP_Toast_Error_2) for every refusal, so a refused
+-- course knows the toast is its own when the count moved during its hold
+-- (system.lua refusal_for; GPT review, 2026-11-25).
+M.error_toast_seq = 0
 local function on_event(name, kind, trust)
     return function(ctx)
         local okp, p = pcall(function() return path_of(ctx:get()) end)
+        if okp and p and kind ~= "close" and p:find("WBP_Toast_Error", 1, true) then
+            M.error_toast_seq = M.error_toast_seq + 1
+        end
         if okp and p then queue(p, kind, trust) end
     end
 end

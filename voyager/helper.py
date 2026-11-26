@@ -630,9 +630,13 @@ class Tolk:
     def say(self, text, interrupt):
         # Tolk_Output is False when no screen reader or SAPI took the line;
         # logged once, so a silent session leaves a trace.
-        if not self.dll.Tolk_Output(text, interrupt) and not getattr(self, "_refused", False):
+        # Returns whether a reader took it (Fable review, 2026-11-25: the
+        # build note was marked as told when none had).
+        took = bool(self.dll.Tolk_Output(text, interrupt))
+        if not took and not getattr(self, "_refused", False):
             self._refused = True
             log.info("Tolk refused a line (no screen reader or SAPI took it): %r", text[:60])
+        return took
 
     def unload(self):
         self.dll.Tolk_Unload()
@@ -665,6 +669,7 @@ class WindowsSpeech:
         line = ("I|" if interrupt else "Q|") + " ".join(str(text).split()) + "\n"
         self.proc.stdin.write(line.encode("utf-8"))
         self.proc.stdin.flush()
+        return True
 
     def unload(self):
         try:

@@ -121,6 +121,40 @@ function M.say(text, interrupt, built)
     -- "Severely Injured & Sick" (Sickbay patients, VM, 2026-10-16): with
     -- punctuation off a screen reader may say nothing for the "&".
     text = text:gsub("[ \t\r\n\f\v]+&[ \t\r\n\f\v]+", " " .. require("tr").word("and") .. " ")
+    -- A number, a slash and a number ("Integrity: 40 / 100", "(3/5)",
+    -- "active 0/10"): with punctuation off it was "40 100". Said "40 out
+    -- of 100" through its own template, "{n} out of {n}", so each language
+    -- has a count wording in its own order (skills review, 2026-11-07, item
+    -- 2). Not "{n} of {n}": that is a list position in Chinese, and the
+    -- line pass gave Japanese "3, maximum 4" (Fable review, 2026-11-25). A
+    -- chain ("1/2/3") is left whole. Readers that already wrote "of" are
+    -- not touched.
+    text = text:gsub("()%f[0-9]([0-9]+)[ \t\194\160]*/[ \t\194\160]*([0-9]+)%f[^0-9]()", function(s, a, b, e)
+        -- Spaced too: "10 / 20 / 30" (Fable review, 2026-11-25).
+        if text:sub(1, s - 1):find("/[ \t\194\160]*$") or text:sub(e):find("^[ \t\194\160]*/") then return nil end
+        local okt, out = pcall(function() return require("tr").fill("{n} out of {n}", a, b) end)
+        -- English (no table): the short "40 of 100" the mod's readers say.
+        if not (okt and type(out) == "string" and out ~= "") or out == a .. " out of " .. b then
+            return a .. " of " .. b
+        end
+        return out
+    end)
+    -- A percent with float noise from the game's own text ("Assigned hero
+    -- adds a 26.999998% bonus.", Sickbay, Casey's play, 2026-11-25): read
+    -- digit by digit, where the eye sees 27%. Rounded to one decimal, and
+    -- ".0" dropped; a short real decimal ("2.5%") is left as it is.
+    -- Digit arithmetic, not tonumber or %f: under a comma-decimal locale
+    -- those read or write "27,0" (Gotcha 31's locale trap).
+    -- The decimal comma and a space before % kept as the language writes
+    -- them ("26,999998 %" in French; GPT review, 2026-11-25). A narrow
+    -- no-break space (U+202F) before % becomes a no-break space first, so
+    -- the one pattern takes both (Fable review).
+    text = text:gsub("([0-9])\226\128\175%%", "%1\194\160%%")
+    text = text:gsub("%f[0-9]([0-9]+)([%.,])([0-9])([0-9])([0-9][0-9]+)([ \194\160]*%%)", function(int, sep, d1, d2, _, pct)
+        local tenths = math.tointeger(int * 10 + d1 + (d2 + 0 >= 5 and 1 or 0)) or 0
+        local whole, frac = tenths // 10, tenths % 10
+        return (frac == 0 and tostring(whole) or (whole .. sep .. frac)) .. pct
+    end)
     -- Species 8472 is said digit by digit, as the crew and the Borg say it,
     -- not "eight thousand four hundred..." (Casey, 2026-10-17).
     text = text:gsub("%f[0-9]8472%f[^0-9]", "8 4 7 2")

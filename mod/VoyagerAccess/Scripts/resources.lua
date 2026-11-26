@@ -37,19 +37,35 @@ end
 -- Each line's resource id, for its tooltip (Enter in the list).
 local ids = {}
 
+-- Each part of the readout runs on its own: one that throws (a mode whose
+-- HUD lacks a field) must not silence the rest of C (2026-11-25 review).
+-- The first failure of each part is logged.
+local part_failed = {}
+local function part(name, fn)
+    local ok, err = pcall(fn)
+    if not ok and not part_failed[name] then
+        part_failed[name] = true
+        print("[VoyagerAccess] resources: " .. name .. " failed: " .. tostring(err) .. "\n")
+    end
+end
+
 -- The status lines, each one item (resources, crew, fuel, energy, morale).
 local function lines()
     ids = {}
     local by = {}
-    for _, w in ipairs(shown_widgets("STVSingleResourceWidget")) do
-        by[w:GetFName():ToString()] = w
-    end
+    part("resource widgets", function()
+        for _, w in ipairs(shown_widgets("STVSingleResourceWidget")) do
+            by[w:GetFName():ToString()] = w
+        end
+    end)
     local parts = {}
     -- Hull integrity, in the header beside morale (WBP_HullIntegrity:
     -- CurrentHullValue, HullValuePerCycle). It fell from 150 to 60 while the
     -- deflector was off and C never said so (2026-10-14).
-    local hull = shown_widgets("WBP_HullIntegrity_C")[1]
-    if hull then
+    -- The lookups too (GPT review, 2026-11-25): a widget whose name could
+    -- not be read stopped C before crew and energy.
+    local okh, hull = pcall(function() return shown_widgets("WBP_HullIntegrity_C")[1] end)
+    if okh and hull then
         local ok, text = pcall(function()
             local t = "Hull " .. text_of(hull.CurrentHullValue)
             -- Its maximum: the HUD's bar shows how full the hull is, and C
@@ -103,8 +119,8 @@ local function lines()
     -- Sector Threat, a bar in the header beside the hull (WBP_ThreatLevel:
     -- Current and max, both 0 in the first sector; found from the game's
     -- widget list, 2026-10-15).
-    local threat = shown_widgets("WBP_ThreatLevel_C")[1]
-    if threat then
+    local okt, threat = pcall(function() return shown_widgets("WBP_ThreatLevel_C")[1] end)
+    if okt and threat then
         local ok, cur, max = pcall(function() return threat.Current, threat.max end)
         if ok and type(max) == "number" and max > 0 then
             parts[#parts + 1] = "Sector threat " .. cur .. " of " .. max; ids[#parts] = "ThreatLevel"
@@ -113,18 +129,21 @@ local function lines()
     -- Torpedoes, in the header beside the threat bar
     -- (WBP_TorpedoDisplay.TorpedoCount_TextBox, "38"): shown on every map
     -- and C did not say them (map parity audit, 2026-10-21).
-    local torp = shown_widgets("WBP_TorpedoDisplay_C")[1]
-    if torp then
-        local n = text_of(torp.TorpedoCount_TextBox)
-        if n:match("^%d+$") then parts[#parts + 1] = "Torpedoes " .. tonumber(n) end
-    end
+    part("torpedoes", function()
+        local torp = shown_widgets("WBP_TorpedoDisplay_C")[1]
+        if torp then
+            local n = text_of(torp.TorpedoCount_TextBox)
+            if n:match("^%d+$") then parts[#parts + 1] = "Torpedoes " .. tonumber(n) end
+        end
+    end)
     -- Storage limits: events said "storage full" and C never said how much
     -- fits (State of Flux, VM, 2026-10-15). Science points (9999) have none
     -- worth saying.
-    local manager = FindFirstOf("STVResourceManager")
+    local okm, manager = pcall(FindFirstOf, "STVResourceManager")
+    if not okm then manager = nil end
     for _, key in ipairs(ORDER) do
         local w = by[key]
-        if w then
+        if w then part("resource " .. key, function()
             -- tr.word: Food
             local text = (NAMES[key] or require("tr").word(key)) .. " " .. text_of(w.CurrentResourceAmountText)
             local okc, cap = pcall(function() return manager:GetResourceCapacity(key) end)
@@ -142,13 +161,15 @@ local function lines()
                 text = text .. (change:sub(1, 1) == "-" and ", minus " or ", plus ") .. change:sub(2) .. " per cycle"
             end
             parts[#parts + 1] = text; ids[#parts] = key
-        end
+        end) end
     end
     local function team(name, label, id)
-        for _, w in ipairs(shown_widgets(name)) do
-            parts[#parts + 1] = label .. " " .. text_of(w.AvailableAmount) .. " of " .. text_of(w.TotalAmount) .. " available"
-            ids[#parts] = id
-        end
+        part(name, function()
+            for _, w in ipairs(shown_widgets(name)) do
+                parts[#parts + 1] = label .. " " .. text_of(w.AvailableAmount) .. " of " .. text_of(w.TotalAmount) .. " available"
+                ids[#parts] = id
+            end
+        end)
     end
     team("WBP_Crew_Resource_C", require("tr").word("Crew"), "Crew")
     -- The label in the game's language here: inside "{s} {s} of {s}
@@ -158,27 +179,29 @@ local function lines()
     local cycles = by.Cycles
     -- Not cycles passed: it went 16, then 14 as Deuterium went 396, then 348
     -- at 24 a cycle, so it is how many cycles the fuel lasts.
-    if cycles then
+    if cycles then part("fuel cycles", function()
         local n = text_of(cycles.CyclesAmount)
         parts[#parts + 1] = "Fuel lasts " .. n .. (n == "1" and " cycle" or " cycles"); ids[#parts] = "Cycles"
-    end
+    end) end
     -- The cycles passed, under the header (WBP_HUD.WBP_PassedCycles:
     -- PassedCycle_TextBox "33" and its own label, "vergangene Zyklen" in the
     -- German game): shown on every map and C did not say it (map parity
     -- audit, 2026-10-21). The label is the game's own text, read from the
     -- widget's own tree; the zero padding (FillDigit_Text) is left out.
-    local passed = shown_widgets("WBP_PassedCycles_C")[1]
-    if passed then
-        local n = text_of(passed.PassedCycle_TextBox)
-        local label = nil
-        for _, t in ipairs(screen.texts_in(passed)) do
-            if not label and require("text").has_letters(t) then label = t end
+    part("passed cycles", function()
+        local passed = shown_widgets("WBP_PassedCycles_C")[1]
+        if passed then
+            local n = text_of(passed.PassedCycle_TextBox)
+            local label = nil
+            for _, t in ipairs(screen.texts_in(passed)) do
+                if not label and require("text").has_letters(t) then label = t end
+            end
+            -- The game's label is lower case on screen ("passed cycles"), and a
+            -- line starting with it sounded cut off (VM, 2026-11-07).
+            if label then label = label:gsub("^%l", string.upper) end
+            if n:match("^%d+$") and label then parts[#parts + 1] = label .. " " .. tonumber(n) end
         end
-        -- The game's label is lower case on screen ("passed cycles"), and a
-        -- line starting with it sounded cut off (VM, 2026-11-07).
-        if label then label = label:gsub("^%l", string.upper) end
-        if n:match("^%d+$") and label then parts[#parts + 1] = label .. " " .. tonumber(n) end
-    end
+    end)
     -- The rest of the strip (2026-10-11): energy (WBP_AggregateEnergy_Energy:
     -- CurrentResourceAmountText the output, UpkeepAmountText what rooms
     -- use), the battery (BatteryAmount stored, ExcessEnergyText the surplus
@@ -186,20 +209,25 @@ local function lines()
     local function first(cls)
         return shown_widgets(cls)[1]
     end
-    local energy = first("WBP_AggregateEnergy_Energy_C")
-    if energy then
-        local use = text_of(energy.UpkeepAmountText):gsub("^%-", "")
-        parts[#parts + 1] = "Energy " .. text_of(energy.CurrentResourceAmountText)
-            .. (use ~= "" and (", rooms use " .. use) or ""); ids[#parts] = "Energy"
-    end
-    local battery = first("WBP_AggregateEnergy_Battery_C")
-    if battery then
-        local excess = text_of(battery.ExcessEnergyText):gsub("^%+", "")
-        parts[#parts + 1] = "Battery " .. text_of(battery.BatteryAmount)
-            .. (excess:match("^%d") and (", charging " .. excess) or "")
-        -- The bar's own id for it (its ResourceString, VM, 2026-10-20).
-        ids[#parts] = "Batteries"
-    end
+    part("energy", function()
+        local energy = first("WBP_AggregateEnergy_Energy_C")
+        if energy then
+            local use = text_of(energy.UpkeepAmountText):gsub("^%-", "")
+            parts[#parts + 1] = "Energy " .. text_of(energy.CurrentResourceAmountText)
+                .. (use ~= "" and (", rooms use " .. use) or ""); ids[#parts] = "Energy"
+        end
+    end)
+    part("battery", function()
+        local battery = first("WBP_AggregateEnergy_Battery_C")
+        if battery then
+            local excess = text_of(battery.ExcessEnergyText):gsub("^%+", "")
+            parts[#parts + 1] = "Battery " .. text_of(battery.BatteryAmount)
+                .. (excess:match("^%d") and (", charging " .. excess) or "")
+            -- The bar's own id for it (its ResourceString, VM, 2026-10-20).
+            ids[#parts] = "Batteries"
+        end
+    end)
+    part("morale", function()
     local morale = first("WBP_Morale_03_C")
     if morale then
         -- The change per cycle is ChangeTextBlock of the bar's own
@@ -244,6 +272,7 @@ local function lines()
         end
         parts[#parts + 1] = text; ids[#parts] = "Morale"
     end
+    end)
     return parts
 end
 

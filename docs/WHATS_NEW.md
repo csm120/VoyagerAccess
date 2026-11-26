@@ -1,5 +1,22 @@
 # New in Voyager Access
 
+## Wednesday November 25th 2026
+
+Version 0.4.4
+
+- New: on the N list, Research says the progress bar the game shows on its Research button, like "Research, in progress, 40%" or "Research, paused, 40%", and the analysis bar the same way.
+- New: in a room's hero list, each hero says the room they already work in, like "Chakotay, assigned to Mess Hall". Choosing that hero takes them out of it.
+- Fixed: a hero's bonus without a percent sign, like the Mess Hall's "+6 MORALE per CYCLE", was never said in a room's hero list.
+- Fixed: when the game refuses a course, you now hear its reason at once, like "You cannot travel here: Progress main story to unlock". Before, the reason was cut off the first time and silent after that.
+- New: in battle, K says "unavailable" for an ability the game shows as disabled, and "unavailable, subsystem down" when its subsystem is out. A subsystem being repaired says "repairing". "Torpedo incoming" names the subsystem it targets and the time to impact when the game shows them.
+- Fixed: a number, a slash and a number, like "(3/5)" in an objective, is said "3 of 5" in every language. With punctuation off it used to sound like "3 5".
+- Fixed: a percentage with a long tail of decimals, like the Sickbay's "26.999998%" hero bonus, is said rounded, "27%".
+- Fixed: "10 crew CREW" on a choice where the game puts the crew icon right before its own word.
+- Fixed: the build menu in Q Trials reads the Equinox's own room costs and sizes, not Voyager's.
+- Changed: if one part of the mod runs into a problem on a screen, the other parts keep talking. This covers button labels, the arrow keys, Enter, the C readout, the L key, battle, away missions and room tabs.
+- New: the troubleshooting reports include the game's build number, and after a game update this version of Voyager Access hasn't been checked against, you hear that once.
+- Fixed: if the line Voyager Access says when the game starts could not be spoken, Voyager Access used to stop and leave the game silent. It keeps talking now.
+
 ## Wednesday November 11th 2026
 
 Version 0.4.3

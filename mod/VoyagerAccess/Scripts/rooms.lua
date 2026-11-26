@@ -534,21 +534,43 @@ function M.hero_label(path)
             injured = m:DoesHeroHaveCondition(id, 3) == true or m:DoesHeroHaveCondition(id, 4) == true
         end
     end)
+    -- Whether the manager answered: only then is a fit hero's text a room.
+    -- Without it, German "Verletzt" became "assigned to Verletzt" (GPT
+    -- review, 2026-11-25); the text is then said as it is.
+    local known = injured ~= nil
     pcall(function()
         local st = plaque.HeroRoomText
         if st and st:IsValid() and screen.shown(st) then
             local s = plain(text_of(st))
-            if injured == nil then injured = s:lower():find("injur") ~= nil end
-            if s ~= "" and s:sub(1, 1) ~= "#" and injured then head = name .. ", " .. require("tr").lower(s) .. head:sub(#name + 1) end
+            if not known and s ~= "" and s:sub(1, 1) ~= "#" then
+                head = name .. ", " .. s .. head:sub(#name + 1)
+                return
+            end
+            if s ~= "" and s:sub(1, 1) ~= "#" and injured then head = name .. ", " .. require("tr").lower(s) .. head:sub(#name + 1)
+            -- Not injured: the plaque's ShowRoom puts the room the hero is
+            -- assigned to here. A sighted player sees it, and choosing the
+            -- hero takes them out of that room (Casey, 2026-11-25).
+            elseif s ~= "" and s:sub(1, 1) ~= "#" then head = name .. ", assigned to " .. s .. head:sub(#name + 1) end
         end
     end)
     parts[#parts + 1] = head
     local skills = M.skills_of(plaque.HeroStatSheet)
     if skills ~= "" then parts[#parts + 1] = skills end
-    -- The bonus this hero gives the room ("+11% warp core repair rate.").
-    for _, text in pairs(by) do
-        if text:find("%%") then parts[#parts + 1] = (text:gsub("^%+", require("tr").word("Plus "))) end
+    -- The bonus this hero gives the room ("+11% warp core repair rate.",
+    -- "+6 MORALE per CYCLE."), from the card's impact preview by name: only
+    -- a text with "%" was taken, and a morale bonus was never said (VM,
+    -- Mess Hall, 2026-11-25). The "%" search stays as the fallback.
+    local bonus = nil
+    for _, key in ipairs({ "HeroImpactPreviewRichText", "HeroImpactPreviewText" }) do
+        local t = by[key]
+        if not bonus and t and t ~= "" and t:sub(1, 1) ~= "#" then bonus = t end
     end
+    if not bonus then
+        for _, text in pairs(by) do
+            if not bonus and text:find("%%") then bonus = text end
+        end
+    end
+    if bonus then parts[#parts + 1] = (bonus:gsub("^%+", require("tr").word("Plus "))) end
     -- "2 of 3": the list said nothing at either end, so there was no way to
     -- know how many heroes it had (Mess Hall, VM, 2026-10-15).
     pcall(function()
@@ -1254,6 +1276,7 @@ function M.modules_built(win)
 end
 
 -- Read when a room window opens: name, level, state, and the description.
+local page_logged = false   -- first tab page reader error logged
 function M.window_text(path)
     -- Shown inside the window, not up to the screen: a room window opened a
     -- second time is read while it still fades in, and every text counted as
@@ -1295,8 +1318,18 @@ function M.window_text(path)
     if not (okp and patients) and not (okc and crew) and win and win:IsValid() then
         pcall(function()
             local key = require("keys").key_count
+            -- Each reader on its own: an error in an early one must not skip
+            -- the later ones (2026-11-25 review).
             local function page()
-                return M.patients_text() or M.crew_text() or M.biolab_text() or M.workteams_text() or M.allies_text()
+                for _, read in ipairs({ M.patients_text, M.crew_text, M.biolab_text, M.workteams_text, M.allies_text }) do
+                    local ok, t = pcall(read)
+                    if ok and t then return t end
+                    if not ok and not page_logged then
+                        page_logged = true
+                        print("[VoyagerAccess] rooms: tab page reader failed: " .. tostring(t) .. "\n")
+                    end
+                end
+                return nil
             end
             -- On the next tick at the earliest: run now, the page was said
             -- before the window's header, which is said with interrupt

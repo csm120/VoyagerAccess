@@ -216,6 +216,16 @@ function M.prep(s)
     end)
     s = s:gsub("(%a+)</>[ \t]*" .. IMG, function(word, id) if own(word, id) then return word .. "</>" end end)
     s = s:gsub("(%a+)[ \t]*" .. IMG, function(word, id) if own(word, id) then return word end end)
+    -- And right before it: "Dr. Gegen + 10 <img id="Crew"/> CREW will join"
+    -- was said "10 crew CREW" (tools/text_sweep.py, 2026-11-25). The icon
+    -- goes; the number then stands before the game's own word.
+    local function own_after(word, id) return own(word, id) or word:lower() == id:lower() .. "s" end
+    s = s:gsub(IMG .. "([ \t]*<%w+>[ \t]*)(%a+)", function(id, gap, word)
+        if own_after(word, id) then return gap .. word end
+    end)
+    s = s:gsub(IMG .. "([ \t]*)(%a+)", function(id, gap, word)
+        if own_after(word, id) then return gap .. word end
+    end)
     -- An empty colour tag before an icon is a name the game left out: "Each
     -- <COLORBATTERY></> <IMG ID="BATTERY"/> -50 per CYCLE" was read "Each
     -- -50 battery per CYCLE" (ion storm alert, VM, 2026-10-18). The icon

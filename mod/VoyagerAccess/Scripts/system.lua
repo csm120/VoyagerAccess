@@ -736,6 +736,68 @@ local pending = nil   -- { name, path }: a course the mod is setting now
 local waiting = nil   -- { name, path, busy, token }: after an arrival
 local set_course      -- below run(), which calls it
 
+-- The game's reason for a refused course, from its red error toast
+-- (WBP_Toast_Error_C's RichText: "You cannot travel here: Progress main
+-- story to unlock"), or nil. Read by the course's own check: the toast was
+-- queued once behind the menu line, cut off at once, and the game reused
+-- the same toast for every later try, so they were silent (Casey's play,
+-- 2026-11-25).
+function M.refusal_text()
+    local found = nil
+    for _, t in ipairs(FindAllOf("WBP_Toast_Error_C") or {}) do
+        pcall(function()
+            if found or not (t:IsValid() and require("screen").shown(t)) then return end
+            local s = t.RichText:GetText():ToString()
+            s = (s:gsub("<[^>]*>", ""):gsub("[ \t\r\n]+", " "):gsub("^ ", ""):gsub(" $", ""))
+            if s ~= "" and not s:find("^#") then found = s end
+        end)
+    end
+    return found
+end
+
+-- The refusal, unless it is the last thing said: the toast reader may just
+-- have said it (VM, 2026-11-25: heard twice), but in Casey's game the menu
+-- line had cut it off, and then it is said again, at once.
+-- Only a line said just now counts: a second try long after the first, with
+-- nothing said between, was silent (Fable review, 2026-11-25).
+function M.say_refusal(why)
+    local sp = require("speech")
+    local last = sp.recent and sp.recent[#sp.recent]
+    if last and last.text == why and last.at and os.clock() - last.at < 4 then return end
+    sp.say(why, true)
+end
+
+-- The reason a course to path was not taken, given the toast text shown
+-- before its hold began (before), or nil. A toast already up before the
+-- hold, from another point, is not this course's reason (Fable review,
+-- 2026-11-25); the same point refused again keeps it, since the game
+-- reuses the same toast.
+-- before_seq is popups.error_toast_seq at the hold's start: a toast shown or
+-- updated since then is this course's own, whatever point came before (two
+-- locked points give the same message on the one reused toast; GPT review,
+-- 2026-11-25). With no toast event counted this session (the hooks did not
+-- take), the text rule above.
+local last_refused = nil
+local function toast_seq()
+    local ok, n = pcall(function() return require("popups").error_toast_seq end)
+    return (ok and type(n) == "number") and n or 0
+end
+M.toast_seq = toast_seq
+function M.refusal_for(path, before, before_seq)
+    local why = M.refusal_text()
+    if not why then return nil end
+    local seq = toast_seq()
+    if seq > 0 then
+        -- Unmoved count: an old toast, unless none was up before the hold
+        -- (shown without the counted events; Fable check, 2026-11-25).
+        if seq <= (before_seq or 0) and before ~= nil then return nil end
+    elseif before == why and last_refused ~= path then
+        return nil
+    end
+    last_refused = path
+    return why
+end
+
 local function busy_now()
     for _, w in ipairs(require("popups").open_windows()) do
         -- Map markers and room prompts are windows too and always up; a
@@ -1311,6 +1373,10 @@ set_course = function(name, path, zooms, tok, again)
     end
     local function stale() return tok ~= course_token end
     waiting = nil
+    -- The error toast up before this hold, if any (refusal_for).
+    local okb, toast_before = pcall(M.refusal_text)
+    if not okb then toast_before = nil end
+    local seq_before = M.toast_seq()
     local q0 = pawn()
     local a0 = StaticFindObject(path)
     if not (q0 and a0 and a0:IsValid()) then return end
@@ -1371,6 +1437,14 @@ set_course = function(name, path, zooms, tok, again)
                     print("[VoyagerAccess] course: the game took no course for " .. name .. (again and ", second hold" or "")
                         .. " (pointer at the hold: " .. tostring(pending.under) .. ", now: " .. under_pointer(path) .. ")\n")
                     pending = nil
+                    -- The game said why: its reason, at once, and no second
+                    -- hold (the game will refuse it the same way).
+                    local okr, why = pcall(M.refusal_for, path, toast_before, seq_before)
+                    if okr and why then
+                        print("[VoyagerAccess] course: refused: " .. why .. "\n")
+                        M.say_refusal(why)
+                        return
+                    end
                     local busy = false
                     pcall(function() busy = busy_now() end)
                     -- One more aim and hold before the player hears it failed:
@@ -1701,6 +1775,7 @@ function M.course_key()
 end
 
 -- For L (where am I): the selected point, or nil.
+local where_failed = {}   -- the first failure of each part, logged once
 function M.where()
     local list = points()
     local i = index_of_selected(list)
@@ -1710,13 +1785,36 @@ function M.where()
     local okn, name = pcall(name_of, p.actor)
     M.with_points_done = false
     if not okn then error(name) end
-    if p.actor:GetClass():GetFName():ToString() ~= "BP_STVSolarSystem_C" then
-        local marks = system_marks(p.actor)
-        if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
+    -- The optional parts each on their own: one that throws must not drop
+    -- the whole L line; the name, index and count stay (2026-11-25 review).
+    local function opt(what, fn, ...)
+        local ok, v = pcall(fn, ...)
+        if ok then return true, v end
+        if not where_failed[what] then
+            where_failed[what] = true
+            print("[VoyagerAccess] system: L " .. what .. " failed: " .. tostring(v) .. "\n")
+        end
+        return false, nil
     end
-    local travel = travel_time(p)
-    local text = string.format("%s, %s%s, %s%d of %d", name, status(p), inside_text(p.actor), travel and (travel .. ", ") or "", i, #list)
-    if M.menu_open() then text = text .. ". Action list open: " .. item_name(ACTIONS[menu]) end
+    opt("marks", function()
+        if p.actor:GetClass():GetFName():ToString() ~= "BP_STVSolarSystem_C" then
+            local marks = system_marks(p.actor)
+            if #marks > 0 then name = name .. ", " .. table.concat(marks, ", ") end
+        end
+    end)
+    local _, travel = opt("travel time", travel_time, p)
+    local okst, st = opt("status", status, p)
+    local okin, inside = opt("inside", inside_text, p.actor)
+    local mid = (okst and st or "") .. (okin and inside or "")
+    local text
+    if okst and okin then
+        text = string.format("%s, %s, %s%d of %d", name, mid, travel and (travel .. ", ") or "", i, #list)
+    else
+        text = name .. (mid ~= "" and (", " .. mid) or "") .. ", " .. (travel and (travel .. ", ") or "") .. i .. " of " .. #list
+    end
+    opt("action list", function()
+        if M.menu_open() then text = text .. ". Action list open: " .. item_name(ACTIONS[menu]) end
+    end)
     return text
 end
 

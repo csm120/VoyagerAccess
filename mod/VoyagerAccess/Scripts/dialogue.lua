@@ -285,6 +285,14 @@ local function say_shown_line(w)
     say_line(w, speaker, line)
 end
 
+-- The first failure of each guarded part of on_window, logged once.
+local failed_once = {}
+local function log_once(what, err)
+    if failed_once[what] then return end
+    failed_once[what] = true
+    print("[VoyagerAccess] dialogue: " .. what .. " failed: " .. tostring(err) .. "\n")
+end
+
 local function on_window(kind)
     return function(ctx, row_name, row, line)
         local okp, p = pcall(function() return path_of(ctx:get()) end)
@@ -334,7 +342,11 @@ local function on_window(kind)
                 crumb.at("dialogue: " .. kind)
                 if kind == "line" then
                     continue_pending = false
-                    if text then say_line(w, speaker, text) else say_shown_line(w) end
+                    -- Guarded on its own: an error here must not skip the
+                    -- popup read and the focus and away mission looks below.
+                    local okl, errl
+                    if text then okl, errl = pcall(say_line, w, speaker, text) else okl, errl = pcall(say_shown_line, w) end
+                    if not okl then log_once("say_line", errl) end
                 elseif kind == "typed" or kind == "choices" or kind == "open" then
                     -- A line whose ShowDialogue came before the class was
                     -- hooked (the first window of its kind) is said now; a
@@ -360,7 +372,8 @@ local function on_window(kind)
                     if kind == "consequences" then pcall(function() require("awaymission").outcome_finished() end) end
                     pcall(function() require("popups").reread_class("WBP_AwayMissionOutcome_C") end)
                 end
-                read_popup(w)
+                local okr, errr = pcall(read_popup, w)
+                if not okr then log_once("read_popup", errr) end
                 -- Choices up, gone or moved on: focus looks once, and the
                 -- away mission's own reading of the window (awaymission.lua).
                 pcall(function() require("focus").request_settle() end)

@@ -69,7 +69,9 @@ follows them.
    the waiting call as a click on the game's call button does; Enter on the
    call ("Incoming call: <name>") starts the conversation. With no call, H
    says "No incoming call". N still lists "Incoming calls" while a call is
-   waiting, in the game's own order.
+   waiting, in the game's own order. N's Research item says the progress
+   bar the game shows on its Research button: "Research, in progress, 40%",
+   "Research, paused, 40%", and the analysis bar the same way.
 4. Cutscene: Shift+Enter skips.
 4a. Tutorials: N, then Tutorials, opens the game's tutorial library. While
    a tutorial is open, Up and Down move through the tutorials seen so far,

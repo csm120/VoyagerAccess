@@ -115,11 +115,49 @@ end
 -- The Ship button carries the game's count of rooms waiting with a prompt
 -- (RoomPromptIndicator, a side mission icon and "1" on the Sector Map; the
 -- mod never said it, map parity audit, 2026-10-21).
+-- The Research button's progress bars (WBP_NavigationBar_Button_01): one
+-- pair for research, one for analysis, each an active bar and a paused bar
+-- in its own border, shown only while one runs (header dump, 2026-10-28).
+-- A sighted player sees the bar fill and turn to its paused look; the N list
+-- said only "Research", and Casey did not know his research was running
+-- (2026-11-25). The bar shows no name, so none is said (parity rule).
+local function bar_words(btn, active_border, active_bar, paused_border, paused_bar)
+    local screen = require("screen")
+    local function shown_pct(border, bar)
+        local ok, pct = pcall(function()
+            local b, p = btn[border], btn[bar]
+            if not (b and b:IsValid() and screen.shown(b) and p and p:IsValid() and screen.shown(p)) then return nil end
+            return math.floor(p.Percent * 100 + 0.5)
+        end)
+        return ok and pct or nil
+    end
+    local pct = shown_pct(active_border, active_bar)
+    if pct then return "in progress, " .. pct .. "%" end
+    pct = shown_pct(paused_border, paused_bar)
+    if pct then return "paused, " .. pct .. "%" end
+    return nil
+end
+
+function M.research_progress(btn)
+    if not (btn and btn:IsValid()) then return nil end
+    local out = {}
+    local r = bar_words(btn, "Border_inProgress", "ResearchBar_active", "Border_paused", "ResearchBar_paused")
+    if r then out[#out + 1] = r end
+    local a = bar_words(btn, "AnalysisBorder_inProgress", "AnalysisBar_active", "AnalysisBorder_paused", "AnalysisBar_paused")
+    if a then out[#out + 1] = "analysis " .. a end
+    if #out == 0 then return nil end
+    return table.concat(out, ", ")
+end
+
 function nav_text(it)
     local text = label(it)
     if it[2] == "ShowShipButton" then
         local bar = nav_bar()
         local okp, s = pcall(function() return require("ship").prompt_words(bar.RoomPromptIndicator) end)
+        if okp and s then text = text .. ", " .. s end
+    elseif it[2] == "ResearchButton" then
+        local bar = nav_bar()
+        local okp, s = pcall(function() return M.research_progress(bar.ResearchButton) end)
         if okp and s then text = text .. ", " .. s end
     end
     return text
@@ -555,7 +593,12 @@ local function hook_bar(path)
     end
     if not done.view then
         done.view = pcall(RegisterHook, cpath .. ":OnViewChanged", after(function(b, target)
-            check_calls(b)
+            -- An error in the call check must not skip the view check.
+            local okc, errc = pcall(check_calls, b)
+            if not okc and not done.calls_logged then
+                done.calls_logged = true
+                print("[VoyagerAccess] view: call check failed: " .. tostring(errc) .. "\n")
+            end
             local VIEWS = { [5] = "ship", [9] = "system" }
             require("help").view_check(type(target) == "number" and (VIEWS[target] or "other") or nil)
         end))

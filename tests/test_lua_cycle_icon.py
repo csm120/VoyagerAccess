@@ -55,6 +55,21 @@ class CycleIconTests(unittest.TestCase):
     def test_english_still_dropped(self):
         self.assertEqual(self.prep("-2 per CYCLE " + ICON), "-2 per CYCLE")
 
+    def test_icon_before_its_own_word(self):
+        # "Dr. Gegen + 10 <img id="Crew"/> CREW will join" was said "10 crew
+        # CREW" (tools/text_sweep.py, 2026-11-25).
+        out = self.prep('+ 10 <img id="Crew"/> CREW will join')
+        self.assertEqual(out.lower().count("crew"), 1, out)
+
+    def test_icon_before_its_own_word_in_colour(self):
+        import re
+        out = re.sub(r"<[^>]*>", "", self.prep('10 <img id="Crew"/> <ColorCrew>CREW</> will join'))
+        self.assertEqual(out.lower().count("crew"), 1, out)
+
+    def test_icon_before_another_word_still_named(self):
+        # Negative twin: the icon is the only unit here.
+        self.assertIn("10 crew", self.prep('10 <img id="Crew"/> will join'))
+
     # The negative twins: an icon with no word before it still becomes one.
     def test_german_per_alone_still_named(self):
         self.assertEqual(self.prep("-6 HÜLLE pro " + ICON), "-6 HÜLLE pro Zyklus")
