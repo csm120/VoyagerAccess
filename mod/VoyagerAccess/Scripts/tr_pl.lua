@@ -102,6 +102,9 @@ return {
     [" of "] = " z ",
     ["hull {s}"] = "kadłub {s}",
     ["shield down: {s}"] = "osłona zniszczona: {s}",
+    ["{s} disabled"] = "nie działa: {s}",
+    ["{s} working again"] = "znów działa: {s}",
+    ["{s}, half health"] = "{s}, wytrzymałość 50 procent",
     ["{n} second"] = "{n} sekunda",
     ["{n} seconds"] = "{n} sekund",
     ["ready"] = "gotowa",
@@ -964,9 +967,9 @@ return {
     ["Calls are answered in the ship view or the System Map"] = "Połączenia odbiera się w widoku statku lub na mapie układu",
     ["A call is waiting; H answers it from the ship view or the System Map"] = "Czeka połączenie; H odbiera je w widoku statku lub na mapie układu",
     ["No incoming call"] = "Brak połączenia przychodzącego",
-    [" To answer, press H, then Enter."] = " Aby odebrać, naciśnij H, a potem Enter.",
-    ["H opens a waiting call, and Enter answers it."] = "H otwiera oczekujące połączenie, a Enter je odbiera.",
-    ["H: in the ship view or System Map, open a waiting call; Enter answers it"] = "H: w widoku statku lub na mapie układu otwiera oczekujące połączenie; Enter je odbiera",
+    [" To answer, press H."] = " Aby odebrać, naciśnij H.",
+    ["H answers a waiting call; with two or more, it lists them and Enter answers one."] = "H odbiera oczekujące połączenie; gdy jest ich dwa lub więcej, H je wyświetla, a Enter odbiera jedno.",
+    ["H: in the ship view or System Map, answer a waiting call; with two or more, Enter answers the one you choose"] = "H: w widoku statku lub na mapie układu odbiera oczekujące połączenie; gdy jest ich dwa lub więcej, Enter odbiera wybrane",
 
     -- warpcore.lua
     ["Gray Mode"] = "Tryb szary",

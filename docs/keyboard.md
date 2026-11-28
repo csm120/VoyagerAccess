@@ -65,9 +65,10 @@ follows them.
    choices, Up, Down, Home and End say the line again ("Enter continues."
    the first times). When the game holds a line and Enter does not move it
    on, the mod says "The line has not moved on yet." When a call comes in, the mod says "Incoming call. To
-   answer, press H, then Enter." H, in the ship view or System Map, opens
-   the waiting call as a click on the game's call button does; Enter on the
-   call ("Incoming call: <name>") starts the conversation. With no call, H
+   answer, press H." H, in the ship view or System Map, answers the waiting
+   call at once ("Incoming call: <name>", then the conversation). When two
+   or more calls are waiting, H opens the game's call list instead; Up and
+   Down choose a call, and Enter on it starts the conversation. With no call, H
    says "No incoming call". N still lists "Incoming calls" while a call is
    waiting, in the game's own order. N's Research item says the progress
    bar the game shows on its Research button: "Research, in progress, 40%",
@@ -171,11 +172,16 @@ follows them.
    enemies (a ship that gave up says "surrendered"), the ally, the order,
    torpedoes, abilities, energy and the goal (Casey, 2026-10-28). O reads
    the goal. K reads only the abilities, each with its key and whether it
-   is ready ("1, Evasive Maneuver, ready. 2, Shield Hacking, ready in 13
-   seconds."), because I twice is long and the arrows in battle are the
+   is ready, in the order they can be used: ready ones first, then the
+   soonest ready, then any in use, then any unavailable ("1, Evasive
+   Maneuver, ready. 3, Tactical Analysis, ready. 2, Shield Hacking, ready
+   in 13 seconds."), because I twice is long and the arrows in battle are the
    game's energy keys, which end a pause (Casey, 2026-10-29). Target
    changes, abilities turning active or ready (with the key first: "2,
-   Shield Hacking ready"), pauses, energy ("Engine 1 of 2, 2 spare") and the game's battle
+   Shield Hacking ready"), pauses, energy ("Engine 1 of 2, 2 spare"), the
+   enemy system you targeted at half health, knocked out ("Kazon Raider,
+   Weapons, starboard disabled") and working again, Voyager's own systems
+   knocked out and working again, and the game's battle
    messages ("An enemy ship has fled combat, Captain.") are spoken as they
    happen.
 11. Away team selection: Enter on a slot chooses or changes its hero while

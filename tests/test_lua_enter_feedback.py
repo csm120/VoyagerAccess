@@ -74,6 +74,24 @@ class EnterFeedbackTests(unittest.TestCase):
         d = self.lua.execute("return (require('dialogue'))")
         self.assertGreaterEqual(d.HELD_MS, 3000)
 
+    # Casey's play, 2026-11-27: IA_Dialogue_Continue is a Tap (released
+    # within 0.3 s). Both Enters he heard "The line has not moved on yet"
+    # for had a 0.38 s frame on the tick after the injected press; no Enter
+    # the game took had one. A press held over a long frame is no tap, so it
+    # is sent again; a normal frame, a line that moved on or a line still
+    # typing is never sent twice.
+    def test_long_frame_drops_the_tap(self):
+        d = self.lua.execute("return (require('dialogue'))")
+        self.assertTrue(d.tap_dropped("Neelix|No...", "Neelix|No...", True, 0.381))
+
+    def test_normal_frame_or_moved_line_is_not_sent_again(self):
+        d = self.lua.execute("return (require('dialogue'))")
+        self.assertFalse(d.tap_dropped("Neelix|No...", "Neelix|No...", True, 0.033))
+        self.assertFalse(d.tap_dropped("Neelix|No...", "Tuvok|Captain", True, 0.381))
+        self.assertFalse(d.tap_dropped("Neelix|No...", None, True, 0.381))
+        self.assertFalse(d.tap_dropped("Neelix|No...", "Neelix|No...", False, 0.381))
+        self.assertFalse(d.tap_dropped("Neelix|No...", "Neelix|No...", True, None))
+
     def test_line_not_held_when_it_moved_on_or_closed(self):
         d = self.lua.execute("return (require('dialogue'))")
         self.assertFalse(d.line_held("Chardis|They're here!", "Chardis|If anyone is receiving this"))

@@ -209,9 +209,72 @@ function M.nav_close()
     return true
 end
 
+-- The calls list's buttons on screen (WBP_IncomingCallButtonWidget fills its
+-- IncomingCallButtonContainer with one WBP_IncomingCall_List_Button per call).
+local function shown_calls()
+    local list = {}
+    for _, c in ipairs(FindAllOf("WBP_IncomingCall_List_Button_C") or {}) do
+        if c:IsValid() and c:GetFullName():find(" /Engine/Transient.", 1, true) and screen.shown(c) then
+            list[#list + 1] = c
+        end
+    end
+    return list
+end
+
+-- One call in the list: answered at once, as Enter on it does (Casey,
+-- 2026-11-27: "I've never seen more than 1 option"). Two or more stay a
+-- list, read by focus.lua, and Enter answers the one heard (two calls were
+-- seen once, 2026-10-24). The list may come up a tick after the bar's
+-- click, so it is looked for a few times. A click the game ignores leaves
+-- the list open with focus on the call, where Enter still answers it.
+-- Stops once the player has moved on (another key: the pause menu or any
+-- other window opened by the player takes one), and answers only while the
+-- journey counts exactly one waiting call (GPT and Fable reviews,
+-- 2026-11-27: a row behind a new menu could still be clicked, and
+-- "Incoming calls" said over it late). Not help.context: the call list
+-- itself may read as a window there.
+local function moved_on(key_at)
+    local ok, keys = pcall(require, "keys")
+    return ok and key_at ~= nil and keys.key_count ~= key_at
+end
+
+local function waiting_calls()
+    local n = nil
+    pcall(function()
+        local j = FindFirstOf("STVJourneySubsystem")
+        if j and j:IsValid() then n = j:GetIncomingCallsNum() end
+    end)
+    return n
+end
+
+local function answer_single(tries, key_at)
+    if moved_on(key_at) then return end
+    local ok, list = pcall(shown_calls)
+    if ok and #list == 1 and waiting_calls() == 1 then
+        local c = list[1]
+        local t = ""
+        pcall(function() t = c.NotificationText:GetText():ToString() end)
+        print("[VoyagerAccess] view: H answers the only call\n")
+        speech.say(string.format("Incoming call: %s", t ~= "" and t or require("tr").word("unnamed")), true)
+        pcall(function()
+            c:HandleButtonPressed()
+            c:HandleButtonReleased()
+            c:HandleButtonClicked()
+        end)
+        return
+    end
+    if ok and #list > 1 then return end
+    if tries > 0 then
+        ExecuteInGameThreadWithDelay(100, function() answer_single(tries - 1, key_at) end)
+    else
+        -- No list came: say what was pressed, as before.
+        speech.say(label({ "Incoming calls" }), true)
+    end
+end
+
 -- H: a waiting call, as a click on the bar's call button does (Casey,
--- 2026-10-26: so many calls, and each took N, three Downs and Enter). The
--- calls list opens on the call; Enter answers it.
+-- 2026-10-26: so many calls, and each took N, three Downs and Enter). One
+-- call is answered at once; with more, the list opens and Enter answers.
 function M.calls_key()
     if not nav_place() then
         -- Over an event window on the map this sounded like "no" while
@@ -241,10 +304,13 @@ function M.calls_key()
         speech.say("No incoming call", true)
         return
     end
-    for _, it in ipairs(NAV) do
-        if it[2] == "IncomingCallsButton" then nav_items, nav_index = { it }, 1 end
-    end
-    M.nav_enter()
+    nav_items = nil
+    print("[VoyagerAccess] nav: Incoming calls (H)\n")
+    b:HandleButtonPressed()
+    b:HandleButtonReleased()
+    b:HandleButtonClicked()
+    local okk, keys = pcall(require, "keys")
+    answer_single(10, okk and keys.key_count or nil)
 end
 
 -- Sector switch leaves the sector at once: active missions were cancelled
@@ -545,7 +611,7 @@ local function check_calls(bar)
         print("[VoyagerAccess] view: incoming call waiting\n")
         pcall(function() require("calllisten").button_seen() end)
         -- A new hint key: the N wording was heard twice by now (hints.lua).
-        speech.say("Incoming call." .. require("hints").text("call_h", " To answer, press H, then Enter."), false)
+        speech.say("Incoming call." .. require("hints").text("call_h1", " To answer, press H."), false)
     end
     call_waiting = waiting
 end

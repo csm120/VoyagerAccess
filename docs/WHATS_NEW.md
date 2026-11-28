@@ -1,5 +1,14 @@
 # New in Voyager Access
 
+## Friday November 27th 2026
+
+Version 0.4.5
+
+- New: H answers a waiting call straight away when there's only one. With two or more, the list opens as before and Enter answers the one you're on.
+- Fixed: in a conversation, Enter sometimes did nothing and you heard "The line has not moved on yet." The game takes Enter only as a quick tap, and when the game stalls for a moment the press counts as a hold and is ignored. Voyager Access now notices that and presses again for you.
+- Changed: in battle, K reads your abilities in the order you can use them: ready ones first, then the one that will be ready soonest, then any in use, then any unavailable. Each one still starts with its key. I twice keeps them in key order.
+- New: in battle, the enemy system you target on the Orders wheel is announced when it's down to half health, when it's knocked out, like "Kazon Raider, Weapons, starboard disabled", and when it's working again. Voyager's own systems are announced when one is knocked out and when it's working again.
+
 ## Wednesday November 25th 2026
 
 Version 0.4.4

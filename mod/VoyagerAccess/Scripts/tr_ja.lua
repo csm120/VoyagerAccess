@@ -102,6 +102,9 @@ return {
     [" of "] = "、最大",
     ["hull {s}"] = "船体 {s}",
     ["shield down: {s}"] = "シールド消失: {s}",
+    ["{s} disabled"] = "機能停止: {s}",
+    ["{s} working again"] = "復旧: {s}",
+    ["{s}, half health"] = "{s}、耐久50%",
     ["{n} second"] = "{n}秒",
     ["{n} seconds"] = "{n}秒",
     ["ready"] = "準備完了",
@@ -964,9 +967,9 @@ return {
     ["Calls are answered in the ship view or the System Map"] = "通信には艦内ビューか星系図で応答します",
     ["A call is waiting; H answers it from the ship view or the System Map"] = "通信が待機中です。艦内ビューか星系図でHを押すと応答します",
     ["No incoming call"] = "着信はありません",
-    [" To answer, press H, then Enter."] = "応答するには、Hを押してからEnterを押してください。",
-    ["H opens a waiting call, and Enter answers it."] = "Hで待機中の着信を開き、Enterで応答します。",
-    ["H: in the ship view or System Map, open a waiting call; Enter answers it"] = "H: 艦内ビューか星系図で待機中の着信を開く。Enterで応答",
+    [" To answer, press H."] = "応答するには、Hを押してください。",
+    ["H answers a waiting call; with two or more, it lists them and Enter answers one."] = "Hで待機中の着信に応答します。2件以上ある場合は一覧が開き、Enterで1件に応答します。",
+    ["H: in the ship view or System Map, answer a waiting call; with two or more, Enter answers the one you choose"] = "H: 艦内ビューか星系図で待機中の着信に応答。2件以上ならEnterで選んだ着信に応答",
 
     -- warpcore.lua
     ["Gray Mode"] = "グレーモード",

@@ -102,6 +102,9 @@ return {
     [" of "] = " из ",
     ["hull {s}"] = "корпус {s}",
     ["shield down: {s}"] = "щит отключён: {s}",
+    ["{s} disabled"] = "отказ системы: {s}",
+    ["{s} working again"] = "снова работает: {s}",
+    ["{s}, half health"] = "{s}, осталось 50 процентов прочности",
     ["{n} second"] = "{n} секунда",
     ["{n} seconds"] = "секунд: {n}",
     ["ready"] = "готова",
@@ -964,9 +967,9 @@ return {
     ["Calls are answered in the ship view or the System Map"] = "На вызовы отвечают в виде корабля или на карте системы",
     ["A call is waiting; H answers it from the ship view or the System Map"] = "Ожидает вызов; H отвечает на него в виде корабля или на карте системы",
     ["No incoming call"] = "Нет входящего вызова",
-    [" To answer, press H, then Enter."] = " Чтобы ответить, нажмите H, затем Enter.",
-    ["H opens a waiting call, and Enter answers it."] = "H открывает ожидающий вызов, а Enter отвечает на него.",
-    ["H: in the ship view or System Map, open a waiting call; Enter answers it"] = "H: в виде корабля или на карте системы открыть ожидающий вызов; Enter отвечает на него",
+    [" To answer, press H."] = " Чтобы ответить, нажмите H.",
+    ["H answers a waiting call; with two or more, it lists them and Enter answers one."] = "H отвечает на ожидающий вызов; если их два или больше, H показывает список, а Enter отвечает на один.",
+    ["H: in the ship view or System Map, answer a waiting call; with two or more, Enter answers the one you choose"] = "H: в виде корабля или на карте системы ответить на ожидающий вызов; если их два или больше, Enter отвечает на выбранный",
 
     -- warpcore.lua
     ["Gray Mode"] = "Серый режим",

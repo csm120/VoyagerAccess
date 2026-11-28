@@ -23,6 +23,10 @@ local continue_action = nil
 -- ran.
 local continue_pending = false
 local inject_continue
+local send_continue
+-- Bumped on every new line (ShowDialogue): a retried continue is only for
+-- the line it was sent for, even when the next line has the same words.
+local line_gen = 0
 
 local function live(obj)
     local name = obj:GetFullName()
@@ -341,6 +345,7 @@ local function on_window(kind)
                 gone_since = nil
                 crumb.at("dialogue: " .. kind)
                 if kind == "line" then
+                    line_gen = line_gen + 1
                     continue_pending = false
                     -- Guarded on its own: an error here must not skip the
                     -- popup read and the focus and away mission looks below.
@@ -365,7 +370,9 @@ local function on_window(kind)
                     -- continue it asked for goes now that the line is done.
                     if kind == "typed" and continue_pending then
                         continue_pending = false
-                        inject_continue()
+                        -- With the same retry as Enter on a finished line
+                        -- (GPT and Fable reviews, 2026-11-27).
+                        send_continue(M.line_of(w))
                     end
                 elseif kind == "consequences" or kind == "consequences_start" then
                     -- The away mission summary is final now (popups.lua).
@@ -938,6 +945,85 @@ function inject_continue()
     sub:InjectInputVectorForAction(continue_action, { X = 1.0, Y = 0.0, Z = 0.0 }, {}, {})
 end
 
+-- "Speaker|text" of the window's line, or nil.
+function M.line_of(w)
+    local line = nil
+    pcall(function() line = (w.DialogueSpeakerText:GetText():ToString()) .. "|" .. w.DialogueText:GetText():ToString() end)
+    return line
+end
+
+local function frame_count()
+    local n = nil
+    pcall(function() n = StaticFindObject("/Script/Engine.Default__KismetSystemLibrary"):GetFrameCount() end)
+    return type(n) == "number" and n or nil
+end
+
+-- IA_Dialogue_Continue is a Tap: a press released within 0.3 s. When the
+-- frame that takes the injected press runs longer than that, the press is
+-- a hold and the game drops it; both Enters Casey heard "The line has not
+-- moved on yet" for had a 0.38 s frame there, and no Enter the game took
+-- had one (his play, 2026-11-27). Then it is sent again, at most twice,
+-- 120 ms later: on the very next tick the press never let go and the game
+-- saw one long hold (his play, twice). Only while nothing has moved on
+-- (GPT and Fable reviews, 2026-11-27): the same line generation and words,
+-- the line still finished, no choices up, no key pressed since; and only
+-- when the frame measured is the one right after the press (frame count
+-- one on), so a hitch from a continue the game took is not mistaken for a
+-- dropped one. line: the line the continue is for, or nil for no retry.
+function send_continue(line)
+    inject_continue()
+    if not line then return end
+    local gen = line_gen
+    local okk, keys = pcall(require, "keys")
+    local key_at = okk and keys.key_count or nil
+    local frame0 = frame_count()
+    local tries = 0
+    local function still(w)
+        if line_gen ~= gen then return false end
+        if okk and keys.key_count ~= key_at then return false end
+        if M.line_of(w) ~= line then return false end
+        local lf = nil
+        pcall(function() lf = w.bLineFinished end)
+        if lf ~= true then return false end
+        local okc, list = pcall(shown_choices)
+        return not (okc and list and #list > 0)
+    end
+    local check
+    check = function()
+        pcall(function()
+            local nw = M.active()
+            if not nw then return end
+            local dt, fc = nil, frame_count()
+            pcall(function() dt = StaticFindObject("/Script/Engine.Default__GameplayStatics"):GetWorldDeltaSeconds(nw) end)
+            local steps = (fc and frame0) and (fc - frame0) or nil
+            local lf = nil
+            pcall(function() lf = nw.bLineFinished end)
+            -- One line per Enter, so a player's log shows which frame the
+            -- check measured.
+            print(string.format("[VoyagerAccess] dialogue: continue frame %s s, frames %s\n",
+                dt and string.format("%.3f", dt) or "?", tostring(steps)))
+            if not M.tap_dropped(line, M.line_of(nw), lf, dt) then return end
+            if tries < 2 and steps == 1 and still(nw) then
+                tries = tries + 1
+                print(string.format("[VoyagerAccess] dialogue: continue dropped by a %.2f s frame, sent again\n", dt))
+                ExecuteInGameThreadWithDelay(M.RETAP_MS, function()
+                    pcall(function()
+                        local cw = M.active()
+                        if not (cw and still(cw)) then return end
+                        inject_continue()
+                        frame0 = frame_count()
+                        ExecuteInGameThread(check)
+                    end)
+                end)
+            else
+                print(string.format("[VoyagerAccess] dialogue: continue after a %.2f s frame not sent again (frames %s, try %d)\n",
+                    dt, tostring(steps), tries))
+            end
+        end)
+    end
+    ExecuteInGameThread(check)
+end
+
 -- Continue while a line is still typing only finishes the typing, so Casey
 -- needed two Enters per line (log, 2026-10-10). The mod speaks the whole line
 -- at once, so finish the typing first and continue when the window says the
@@ -1004,7 +1090,7 @@ function M.continue()
         stuck.count = 0
         speech.say("This line does not move on with Enter. Shift+Enter skips to the next choice.", true)
     end
-    inject_continue()
+    send_continue((not elsewhere) and line or nil)
     -- The game can hold a finished line and ignore Enter for minutes (a
     -- scripted moment: Chardis's "They're here!", about three minutes,
     -- Casey's play, 2026-11-08), and the key said nothing. Casey,
@@ -1024,7 +1110,9 @@ function M.continue()
             local nw = M.active()
             pcall(function() now = (nw.DialogueSpeakerText:GetText():ToString()) .. "|" .. nw.DialogueText:GetText():ToString() end)
             if M.line_held(line, now) then
-                print("[VoyagerAccess] dialogue: line held by the game after Enter\n")
+                local lf = nil
+                pcall(function() lf = nw.bLineFinished end)
+                print("[VoyagerAccess] dialogue: line held by the game after Enter, bLineFinished=" .. tostring(lf) .. "\n")
                 speech.say("The line has not moved on yet.", true)
             end
         end)
@@ -1034,6 +1122,20 @@ end
 -- How long after Enter a line still up counts as held. 1.2 s said it before
 -- a scene change that took 1.38 s (Janeway to Carey, VM, 2026-11-09).
 M.HELD_MS = 3000
+
+-- IA_Dialogue_Continue's Tap threshold (TapReleaseTimeThreshold, from the
+-- game's asset, 2026-11-27).
+M.TAP_S = 0.3
+-- Wait before a dropped continue is sent again: longer than a frame (about
+-- 33 ms in Casey's game), so the game sees the first press released.
+M.RETAP_MS = 120
+
+-- The injected continue was held over a frame longer than a tap, so the
+-- game dropped it: the same finished line is still up after that frame.
+function M.tap_dropped(before, now, line_finished, frame_s)
+    return before ~= nil and before == now and line_finished == true
+        and type(frame_s) == "number" and frame_s > M.TAP_S
+end
 
 -- The same conversation line is still up after Enter (M.continue).
 function M.line_held(before, now)

@@ -245,6 +245,21 @@ function M.one_per_key(items)
     return out
 end
 
+-- K's order (Casey, 2026-11-27: "the order of when they will be
+-- available"): ready (rank 0) by key, then cooling down (1) soonest first,
+-- then in use (2) shortest left first, then unavailable (3). Each item has
+-- i (slot), rank and t (seconds left); ties keep key order.
+function M.ready_order(items)
+    local out = {}
+    for _, it in ipairs(items) do out[#out + 1] = it end
+    table.sort(out, function(a, b)
+        if a.rank ~= b.rank then return a.rank < b.rank end
+        if a.rank ~= 0 and a.t ~= b.t then return a.t < b.t end
+        return a.i < b.i
+    end)
+    return out
+end
+
 -- An ability the game draws as unavailable: WBP_ExtAbility's
 -- Disabled_Indicator or SubsystemDisabled_Indicator (the ability's
 -- Disabled and SubsystemDisabled states, ESTVSpaceCombatExtAbilityState).
@@ -278,19 +293,23 @@ function M.abilities(short)
                 -- of Nine and "Torres" for B'Elanna (VM, 2026-10-17).
                 local hero = require("events").hero_name(ab.HeroID:ToString())
                 local state = "ready"
+                local rank, t = 0, 0
                 if (ab.ActiveTimeLeft or 0) > 0 then
                     state = "active, " .. seconds(ab.ActiveTimeLeft) .. " left"
+                    rank, t = 2, ab.ActiveTimeLeft
                 elseif (ab.CooldownLeft or 0) > 0 then
                     -- Disabled while cooling down: both, the disabled first
                     -- (GPT review, 2026-11-25: "ready in 12 seconds" alone).
                     local u = unavailable(x)
                     state = (u and (u .. ", ") or "") .. "ready in " .. seconds(ab.CooldownLeft)
+                    rank, t = u and 3 or 1, ab.CooldownLeft
                 else
-                    state = unavailable(x) or state
+                    local u = unavailable(x)
+                    if u then state, rank = u, 3 end
                 end
                 local okv, vis = pcall(function() return require("screen").shown(x) end)
                 local num = tonumber(x:GetFullName():match("_(%d+)$")) or 0
-                list[#list + 1] = { i = x.Index, num = num, key = x.Index .. "|" .. name .. "|" .. hero, shown = okv and vis,
+                list[#list + 1] = { i = x.Index, num = num, rank = rank, t = t, key = x.Index .. "|" .. name .. "|" .. hero, shown = okv and vis,
                     text = short and string.format("%d, %s, %s", x.Index + 1, name, state)
                         or string.format("%d, %s, %s, %s", x.Index + 1, name, hero, state) }
             end)
@@ -318,6 +337,7 @@ function M.abilities(short)
         list = kept
     end
     list = M.one_per_key(list)
+    if short then list = M.ready_order(list) end
     local out = {}
     for _, it in ipairs(list) do out[#out + 1] = it.text end
     if short then return #out > 0 and (table.concat(out, ". ") .. ".") or nil end
@@ -1200,6 +1220,104 @@ local function milestones_poll(w)
     end
 end
 
+-- Systems as their bars change (Casey, 2026-11-27, he chose these two):
+-- the enemy system the player targeted (half health, knocked out, working
+-- again) and Voyager's own (knocked out, working again). From the ships'
+-- USTVBodySubsystem objects: HitPointsCurrent, HitPointsMax, Status
+-- (ESTVSubsystemStatus, Enabled 3), Name, SectionLocation; the target from
+-- the player's GetCurrentTarget().Subsystem.
+-- prev and cur: { hp, max, status, out }; half: say half health too.
+-- Returns "out", "back", "half" or nil.
+local ENABLED = 3
+function M.system_event(prev, cur, half)
+    if not prev then return nil end
+    -- Once per outage: a repair under way hit back to 0 is the same one.
+    if prev.hp > 0 and cur.hp <= 0 and not prev.out then return "out" end
+    if prev.out and cur.hp > 0 and cur.status == ENABLED then return "back" end
+    if half and cur.max > 0 and prev.hp > cur.max / 2 and cur.hp <= cur.max / 2 and cur.hp > 0 then return "half" end
+    return nil
+end
+
+-- combatant name .. "|" .. unique id -> { hp, max, status, out }: by ship
+-- too, in case two ships of one class share an id (Fable review).
+local systems = {}
+local target_key = nil   -- the targeted enemy system last looked at
+-- As the order wheel names sections (ESTVSectionLocation), middle too.
+local SIDE = { [0] = "bow", [1] = "starboard", [2] = "aft", [3] = "port", [4] = "middle" }
+local function system_name(ship, s)
+    local n = plain(s.Name:ToString())
+    local okl, loc = pcall(function() return s.SectionLocation end)
+    if okl and SIDE[loc] then n = n .. ", " .. require("tr").word(SIDE[loc]) end
+    return ship ~= "" and (ship .. ", " .. n) or n
+end
+local DESTROYED = 1   -- ESTVCombatantStatus ECS_Destroyed
+local function destroyed(c)
+    local ok, st = pcall(function() return c:GetCurrentStatus() end)
+    return ok and st == DESTROYED
+end
+local function system_key(c, s)
+    return c:GetFName():ToString() .. "|" .. tostring(s:GetOwnUniqueID())
+end
+-- fresh: take this look as the new baseline, saying nothing (a target just
+-- chosen: damage done while another system was targeted is not news).
+local function look_system(ship, c, s, half, fresh)
+    local hp, max = s.HitPointsCurrent, s.HitPointsMax
+    -- A read that failed is no sample: it made a knock-out of nothing.
+    if type(hp) ~= "number" or type(max) ~= "number" then return end
+    local id = system_key(c, s)
+    local cur = { hp = hp, max = max, status = s.Status }
+    local prev = (not fresh) and systems[id] or nil
+    if fresh and systems[id] then cur.out = systems[id].out end
+    local ev = M.system_event(prev, cur, half)
+    cur.out = (prev and prev.out) or cur.out or false
+    if ev == "out" then cur.out = true elseif ev == "back" then cur.out = false end
+    if cur.hp <= 0 then cur.out = true end
+    systems[id] = cur
+    if not ev then return end
+    local name = system_name(ship, s)
+    print("[VoyagerAccess] combat: system " .. ev .. ": " .. name .. "\n")
+    local T = { out = "{s} disabled", back = "{s} working again", half = "{s}, half health" }
+    speech.say(require("tr").fill(T[ev], name), false)
+end
+local function systems_poll(w)
+    if not w then return end
+    local pv = w.PlayerView
+    local pc = pv and pv:IsValid() and pv.MyCombatant
+    if not (pc and pc:IsValid()) then return end
+    local me = title(plain(text_of(pv.ShipNameText)))
+    -- A destroyed ship's systems all go to 0 at once: not a list of
+    -- "disabled" over the result (GPT and Fable reviews, 2026-11-27).
+    if not destroyed(pc) then
+        pcall(function()
+            pc.Subsystems:ForEach(function(_, e)
+                local s = e:get()
+                if s and s:IsValid() then pcall(look_system, me, pc, s, false, false) end
+            end)
+        end)
+    end
+    local seen_target = false
+    pcall(function()
+        local t = pc:GetCurrentTarget()
+        local s, c = t.Subsystem, t.Combatant
+        if not (s and s:IsValid() and c and c:IsValid()) then return end
+        if destroyed(c) then return end
+        seen_target = true
+        local ship = ""
+        pcall(function()
+            local ev = w.EnemyView
+            local vc = ev and ev:IsValid() and ev.MyCombatant
+            if vc and vc:IsValid() and vc:GetFName():ToString() == c:GetFName():ToString() then
+                ship = title(plain(text_of(ev.ShipNameText)))
+            end
+        end)
+        local key = system_key(c, s)
+        local fresh = key ~= target_key
+        target_key = key
+        look_system(ship, c, s, true, fresh)
+    end)
+    if not seen_target then target_key = nil end
+end
+
 -- The combat window's own pause event (OnCombatPauseChanged on the
 -- Blueprint class, at once on every Space; firefly82's probe, 2026-10-23):
 -- the pause is said then, not on the loop's next run up to half a second
@@ -1261,6 +1379,7 @@ local function ensure_pause_hook()
             ExecuteInGameThread(function()
                 print("[VoyagerAccess] combat: " .. ev .. "\n")
                 pcall(function() if M.active() then milestones_poll(main()) end end)
+                pcall(function() if M.active() then systems_poll(main()) end end)
             end)
         end) then n_hit = n_hit + 1 end
     end
@@ -1298,6 +1417,8 @@ local function poll()
         energy_quiet_until = os.time() + 3
         if was_active then
             energy.level, energy.max, energy.order, energy.selected = {}, {}, {}, nil
+            systems = {}
+            target_key = nil
         end
         was_active = false
         return
@@ -1308,6 +1429,7 @@ local function poll()
     pause_poll(main())
     torpedo_poll(main())
     milestones_poll(main())
+    pcall(systems_poll, main())
     alert_poll(main())
     incoming_poll(main())
     local goal = M.objective()

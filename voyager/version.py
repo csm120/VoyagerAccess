@@ -1,4 +1,4 @@
-__version__ = "0.4.4"
+__version__ = "0.4.5"
 
 # Game builds this release was checked against (patch_check.py clean and
 # played): the full game (Patch 2.2) and the demo. After a game update not

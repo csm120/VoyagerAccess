@@ -65,9 +65,10 @@ class AbilityKeyTests(unittest.TestCase):
     def said(self):
         return list(self.lua.globals().said.values())
 
+    # Ready ones first, then by time to ready (Casey, 2026-11-27).
     def test_short_line_has_keys_and_states_without_heroes(self):
         self.assertEqual(self.M.abilities(True),
-                         "1, Evasive Maneuver, ready. 2, Shield Hacking, ready in 13 seconds. 3, Tactical Analysis, ready.")
+                         "1, Evasive Maneuver, ready. 3, Tactical Analysis, ready. 2, Shield Hacking, ready in 13 seconds.")
 
     def test_full_line_unchanged_for_i_twice(self):
         self.assertEqual(self.M.abilities(),

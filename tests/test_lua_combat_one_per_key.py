@@ -68,5 +68,37 @@ class OnePerKeyTests(unittest.TestCase):
         ]), ["1, Shield Hacking", "2, Evasive Maneuver", "3, Cloaking Prototype"])
 
 
+# Casey, 2026-11-27: K says the abilities in the order they can be used:
+# ready ones first (by key), then those cooling down, soonest first, then
+# those in use (shortest left first), then unavailable ones. I keeps key
+# order.
+@unittest.skipIf(lupa is None, "lupa not installed")
+class ReadyOrderTests(unittest.TestCase):
+    setUp = OnePerKeyTests.setUp
+
+    def order(self, items):
+        t = self.lua.table_from([self.lua.table_from(x) for x in items])
+        out = self.M.ready_order(t)
+        return [out[i]["text"] for i in range(1, len(out) + 1)]
+
+    def test_ready_then_soonest_then_active_then_unavailable(self):
+        self.assertEqual(self.order([
+            {"i": 0, "rank": 1, "t": 26, "text": "1, cooling 26"},
+            {"i": 1, "rank": 3, "t": 0, "text": "2, unavailable"},
+            {"i": 2, "rank": 0, "t": 0, "text": "3, ready"},
+            {"i": 3, "rank": 1, "t": 5, "text": "4, cooling 5"},
+            {"i": 4, "rank": 2, "t": 8, "text": "5, active 8"},
+            {"i": 5, "rank": 0, "t": 0, "text": "6, ready"},
+        ]), ["3, ready", "6, ready", "4, cooling 5", "1, cooling 26", "5, active 8", "2, unavailable"])
+
+    # Negative twin: all ready, key order kept.
+    def test_all_ready_keeps_key_order(self):
+        self.assertEqual(self.order([
+            {"i": 2, "rank": 0, "t": 0, "text": "3"},
+            {"i": 0, "rank": 0, "t": 0, "text": "1"},
+            {"i": 1, "rank": 0, "t": 0, "text": "2"},
+        ]), ["1", "2", "3"])
+
+
 if __name__ == "__main__":
     unittest.main()

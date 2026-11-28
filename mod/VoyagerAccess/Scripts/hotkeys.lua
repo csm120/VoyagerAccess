@@ -17,7 +17,7 @@ local GROUPS = {
         "O: your objective. In combat, the combat goal",
         "C: hull, resources, crew, energy, battery and morale, as a list. Enter on a line lists its details, as the game's tooltip shows them; Backspace goes back",
         "N: navigation list: ship view, System Map, Sector Map, Overview, Research, Wait one cycle",
-        "H: in the ship view or System Map, open a waiting call; Enter answers it",
+        "H: in the ship view or System Map, answer a waiting call; with two or more, Enter answers the one you choose",
         "V: switch between the ship view and the System Map",
         "R: repeat the last line, tutorial or card; R again within 5 seconds goes back through earlier messages",
         "In a tutorial, Up and Down: the tutorials seen so far. N, then Tutorials, opens them",
